@@ -27,10 +27,127 @@
  */
 
 #include <stdio.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
+#include <glib.h>
+
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET	"knot"
+
+GIOChannel *server_io;
+static GMainLoop *main_loop;
+
+static void sig_term(int sig)
+{
+	g_main_loop_quit(main_loop);
+}
+
+static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	GIOChannel *cli_io;
+	int cli_sock, srv_sock;
+
+	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
+		return FALSE;
+
+	/* TODO: accept */
+	printf("TODO: accepting ...\n");
+
+	srv_sock = g_io_channel_unix_get_fd(io);
+
+	cli_sock = accept(srv_sock, NULL, NULL);
+	if (cli_sock < 0)
+		return FALSE;
+
+	cli_io = g_io_channel_unix_new(cli_sock);
+	g_io_channel_set_close_on_unref(cli_io, TRUE);
+	g_io_channel_set_flags(cli_io, G_IO_FLAG_NONBLOCK, NULL);
+
+	/* TODO: handle requests */
+
+	g_io_channel_unref(cli_io);
+
+	return TRUE;
+}
+
+static int start(void)
+{
+	int err, sock;
+	GIOCondition cond;
+	struct sockaddr_un addr;
+
+	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		err = -errno;
+		goto done;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
+	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		close(sock);
+		err = -errno;
+		goto done;
+	}
+
+	server_io = g_io_channel_unix_new(sock);
+	g_io_channel_set_close_on_unref(server_io, TRUE);
+	g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
+
+	if (listen(sock, 1) == -1) {
+		g_io_channel_unref(server_io);
+		err = -errno;
+		goto done;
+	}
+
+	cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
+	g_io_add_watch(server_io, cond, accept_cb, NULL);
+
+	err = 0;
+
+done:
+	return err;
+}
+
+static void stop(void)
+{
+	g_io_channel_unref(server_io);
+}
 
 int main(int argc, char *argv[])
 {
+	int err;
+
 	printf("KNOT Gateway\n");
 
-	return 0;
+	signal(SIGTERM, sig_term);
+	signal(SIGINT, sig_term);
+
+	main_loop = g_main_loop_new(NULL, FALSE);
+
+	err = start();
+	if (err < 0) {
+		printf("start(): %s (%d)\n", strerror(-err), -err);
+		goto done;
+	}
+
+	g_main_loop_run(main_loop);
+
+	g_main_loop_unref(main_loop);
+
+	stop();
+
+	printf("Exiting\n");
+
+	return err;
+
+done:
+	return err;
 }

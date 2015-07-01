@@ -1,4 +1,4 @@
 Dependencies: none
 
 How to build:
-$gcc -o main main.c
+gcc $(pkg-config --libs --cflags glib-2.0) -Wall -Werror -Wextra -Wno-unused-parameter -o knotd src/main.c
