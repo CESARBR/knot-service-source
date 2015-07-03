@@ -28,13 +28,19 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <glib.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
+
+static int sock;
+static gboolean opt_reg = FALSE;
 
 static int unix_connect(void)
 {
@@ -59,25 +65,62 @@ static int unix_connect(void)
 	return sock;
 }
 
+static int cmd_register(void)
+{
+	int err;
+	ssize_t nbytes;
+	uint8_t datagram[128];
+
+	memset(datagram, 0, sizeof(datagram));
+
+	/* TODO: set knot protocol headers and palyload */
+	nbytes = write(sock, datagram, sizeof(datagram));
+	if (nbytes < 0) {
+		err = errno;
+		printf("write(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	return 0;
+}
+
+static GOptionEntry options[] = {
+	{ "reg", 'r', 0, G_OPTION_ARG_NONE, &opt_reg, "Register node", NULL},
+	{ NULL },
+};
+
 int main(int argc, char *argv[])
 {
-	int err, sock;
+	GOptionContext *context;
+	GError *gerr = NULL;
+	int err;
 
 	printf("KNOT Tool\n");
 
+	context = g_option_context_new(NULL);
+	g_option_context_add_main_entries(context, options, NULL);
+
+	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
+		printf("Invalid arguments: %s\n", gerr->message);
+		g_error_free(gerr);
+		exit(EXIT_FAILURE);
+	}
+
 	sock = unix_connect();
 	if (sock == -1) {
-		err = errno;
-		printf("connect(): %s (%d)\n", strerror(err), err);
-		goto done;
+		err = -errno;
+		printf("connect(): %s (%d)\n", strerror(-err), -err);
+		return err;
+	}
+
+	if (opt_reg) {
+		printf("Registering node ...\n");
+		err = cmd_register();
 	}
 
 	printf("Exiting\n");
 
 	close(sock);
 
-	return 0;
-
-done:
-	return -err;
+	return err;
 }
