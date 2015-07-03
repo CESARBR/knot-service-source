@@ -40,7 +40,7 @@
 #define KNOT_UNIX_SOCKET	"knot"
 
 static int sock;
-static gboolean opt_reg = FALSE;
+static const char *opt_token;
 
 static int unix_connect(void)
 {
@@ -84,8 +84,28 @@ static int cmd_register(void)
 	return 0;
 }
 
+static int cmd_auth(const char *token)
+{
+	int err;
+	ssize_t nbytes;
+	uint8_t datagram[128];
+
+	memset(datagram, 0, sizeof(datagram));
+
+	/* TODO: set knot protocol headers and palyload */
+	nbytes = write(sock, datagram, sizeof(datagram));
+	if (nbytes < 0) {
+		err = errno;
+		printf("write(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	return 0;
+}
+
 static GOptionEntry options[] = {
-	{ "reg", 'r', 0, G_OPTION_ARG_NONE, &opt_reg, "Register node", NULL},
+	{ "token", 'a', 0, G_OPTION_ARG_STRING, &opt_token,
+					"token", "Hex format" },
 	{ NULL },
 };
 
@@ -113,7 +133,11 @@ int main(int argc, char *argv[])
 		return err;
 	}
 
-	if (opt_reg) {
+	if (opt_token) {
+		printf("Authenticating node ...\n");
+		err = cmd_auth(opt_token);
+	} else {
+		/* token not informed: force registration */
 		printf("Registering node ...\n");
 		err = cmd_register();
 	}
