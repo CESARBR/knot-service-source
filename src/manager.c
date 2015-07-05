@@ -29,45 +29,88 @@
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
-#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <glib.h>
-#include "manager.h"
 
-static GMainLoop *main_loop;
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET	"knot"
 
-static void sig_term(int sig)
+GIOChannel *server_io;
+
+static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
 {
-	g_main_loop_quit(main_loop);
+	GIOChannel *cli_io;
+	int cli_sock, srv_sock;
+
+	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
+		return FALSE;
+
+	/* TODO: accept */
+	printf("TODO: accepting ...\n");
+
+	srv_sock = g_io_channel_unix_get_fd(io);
+
+	cli_sock = accept(srv_sock, NULL, NULL);
+	if (cli_sock < 0)
+		return FALSE;
+
+	cli_io = g_io_channel_unix_new(cli_sock);
+	g_io_channel_set_close_on_unref(cli_io, TRUE);
+	g_io_channel_set_flags(cli_io, G_IO_FLAG_NONBLOCK, NULL);
+
+	/* TODO: handle requests */
+
+	g_io_channel_unref(cli_io);
+
+	return TRUE;
 }
 
-int main(int argc, char *argv[])
+int manager_start(void)
 {
-	int err;
+	int err, sock;
+	GIOCondition cond;
+	struct sockaddr_un addr;
 
-	printf("KNOT Gateway\n");
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
-
-	err = manager_start();
-	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
+	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		err = -errno;
 		goto done;
 	}
 
-	g_main_loop_run(main_loop);
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
+	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		close(sock);
+		err = -errno;
+		goto done;
+	}
 
-	g_main_loop_unref(main_loop);
+	server_io = g_io_channel_unix_new(sock);
+	g_io_channel_set_close_on_unref(server_io, TRUE);
+	g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
 
-	manager_stop();
+	if (listen(sock, 1) == -1) {
+		g_io_channel_unref(server_io);
+		err = -errno;
+		goto done;
+	}
 
-	printf("Exiting\n");
+	cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
+	g_io_add_watch(server_io, cond, accept_cb, NULL);
 
-	return err;
+	err = 0;
 
 done:
 	return err;
+}
+
+void manager_stop(void)
+{
+	g_io_channel_unref(server_io);
 }

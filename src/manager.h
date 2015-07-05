@@ -26,48 +26,5 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <errno.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <glib.h>
-#include "manager.h"
-
-static GMainLoop *main_loop;
-
-static void sig_term(int sig)
-{
-	g_main_loop_quit(main_loop);
-}
-
-int main(int argc, char *argv[])
-{
-	int err;
-
-	printf("KNOT Gateway\n");
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
-
-	err = manager_start();
-	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
-		goto done;
-	}
-
-	g_main_loop_run(main_loop);
-
-	g_main_loop_unref(main_loop);
-
-	manager_stop();
-
-	printf("Exiting\n");
-
-	return err;
-
-done:
-	return err;
-}
+int manager_start(void);
+void manager_stop(void);
