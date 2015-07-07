@@ -41,8 +41,12 @@
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
 
-GIOChannel *server_io;
+struct watch_pair {
+	unsigned int radio_id;	/* Radio event source */
+	unsigned int proto_id;	/* TCP/backend event source */
+};
 
+GIOChannel *server_io;
 static struct proto_ops *proto_ops;
 
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
@@ -54,10 +58,42 @@ static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
 
 static void unix_io_destroy(gpointer user_data)
 {
-	GIOChannel *io = user_data;
 
-	/* Remove proto GIOChannel reference when unix socket disconnects */
-	g_io_channel_unref(io);
+	struct watch_pair *watch = user_data;
+
+	/* Mark as removed */
+	watch->radio_id = 0;
+
+	/* Remove protocol watch & unref the channel */
+	if (watch->proto_id)
+		g_source_remove(watch->proto_id);
+
+	g_free(watch);
+}
+
+static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
+					       gpointer user_data)
+{
+	/* Return FALSE to remove protocol GIOChannel reference */
+	return FALSE;
+}
+
+static void proto_io_destroy(gpointer user_data)
+{
+	struct watch_pair *watch = user_data;
+
+	/*
+	 * Remove Unix socket GIOChannel watch when protocol
+	 * socket disconnects. Removing the watch triggers
+	 * channe unref and consequently disconnection of
+	 * the Unix socket
+	 */
+
+	/* Mark protocol watch as removed */
+	watch->proto_id = 0;
+
+	if (watch->radio_id)
+	    g_source_remove(watch->radio_id);
 }
 
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
@@ -66,6 +102,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	GIOChannel *unix_io, *proto_io;
 	int unix_sock, srv_sock, proto_sock;
 	GIOCondition watch_cond = G_IO_HUP | G_IO_NVAL;
+	struct watch_pair *watch;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
@@ -88,13 +125,23 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	proto_io = g_io_channel_unix_new(proto_sock);
 	g_io_channel_set_close_on_unref(proto_io, TRUE);
 
+	watch = g_new0(struct watch_pair, 1);
 	/* Watch for unix socket disconnection */
-	g_io_add_watch_full(unix_io, G_PRIORITY_DEFAULT,
-				    watch_cond, unix_io_watch,
-				    proto_io, unix_io_destroy);
+	watch->radio_id = g_io_add_watch_full(unix_io,
+				G_PRIORITY_DEFAULT, watch_cond,
+				unix_io_watch, watch,
+				unix_io_destroy);
 
 	/* Keep only one ref: GIOChannel watch */
 	g_io_channel_unref(unix_io);
+
+	/* Watch for TCP socket disconnection */
+	watch->proto_id = g_io_add_watch_full(proto_io,
+				G_PRIORITY_DEFAULT, watch_cond,
+				proto_io_watch, watch,
+				proto_io_destroy);
+
+	g_io_channel_unref(proto_io);
 
 	return TRUE;
 }
