@@ -45,11 +45,27 @@ GIOChannel *server_io;
 
 static struct proto_ops *proto_ops;
 
+static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
+			       gpointer user_data)
+{
+	/* Return FALSE to remove Unix GIOChannel reference */
+	return FALSE;
+}
+
+static void unix_io_destroy(gpointer user_data)
+{
+	GIOChannel *io = user_data;
+
+	/* Remove proto GIOChannel reference when unix socket disconnects */
+	g_io_channel_unref(io);
+}
+
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
-	GIOChannel *cli_io;
-	int cli_sock, srv_sock, node_sock;
+	GIOChannel *unix_io, *proto_io;
+	int unix_sock, srv_sock, proto_sock;
+	GIOCondition watch_cond = G_IO_HUP | G_IO_NVAL;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
@@ -59,21 +75,26 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
-	cli_sock = accept(srv_sock, NULL, NULL);
-	if (cli_sock < 0)
+	unix_sock = accept(srv_sock, NULL, NULL);
+	if (unix_sock < 0)
 		return FALSE;
 
-	cli_io = g_io_channel_unix_new(cli_sock);
-	g_io_channel_set_close_on_unref(cli_io, TRUE);
-	g_io_channel_set_flags(cli_io, G_IO_FLAG_NONBLOCK, NULL);
+	unix_io = g_io_channel_unix_new(unix_sock);
+	g_io_channel_set_close_on_unref(unix_io, TRUE);
 
 	/* TODO: handle requests */
 
-	node_sock = proto_ops->signup();
+	proto_sock = proto_ops->signup();
+	proto_io = g_io_channel_unix_new(proto_sock);
+	g_io_channel_set_close_on_unref(proto_io, TRUE);
 
-	printf("Node sock: %d\n", node_sock);
+	/* Watch for unix socket disconnection */
+	g_io_add_watch_full(unix_io, G_PRIORITY_DEFAULT,
+				    watch_cond, unix_io_watch,
+				    proto_io, unix_io_destroy);
 
-	g_io_channel_unref(cli_io);
+	/* Keep only one ref: GIOChannel watch */
+	g_io_channel_unref(unix_io);
 
 	return TRUE;
 }
