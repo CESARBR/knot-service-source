@@ -43,9 +43,73 @@
 
 static struct in_addr host_addr;
 
+static int http_connect(void)
+{
+	struct sockaddr_in server;
+	int sock, err;
+
+	/*
+	 * TODO: At the moment connect is blocking. Does it make
+	 * sense to use asynchronous communication or use fork/pthread?
+	 */
+	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sock == -1) {
+		err = errno;
+		printf("Meshblu socket(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	memset(&server, 0, sizeof(server));
+	server.sin_family = AF_INET;
+	server.sin_addr.s_addr = host_addr.s_addr;
+	server.sin_port = htons(80);
+
+	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0){
+		err = errno;
+		printf("Meshblu connect(): %s(%d)\n", strerror(err), err);
+
+		close(sock);
+		return -err;
+	}
+
+	return sock;
+}
+
 static int http_signup(void)
 {
-	return 0;
+	int sock;
+	ssize_t nbytes;
+	char post[] = "POST /devices HTTP/1.1\n"			\
+		       "Host: meshblu.octoblu.com\n"			\
+		       "Content-Type: application/x-www-form-urlencoded\n" \
+		       "Content-Length: 0\r\n\n";
+	char buffer[1024];
+
+	sock = http_connect();
+	if (sock < 0)
+		return sock;
+
+	/*
+	 * Create UUID and token. This is a testing purpose only.
+	 * FIXME: Add the proper calls to signup the Meshblu node.
+	 */
+
+	nbytes = send(sock, post, strlen(post), 0);
+
+	printf("Meshblu Request(%ld bytes):\n%s\n", nbytes, post);
+
+	memset(buffer, 0, sizeof(buffer));
+	nbytes = recv(sock, buffer, sizeof(buffer), 0);
+
+	printf("Meshblu Response:\n%s\n", buffer);
+
+	/*
+	 * At this point, UUID and token doesn't need to be exposed
+	 * externally. A hash table can be created here to map the
+	 * socket to the proper identification (UUID & token).
+	 */
+
+	return sock;
 }
 
 static int http_signin(const char *token)
