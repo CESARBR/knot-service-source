@@ -27,6 +27,7 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -35,16 +36,20 @@
 
 #include <glib.h>
 
+#include "proto.h"
+
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
 
 GIOChannel *server_io;
 
+static struct proto_ops *proto_ops;
+
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
 	GIOChannel *cli_io;
-	int cli_sock, srv_sock;
+	int cli_sock, srv_sock, node_sock;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
@@ -63,6 +68,10 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	g_io_channel_set_flags(cli_io, G_IO_FLAG_NONBLOCK, NULL);
 
 	/* TODO: handle requests */
+
+	node_sock = proto_ops->signup();
+
+	printf("Node sock: %d\n", node_sock);
 
 	g_io_channel_unref(cli_io);
 
@@ -113,4 +122,21 @@ done:
 void manager_stop(void)
 {
 	g_io_channel_unref(server_io);
+}
+
+int proto_ops_register(struct proto_ops *ops)
+{
+	/*
+	 * At the moment only onde instance is supported. The
+	 * ideia is try to support dynamic selection of back-end
+	 * service.
+	 */
+	proto_ops = ops;
+
+	return 0;
+}
+
+void proto_ops_unregister(struct proto_ops *ops)
+{
+
 }

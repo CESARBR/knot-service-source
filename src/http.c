@@ -27,51 +27,70 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
 #include <errno.h>
-#include <unistd.h>
 #include <string.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#include <glib.h>
-
-#include "manager.h"
+#include "proto.h"
 #include "http.h"
 
-static GMainLoop *main_loop;
+#define MESHBLU_HOST		"meshblu.octoblu.com"
 
-static void sig_term(int sig)
+static struct in_addr host_addr;
+
+static int http_signup(void)
 {
-	g_main_loop_quit(main_loop);
+	return 0;
 }
 
-int main(int argc, char *argv[])
+static int http_signin(const char *token)
 {
+
+	return 0;
+}
+
+static void http_signoff(int sock)
+{
+
+}
+
+struct proto_ops ops = {
+	.signup = http_signup,
+	.signin = http_signin,
+	.signoff= http_signoff,
+};
+
+int http_register(void)
+{
+	struct hostent *host;
 	int err;
 
-	printf("KNOT Gateway\n");
+	/* TODO: connect and track TCP socket */
 
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
-
-	http_register();
-	err = manager_start();
-	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
-		goto done;
+	/* TODO: Add timer if it fails? */
+	host = gethostbyname(MESHBLU_HOST);
+	if  (host == NULL) {
+		err = errno;
+		printf("gethostbyname(%s): %s (%d)\n", MESHBLU_HOST,
+						       strerror(err), err);
+		return -err;
 	}
 
-	g_main_loop_run(main_loop);
+	host_addr.s_addr = *((unsigned long *) host-> h_addr_list[0]);
 
-	g_main_loop_unref(main_loop);
+	fprintf(stdout, "Meshblu IP: %s\n", inet_ntoa(host_addr));
 
-	http_unregister();
-	manager_stop();
+	return proto_ops_register(&ops);
+}
 
-	printf("Exiting\n");
+void http_unregister(void)
+{
+	/* TODO: replace by a built-in plugin mechnism */
 
-	return err;
-
-done:
-	return err;
+	proto_ops_unregister(&ops);
 }

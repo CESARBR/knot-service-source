@@ -26,52 +26,5 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <errno.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <glib.h>
-
-#include "manager.h"
-#include "http.h"
-
-static GMainLoop *main_loop;
-
-static void sig_term(int sig)
-{
-	g_main_loop_quit(main_loop);
-}
-
-int main(int argc, char *argv[])
-{
-	int err;
-
-	printf("KNOT Gateway\n");
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
-
-	http_register();
-	err = manager_start();
-	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
-		goto done;
-	}
-
-	g_main_loop_run(main_loop);
-
-	g_main_loop_unref(main_loop);
-
-	http_unregister();
-	manager_stop();
-
-	printf("Exiting\n");
-
-	return err;
-
-done:
-	return err;
-}
+int http_register(void);
+void http_unregister(void);
