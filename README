@@ -1,12 +1,25 @@
+	KNOT Service for Linux systems
+
+KNOT service is part of KNOT project. It aims to provide a "proxy" service
+for KNOT nodes, allowing power constrained embedded device to interact
+with Meshblu cloud services.
+
+The initial target platform are nRF24L01 nodes, and Raspiberry PI GW. nRF24L01
+is a highly integrated, ultra low power (ULP) 2Mbps RF transceiver IC for the
+2.4GHz ISM band. On a second project phase, other radio access technologies
+such as Bluetooth Low Energy, and Wi-Fi are planned.
+
 Dependencies: none
 
 How to build (server - knot daemon):
-$gcc $(pkg-config --libs --cflags glib-2.0) -g0 -Wall -Werror -Wextra -Wno-unused-parameter \
+$gcc $(pkg-config --libs --cflags glib-2.0) -g0 \
+-Wall -Werror -Wextra -Wno-unused-parameter \
 -o src/knotd src/manager.c src/http.c src/main.c
 
 How to check for memory leaks and open file descriptors:
 $valgrind --leak-check=full --track-fds=yes ./src/knotd
 
 How to build (client):
-$gcc $(pkg-config --libs --cflags glib-2.0) -g0 -Wall -Werror -Wextra -Wno-unused-parameter \
+$gcc $(pkg-config --libs --cflags glib-2.0) -g0 \
+-Wall -Werror -Wextra -Wno-unused-parameter \
 -o tools/ktool tools/ktool.c
