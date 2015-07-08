@@ -23,3 +23,7 @@ How to build (client):
 $gcc $(pkg-config --libs --cflags glib-2.0) -g0 \
 -Wall -Werror -Wextra -Wno-unused-parameter \
 -o tools/ktool tools/ktool.c
+
+How to test (Unix sockets):
+$src/knotd
+$tools/ktool connect
