@@ -14,7 +14,7 @@ Dependencies: none
 How to build (server - knot daemon):
 $gcc $(pkg-config --libs --cflags glib-2.0) -g0 \
 -Wall -Werror -Wextra -Wno-unused-parameter \
--o src/knotd src/manager.c src/http.c src/main.c
+-o src/knotd src/manager.c src/ws.c src/http.c src/main.c
 
 How to check for memory leaks and open file descriptors:
 $valgrind --leak-check=full --track-fds=yes ./src/knotd
