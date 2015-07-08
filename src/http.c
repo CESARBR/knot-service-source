@@ -123,7 +123,7 @@ static void http_signoff(int sock)
 
 }
 
-struct proto_ops ops = {
+static struct proto_ops ops = {
 	.signup = http_signup,
 	.signin = http_signin,
 	.signoff= http_signoff,
