@@ -46,7 +46,7 @@ struct watch_pair {
 	unsigned int proto_id;	/* TCP/backend event source */
 };
 
-GIOChannel *server_io;
+static GIOChannel *server_io;
 static struct proto_ops *proto_ops;
 
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
