@@ -123,8 +123,11 @@ int main(int argc, char *argv[])
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
 		printf("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
+		g_option_context_free(context);
 		exit(EXIT_FAILURE);
 	}
+
+	g_option_context_free(context);
 
 	sock = unix_connect();
 	if (sock == -1) {
