@@ -29,12 +29,27 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include <libwebsockets.h>
+
+#include <glib.h>
+
 #include "proto.h"
 #include "ws.h"
 
+struct libwebsocket_context *context;
+
 static int ws_signup(void)
 {
-	return 0;
+	struct libwebsocket *ws;
+	gboolean use_ssl = FALSE;
+	const char *address = "meshblu.octoblu.com";
+	int port = 80;
+
+	ws = libwebsocket_client_connect(context, address, port,
+					 use_ssl, "/ws/v2", address,
+					 "origin", NULL, -1);
+
+	return libwebsocket_get_socket_fd(ws);
 }
 
 static int ws_signin(const char *token)
@@ -53,12 +68,48 @@ static struct proto_ops ops = {
 	.signoff= ws_signoff,
 };
 
+static int callback_lws_default(struct libwebsocket_context * this,
+			       struct libwebsocket *wsi,
+			       enum libwebsocket_callback_reasons
+			       reason, void *user, void *in, size_t len)
+{
+
+	printf("LwS: callback\n");
+
+	return 0;
+}
+
+static struct libwebsocket_protocols protocols[] = {
+
+	{
+		"default",
+		callback_lws_default,
+		0, 0, 0, NULL, NULL, 0
+	},
+	{
+		NULL, NULL, 0, 0, 0, NULL, NULL, 0 /* end of list */
+	}
+};
+
 int ws_register(void)
 {
+	struct lws_context_creation_info info;
+
+	memset(&info, 0, sizeof info);
+
+	info.port = CONTEXT_PORT_NO_LISTEN;
+	info.gid = -1;
+	info.uid = -1;
+	info.protocols = protocols;
+
+	context = libwebsocket_create_context(&info);
+
 	return proto_ops_register(&ops);
 }
 
 void ws_unregister(void)
 {
+	libwebsocket_context_destroy(context);
+
 	proto_ops_unregister(&ops);
 }
