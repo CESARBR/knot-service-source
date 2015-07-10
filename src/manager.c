@@ -46,7 +46,7 @@ struct watch_pair {
 	unsigned int proto_id;	/* TCP/backend event source */
 };
 
-static GIOChannel *server_io;
+static unsigned int server_watch_id;
 static struct proto_ops *proto_ops;
 
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
@@ -150,6 +150,7 @@ int manager_start(void)
 {
 	int err, sock;
 	GIOCondition cond;
+	GIOChannel *server_io;
 	struct sockaddr_un addr;
 
 	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -179,7 +180,8 @@ int manager_start(void)
 	}
 
 	cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
-	g_io_add_watch(server_io, cond, accept_cb, NULL);
+	server_watch_id = g_io_add_watch(server_io, cond, accept_cb, NULL);
+	g_io_channel_unref(server_io);
 
 	err = 0;
 
@@ -189,7 +191,8 @@ done:
 
 void manager_stop(void)
 {
-	g_io_channel_unref(server_io);
+	if (server_watch_id)
+		g_source_remove(server_watch_id);
 }
 
 int proto_ops_register(struct proto_ops *ops)
