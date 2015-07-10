@@ -37,19 +37,30 @@
 #include "ws.h"
 
 struct libwebsocket_context *context;
+static GHashTable *wstable;
 
 static int ws_signup(void)
 {
 	struct libwebsocket *ws;
 	gboolean use_ssl = FALSE;
 	const char *address = "meshblu.octoblu.com";
-	int port = 80;
+	int sock, port = 80;
 
 	ws = libwebsocket_client_connect(context, address, port,
 					 use_ssl, "/ws/v2", address,
 					 "origin", NULL, -1);
 
-	return libwebsocket_get_socket_fd(ws);
+	/*
+	 * FIXME: Improve socket tracking. If sock is being returned
+	 * to sign-up caller, GIOChannel ref/unref mechanism must be
+	 * used to automatically close the socket when the last
+	 * reference is dropped.
+	 */
+	sock = libwebsocket_get_socket_fd(ws);
+
+	g_hash_table_insert(wstable, &sock, ws);
+
+	return sock;
 }
 
 static int ws_signin(const char *token)
@@ -59,7 +70,7 @@ static int ws_signin(const char *token)
 
 static void ws_signoff(int sock)
 {
-
+	g_hash_table_remove(wstable, &sock);
 }
 
 static struct proto_ops ops = {
@@ -104,11 +115,15 @@ int ws_register(void)
 
 	context = libwebsocket_create_context(&info);
 
+	wstable = g_hash_table_new(g_direct_hash, g_direct_equal);
+
 	return proto_ops_register(&ops);
 }
 
 void ws_unregister(void)
 {
+	g_hash_table_destroy(wstable);
+
 	libwebsocket_context_destroy(context);
 
 	proto_ops_unregister(&ops);
