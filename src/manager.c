@@ -44,6 +44,7 @@
 struct watch_pair {
 	unsigned int radio_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
+	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 };
 
 static unsigned int server_watch_id;
@@ -60,11 +61,19 @@ static void unix_io_destroy(gpointer user_data)
 {
 
 	struct watch_pair *watch = user_data;
+	int sock;
 
 	/* Mark as removed */
 	watch->radio_id = 0;
 
-	/* Remove protocol watch & unref the channel */
+	/*
+	 * When the protocol connection (backend) is dropped
+	 * call signoff & unref the GIOChannel.
+	 */
+	sock = g_io_channel_unix_get_fd(watch->proto_io);
+	proto_ops->signoff(sock);
+	g_io_channel_unref(watch->proto_io);
+
 	if (watch->proto_id)
 		g_source_remove(watch->proto_id);
 
@@ -75,6 +84,7 @@ static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 					       gpointer user_data)
 {
 	/* Return FALSE to remove protocol GIOChannel reference */
+
 	return FALSE;
 }
 
@@ -141,7 +151,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 				proto_io_watch, watch,
 				proto_io_destroy);
 
-	g_io_channel_unref(proto_io);
+	/* Keep one reference to call sign-off */
+	watch->proto_io = proto_io;
 
 	return TRUE;
 }
