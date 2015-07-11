@@ -39,6 +39,93 @@
 struct libwebsocket_context *context;
 static GHashTable *wstable;
 
+static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
+{
+	switch (reason) {
+	case LWS_CALLBACK_ESTABLISHED:
+		return "ESTABLISHED";
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+		return "CLIENT_CONNECTION_ERROR";
+	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
+		return "CLIENT_FILTER_PRE_ESTABLISH";
+	case LWS_CALLBACK_CLIENT_ESTABLISHED:
+		return "CLIENT_ESTABLISHED";
+	case LWS_CALLBACK_CLOSED:
+		return "CLOSED";
+	case LWS_CALLBACK_CLOSED_HTTP:
+		return "CLOSED_HTTP";
+	case LWS_CALLBACK_RECEIVE:
+		return "RECEIVE";
+	case LWS_CALLBACK_CLIENT_RECEIVE:
+		return "CLIENT_RECEIVE";
+	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
+		return "CLIENT_RECEIVE_PONG";
+	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		return "CLIENT_WRITEABLE";
+	case LWS_CALLBACK_SERVER_WRITEABLE:
+		return "SERVER_WRITEABLE";
+	case LWS_CALLBACK_HTTP:
+		return "HTTP";
+	case LWS_CALLBACK_HTTP_BODY:
+		return "HTTP_BODY";
+	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
+		return "BODY_COMPLETION";
+	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
+		return "HTTP_FILE_COMPLETION";
+	case LWS_CALLBACK_HTTP_WRITEABLE:
+		return "HTTP_WRITEABLE";
+	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
+		return "FILTER_NETWORK_CONNECTION";
+	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
+		return "FILTER_HTTP_CONNECTION";
+	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
+		return "SERVER_NEW_CLIENT_INSTANTIATED";
+	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		return "FILTER_PROTOCOL_CONNECTION";
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
+		return "OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS";
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
+		return "OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS";
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+		return "OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION";
+	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
+		return "CLIENT_APPEND_HANDSHAKE_HEADER";
+	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
+		return "CONFIRM_EXTENSION_OKAY";
+	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
+		return "CLIENT_CONFIRM_EXTENSION_SUPPORTED";
+	case LWS_CALLBACK_PROTOCOL_INIT:
+		return "PROTOCOL_INIT";
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		return "PROTOCOL_DESTROY";
+	case LWS_CALLBACK_WSI_CREATE: /* always protocol[0] */
+		return "WSI_CREATE";
+	case LWS_CALLBACK_WSI_DESTROY: /* always protocol[0] */
+		return "WSI_DESTROY";
+	case LWS_CALLBACK_GET_THREAD_ID:
+		return "GET_THREAD_ID";
+
+	/* external poll() management support */
+	case LWS_CALLBACK_ADD_POLL_FD:
+		return "ADD_POLL_FD";
+	case LWS_CALLBACK_DEL_POLL_FD:
+		return "DEL_POLL_FD";
+	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
+		return "CHANGE_MODE_POLL_FD";
+	case LWS_CALLBACK_LOCK_POLL:
+		return "LOCK_POLL";
+	case LWS_CALLBACK_UNLOCK_POLL:
+		return "UNLOCK_POLL";
+
+	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
+		return "OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY";
+	case LWS_CALLBACK_USER: /* user code can use any including / above */
+		return "USER";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 static int ws_signup(void)
 {
 	struct libwebsocket *ws;
@@ -84,6 +171,9 @@ static int callback_lws_default(struct libwebsocket_context * this,
 			       enum libwebsocket_callback_reasons reason,
 			       void *user, void *in, size_t len)
 {
+
+	printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__, reason,
+						lws_reason2str(reason));
 
 	switch (reason) {
 	case LWS_CALLBACK_CLOSED:
