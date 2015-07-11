@@ -81,11 +81,25 @@ static struct proto_ops ops = {
 
 static int callback_lws_default(struct libwebsocket_context * this,
 			       struct libwebsocket *wsi,
-			       enum libwebsocket_callback_reasons
-			       reason, void *user, void *in, size_t len)
+			       enum libwebsocket_callback_reasons reason,
+			       void *user, void *in, size_t len)
 {
 
-	printf("LwS: callback\n");
+	switch (reason) {
+	case LWS_CALLBACK_CLOSED:
+		break;
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+		break;
+	case LWS_CALLBACK_CLIENT_ESTABLISHED:
+		break;
+	case LWS_CALLBACK_CLIENT_RECEIVE:
+		break;
+	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		break;
+	/* TODO: Investigate other reasons that needs to be handled */
+	default:
+		break;
+	}
 
 	return 0;
 }
