@@ -40,7 +40,11 @@
 #define KNOT_UNIX_SOCKET	"knot"
 
 static int sock;
-static const char *opt_token;
+static gboolean opt_add = FALSE;
+static gboolean opt_rm = FALSE;
+static gboolean opt_id = FALSE;
+static gboolean opt_subs = FALSE;
+static gboolean opt_unsubs = FALSE;
 
 static int unix_connect(void)
 {
@@ -84,7 +88,12 @@ static int cmd_register(void)
 	return 0;
 }
 
-static int cmd_auth(const char *token)
+static int cmd_unregister(void)
+{
+	return -ENOSYS;
+}
+
+static int cmd_id(void)
 {
 	int err;
 	ssize_t nbytes;
@@ -92,7 +101,11 @@ static int cmd_auth(const char *token)
 
 	memset(datagram, 0, sizeof(datagram));
 
-	/* TODO: set knot protocol headers and palyload */
+	/*
+	 * TODO: set knot protocol headers and payload
+	 * Send UUID and token to identify a previously
+	 * registered device.
+	 */
 	nbytes = write(sock, datagram, sizeof(datagram));
 	if (nbytes < 0) {
 		err = errno;
@@ -103,9 +116,41 @@ static int cmd_auth(const char *token)
 	return 0;
 }
 
+static int cmd_subscribe(void)
+{
+	return -ENOSYS;
+}
+
+static int cmd_unsubscribe(void)
+{
+	return -ENOSYS;
+}
+
+/*
+ * 'token' and 'uuid' are returned by registration process. Later a
+ * command line prompt may be displayed to the user allowing an
+ * interactive mode to be able to receive messages and change properties
+ * on demand. Options should be provided to inform invalid 'token'/'uuid'
+ * to allow testing error conditions, or inform previously registered
+ * devices. Commands are based on KNOT protocol, and they should be mapped
+ * to any specific backend.
+ */
 static GOptionEntry options[] = {
-	{ "token", 'a', 0, G_OPTION_ARG_STRING, &opt_token,
-					"token", "Hex format" },
+
+	{ "add", 'a', 0, G_OPTION_ARG_NONE, &opt_add,
+				"Register a device to Meshblu",
+				NULL },
+	{ "remove", 'r', 0, G_OPTION_ARG_NONE, &opt_rm,
+				"Unregister a device from Meshblu",
+				NULL },
+	{ "id", 'i', 0, G_OPTION_ARG_NONE, &opt_id,
+				"Identify a Meshblu device",
+				NULL },
+	{ "subscribe", 's', 0, G_OPTION_ARG_NONE, &opt_subs,
+				"Subscribe for messages of a given device",
+				NULL },
+	{ "unsubscribe", 'u', 0, G_OPTION_ARG_NONE, &opt_unsubs,
+				"Unsubscribe for messages", NULL },
 	{ NULL },
 };
 
@@ -120,6 +165,7 @@ int main(int argc, char *argv[])
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
 
+	/* TODO: Use GOptionGroup to inform parameters */
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
 		printf("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
@@ -136,13 +182,21 @@ int main(int argc, char *argv[])
 		return err;
 	}
 
-	if (opt_token) {
-		printf("Authenticating node ...\n");
-		err = cmd_auth(opt_token);
-	} else {
-		/* token not informed: force registration */
+	if (opt_add) {
 		printf("Registering node ...\n");
 		err = cmd_register();
+	} else if (opt_rm) {
+		printf("Unregistering node ...\n");
+		err = cmd_unregister();
+	} else if (opt_id) {
+		printf("Identifying node ...\n");
+		err = cmd_id();
+	} else if (opt_subs) {
+		printf("Subscribing node ...\n");
+		err = cmd_subscribe();
+	} else if (opt_unsubs) {
+		printf("Unsubscribing node ...\n");
+		err = cmd_unsubscribe();
 	}
 
 	printf("Exiting\n");
