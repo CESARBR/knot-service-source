@@ -15,16 +15,16 @@ How to build (server - knot daemon):
 $gcc $(pkg-config --libs --cflags glib-2.0) \
 $(pkg-config --cflags --libs openssl) \
 $(pkg-config --cflags --libs zlib) \
--I$WSLIB_PATH -I$WSLIB_BUILD_PATH -g0 \
+-I$WSLIB_PATH -I$WSLIB_BUILD_PATH -g -O0 \
 -Wall -Werror -Wextra -Wno-unused-parameter \
--o src/knotd src/manager.c src/ws.c src/http.c src/main.c
+-o src/knotd src/manager.c src/ws.c src/http.c src/main.c \
 $WSLIB_STATIC
 
 How to check for memory leaks and open file descriptors:
 $valgrind --leak-check=full --track-fds=yes ./src/knotd
 
 How to build (client):
-$gcc $(pkg-config --libs --cflags glib-2.0) -g0 \
+$gcc $(pkg-config --libs --cflags glib-2.0) -g -O0 \
 -Wall -Werror -Wextra -Wno-unused-parameter \
 -o tools/ktool tools/ktool.c
 
