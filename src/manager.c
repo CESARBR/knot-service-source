@@ -35,6 +35,7 @@
 #include <sys/un.h>
 
 #include <glib.h>
+#include <knot/proto.h>
 
 #include "proto.h"
 
@@ -51,10 +52,34 @@ static unsigned int server_watch_id;
 static struct proto_ops *proto_ops;
 
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
-			       gpointer user_data)
+			      gpointer user_data)
 {
-	/* Return FALSE to remove Unix GIOChannel reference */
-	return FALSE;
+	struct iovec iov[2];
+	knot_header hdr;
+	uint8_t payload[128];
+	ssize_t nbytes;
+	int sock, err;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+		return FALSE;
+
+	sock = g_io_channel_unix_get_fd(io);
+
+	iov[0].iov_base = &hdr;
+	iov[0].iov_len = sizeof(hdr);
+	iov[1].iov_base = payload;
+	iov[1].iov_len = sizeof(payload);
+
+	nbytes = readv(sock, iov, 2);
+	if (nbytes < 0) {
+		err = errno;
+		printf("readv(): %s(%d)\n", strerror(err), err);
+		return FALSE;
+	}
+
+	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr.opcode, hdr.len);
+
+	return TRUE;
 }
 
 static void unix_io_destroy(gpointer user_data)
@@ -111,7 +136,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 {
 	GIOChannel *unix_io, *proto_io;
 	int unix_sock, srv_sock, proto_sock;
-	GIOCondition watch_cond = G_IO_HUP | G_IO_NVAL;
+	GIOCondition watch_cond;
 	struct watch_pair *watch;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
@@ -137,6 +162,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	watch = g_new0(struct watch_pair, 1);
 	/* Watch for unix socket disconnection */
+	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN;
 	watch->radio_id = g_io_add_watch_full(unix_io,
 				G_PRIORITY_DEFAULT, watch_cond,
 				unix_io_watch, watch,
@@ -146,6 +172,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	g_io_channel_unref(unix_io);
 
 	/* Watch for TCP socket disconnection */
+	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
 	watch->proto_id = g_io_add_watch_full(proto_io,
 				G_PRIORITY_DEFAULT, watch_cond,
 				proto_io_watch, watch,
