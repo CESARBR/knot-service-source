@@ -36,6 +36,8 @@
 #include <sys/un.h>
 #include <glib.h>
 
+#include <knot/proto.h>
+
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
 
@@ -45,6 +47,8 @@ static gboolean opt_rm = FALSE;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
+
+static GMainLoop *main_loop;
 
 static int unix_connect(void)
 {
@@ -71,17 +75,25 @@ static int unix_connect(void)
 
 static int cmd_register(void)
 {
-	int err;
+	struct iovec iov[2];
+	knot_header hdr;
+	knot_cmd_reg cmd;
 	ssize_t nbytes;
-	uint8_t datagram[128];
+	int err;
 
-	memset(datagram, 0, sizeof(datagram));
+	hdr.opcode = KNOT_OP_REGISTER;
+	hdr.len = sizeof(cmd);
+	cmd.type = KNOT_TYPE_UNKNOWN;
 
-	/* TODO: set knot protocol headers and palyload */
-	nbytes = write(sock, datagram, sizeof(datagram));
+	iov[0].iov_base = &hdr;
+	iov[0].iov_len = sizeof(hdr);
+	iov[1].iov_base = &cmd;
+	iov[1].iov_len = sizeof(cmd);
+
+	nbytes = writev(sock, iov, 2);
 	if (nbytes < 0) {
 		err = errno;
-		printf("write(): %s(%d)\n", strerror(err), err);
+		printf("writev(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
@@ -154,6 +166,11 @@ static GOptionEntry options[] = {
 	{ NULL },
 };
 
+static void sig_term(int sig)
+{
+	g_main_loop_quit(main_loop);
+}
+
 int main(int argc, char *argv[])
 {
 	GOptionContext *context;
@@ -174,6 +191,10 @@ int main(int argc, char *argv[])
 	}
 
 	g_option_context_free(context);
+
+	signal(SIGTERM, sig_term);
+	signal(SIGINT, sig_term);
+	main_loop = g_main_loop_new(NULL, FALSE);
 
 	sock = unix_connect();
 	if (sock == -1) {
@@ -198,6 +219,9 @@ int main(int argc, char *argv[])
 		printf("Unsubscribing node ...\n");
 		err = cmd_unsubscribe();
 	}
+
+	g_main_loop_run(main_loop);
+	g_main_loop_unref(main_loop);
 
 	printf("Exiting\n");
 
