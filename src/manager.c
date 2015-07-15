@@ -96,7 +96,7 @@ static void unix_io_destroy(gpointer user_data)
 	 * call signoff & unref the GIOChannel.
 	 */
 	sock = g_io_channel_unix_get_fd(watch->proto_io);
-	proto_ops->signoff(sock);
+	proto_ops->close(sock);
 	g_io_channel_unref(watch->proto_io);
 
 	if (watch->proto_id)
@@ -154,9 +154,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	unix_io = g_io_channel_unix_new(unix_sock);
 	g_io_channel_set_close_on_unref(unix_io, TRUE);
 
-	/* TODO: handle requests */
-
-	proto_sock = proto_ops->signup();
+	proto_sock = proto_ops->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
 	g_io_channel_set_close_on_unref(proto_io, TRUE);
 

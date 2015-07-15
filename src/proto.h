@@ -29,15 +29,13 @@
 /* Node operations */
 struct proto_ops {
 
-	/*
-	 * Sign-up and sign-in returns a file descriptor
-	 * representing the connection to the service backend
-	 */
-	int (*signup) (void);
-	int (*signin) (const char *token);
+	/* Abstraction for connect & close/sign-off */
+	int (*connect) (void);
+	void (*close) (int sock);
 
-	/* Abstraction for close */
-	void (*signoff) (int sock);
+	/* Abstraction for session establishment or registration */
+	int (*signup) (int sock);
+	int (*signin) (int sock, const char *token);
 
 	/* Low level communication abstraction */
 	ssize_t (*send) (int sock, const uint8_t *buf, size_t count);

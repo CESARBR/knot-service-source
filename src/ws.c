@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <errno.h>
 
 #include <libwebsockets.h>
 
@@ -126,7 +127,7 @@ static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
 	}
 }
 
-static int ws_signup(void)
+static int ws_connect(void)
 {
 	struct libwebsocket *ws;
 	gboolean use_ssl = FALSE;
@@ -150,21 +151,27 @@ static int ws_signup(void)
 	return sock;
 }
 
-static int ws_signin(const char *token)
-{
-	return 0;
-}
-
-static void ws_signoff(int sock)
+static void ws_close(int sock)
 {
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
 		printf("Removing key: sock %d not found!\n", sock);
 }
 
+static int ws_signup(int sock)
+{
+	return -ENOSYS;
+}
+
+static int ws_signin(int sock, const char *token)
+{
+	return -ENOSYS;
+}
+
 static struct proto_ops ops = {
+	.connect = ws_connect,
+	.close = ws_close,
 	.signup = ws_signup,
 	.signin = ws_signin,
-	.signoff= ws_signoff,
 };
 
 static int callback_lws_default(struct libwebsocket_context * this,

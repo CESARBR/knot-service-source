@@ -43,7 +43,7 @@
 
 static struct in_addr host_addr;
 
-static int http_connect(void)
+static int socket_connect(void)
 {
 	struct sockaddr_in server;
 	int sock, err;
@@ -75,7 +75,7 @@ static int http_connect(void)
 	return sock;
 }
 
-static int http_signup(void)
+static int http_connect(void)
 {
 	int sock;
 	ssize_t nbytes;
@@ -85,7 +85,7 @@ static int http_signup(void)
 		       "Content-Length: 0\r\n\n";
 	char buffer[1024];
 
-	sock = http_connect();
+	sock = socket_connect();
 	if (sock < 0)
 		return sock;
 
@@ -112,21 +112,26 @@ static int http_signup(void)
 	return sock;
 }
 
-static int http_signin(const char *token)
+static int http_signup(int sock)
 {
-
-	return 0;
+	return -ENOSYS;
 }
 
-static void http_signoff(int sock)
+static int http_signin(int sock, const char *token)
+{
+	return -ENOSYS;
+}
+
+static void http_close(int sock)
 {
 
 }
 
 static struct proto_ops ops = {
+	.connect = http_connect,
+	.close = http_close,
 	.signup = http_signup,
 	.signin = http_signin,
-	.signoff= http_signoff,
 };
 
 int http_register(void)
