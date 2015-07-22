@@ -54,11 +54,12 @@ static struct proto_ops *proto_ops;
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
+	struct watch_pair *watch = user_data;
 	struct iovec iov[2];
 	knot_header hdr;
 	uint8_t payload[128];
 	ssize_t nbytes;
-	int sock, err;
+	int sock, proto_sock, err = 0;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
 		return FALSE;
@@ -78,6 +79,19 @@ static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
 	}
 
 	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr.opcode, hdr.len);
+
+	proto_sock = g_io_channel_unix_get_fd(watch->proto_io);
+	switch (hdr.opcode) {
+	case KNOT_OP_REGISTER:
+		err = proto_ops->signup(proto_sock);
+		break;
+	default:
+		/* TODO: reply unknown command */
+		break;
+	}
+
+	if (err)
+		printf("KNOT IoT proto error: %s(%d)\n", strerror(err), err);
 
 	return TRUE;
 }
