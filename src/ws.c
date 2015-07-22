@@ -40,6 +40,13 @@
 struct libwebsocket_context *context;
 static GHashTable *wstable;
 
+static gboolean timeout_ws(gpointer user_data)
+{
+	libwebsocket_service(context, 0);
+
+	return TRUE;
+}
+
 static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
 {
 	switch (reason) {
@@ -130,23 +137,27 @@ static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
 static int ws_connect(void)
 {
 	struct libwebsocket *ws;
-	gboolean use_ssl = FALSE;
+	gboolean use_ssl = FALSE; /* wss */
 	const char *address = "meshblu.octoblu.com";
 	int sock, port = 80;
 
 	ws = libwebsocket_client_connect(context, address, port,
 					 use_ssl, "/ws/v2", address,
-					 "origin", NULL, -1);
+					 NULL, NULL, -1);
 
-	/*
-	 * FIXME: Improve socket tracking. If sock is being returned
-	 * to sign-up caller, GIOChannel ref/unref mechanism must be
-	 * used to automatically close the socket when the last
-	 * reference is dropped.
-	 */
+	if (ws == NULL) {
+		int err = errno;
+		printf("libwebsocket_client_connect(): %s(%d)\n",
+							strerror(err), err);
+		return -err;
+	}
+
 	sock = libwebsocket_get_socket_fd(ws);
 
 	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
+
+	/* FIXME: Investigate alternatives for libwebsocket_service() */
+	g_timeout_add_seconds(1, timeout_ws, NULL);
 
 	return sock;
 }
@@ -174,14 +185,15 @@ static struct proto_ops ops = {
 	.signin = ws_signin,
 };
 
-static int callback_lws_default(struct libwebsocket_context * this,
+static int callback_lws_http(struct libwebsocket_context *this,
 			       struct libwebsocket *wsi,
 			       enum libwebsocket_callback_reasons reason,
 			       void *user, void *in, size_t len)
 {
 
-	printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__, reason,
-						lws_reason2str(reason));
+	if (reason != LWS_CALLBACK_GET_THREAD_ID)
+		printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__,
+					reason, lws_reason2str(reason));
 
 	switch (reason) {
 	case LWS_CALLBACK_CLOSED:
@@ -205,8 +217,8 @@ static int callback_lws_default(struct libwebsocket_context * this,
 static struct libwebsocket_protocols protocols[] = {
 
 	{
-		"default",
-		callback_lws_default,
+		"http-only",
+		callback_lws_http,
 		0, 0, 0, NULL, NULL, 0
 	},
 	{
@@ -224,6 +236,7 @@ int ws_register(void)
 	info.gid = -1;
 	info.uid = -1;
 	info.protocols = protocols;
+	info.extensions = libwebsocket_get_internal_extensions();
 
 	context = libwebsocket_create_context(&info);
 
