@@ -145,7 +145,7 @@ static int ws_signup(void)
 	 */
 	sock = libwebsocket_get_socket_fd(ws);
 
-	g_hash_table_insert(wstable, &sock, ws);
+	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
 
 	return sock;
 }
@@ -157,7 +157,8 @@ static int ws_signin(const char *token)
 
 static void ws_signoff(int sock)
 {
-	g_hash_table_remove(wstable, &sock);
+	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
+		printf("Removing key: sock %d not found!\n", sock);
 }
 
 static struct proto_ops ops = {
