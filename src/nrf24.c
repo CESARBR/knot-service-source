@@ -29,19 +29,103 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <linux/spi/spidev.h>
 
 #include "node.h"
 
+/* TODO: Use GKeyFile to read the device path, or bus & chip select */
+static const char *spidevpath = "/dev/spidev0.0";
+static int spifd;
+
 static int nrf24_probe(void)
 {
-	return -ENOSYS;
+	int err;
+
+	/*
+	 * TODO: stat() of the available path. Path of Beagle Bone Black &
+	 * Raspiberry are different
+	 */
+	spifd = open(spidevpath, O_RDWR | O_CLOEXEC);
+	if (spifd == -1) {
+		err = errno;
+		printf("%s open(): %s(%d)\n", spidevpath,
+					strerror(err), err);
+		return -err;
+	}
+
+	err = ioctl(spifd, SPI_IOC_WR_MODE, SPI_MODE_0);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_WR_MODE): %s(%d)\n", spidevpath,
+							strerror(err), err);
+		goto done;
+	}
+
+	err = ioctl(spifd, SPI_IOC_RD_MODE, SPI_MODE_0);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_RD_MODE): %s(%d)\n", spidevpath,
+							strerror(err), err);
+		goto done;
+	}
+
+	/* FIXME: Use macro of config file - 8bits */
+	err = ioctl(spifd, SPI_IOC_WR_BITS_PER_WORD, 0x08);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_WR_BITS_PER_WORD): %s(%d)\n",
+						spidevpath, strerror(err), err);
+		goto done;
+	}
+
+	/* FIXME: Use macro of config file - 8bits */
+	err = ioctl(spifd, SPI_IOC_RD_BITS_PER_WORD, 0x08);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_RD_BITS_PER_WORD): %s(%d)\n",
+						spidevpath, strerror(err), err);
+		goto done;
+	}
+
+	/* FIXME: Use macro of config file - 8Mhz */
+	err = ioctl(spifd, SPI_IOC_WR_MAX_SPEED_HZ, 8000000);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_WR_MAX_SPEED_HZ): %s(%d)\n",
+				spidevpath, strerror(err), err);
+		goto done;
+	}
+
+	/* FIXME: Use macro of config file - 8Mhz */
+	err = ioctl(spifd, SPI_IOC_RD_MAX_SPEED_HZ, 8000000);
+	if (err < 0) {
+		err = errno;
+		printf("%s ioctl(SPI_IOC_WD_MAX_SPEED_HZ): %s(%d)\n",
+				spidevpath, strerror(err), err);
+		goto done;
+	}
+
+	return 0;
+
+done:
+	close(spifd);
+
+	return -err;
 }
 
 static void nrf24_remove(void)
 {
 
+	if (spifd)
+		close(spifd);
 }
 
 static int nrf24_listen(void)
