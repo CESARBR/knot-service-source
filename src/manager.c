@@ -50,7 +50,7 @@ static unsigned int server_watch_id;
 static struct proto_ops *proto_ops;
 static struct node_ops *node_ops;
 
-static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
+static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
 	struct watch_pair *watch = user_data;
@@ -95,7 +95,7 @@ static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-static void unix_io_destroy(gpointer user_data)
+static void node_io_destroy(gpointer user_data)
 {
 
 	struct watch_pair *watch = user_data;
@@ -147,25 +147,27 @@ static void proto_io_destroy(gpointer user_data)
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
-	GIOChannel *unix_io, *proto_io;
-	int unix_sock, srv_sock, proto_sock;
+	struct node_ops *node_ops = user_data;
+	GIOChannel *node_io, *proto_io;
+	int sockfd, srv_sock, proto_sock;
 	GIOCondition watch_cond;
 	struct watch_pair *watch;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
 
-	/* TODO: accept */
-	printf("TODO: accepting ...\n");
-
 	srv_sock = g_io_channel_unix_get_fd(io);
 
-	unix_sock = accept(srv_sock, NULL, NULL);
-	if (unix_sock < 0)
+	printf("%p accept()\n", node_ops);
+	sockfd = node_ops->accept(srv_sock);
+	if (sockfd < 0) {
+		printf("%p accept(): %s(%d)\n", node_ops,
+					strerror(-sockfd), -sockfd);
 		return FALSE;
+	}
 
-	unix_io = g_io_channel_unix_new(unix_sock);
-	g_io_channel_set_close_on_unref(unix_io, TRUE);
+	node_io = g_io_channel_unix_new(sockfd);
+	g_io_channel_set_close_on_unref(node_io, TRUE);
 
 	proto_sock = proto_ops->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
@@ -174,13 +176,13 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	watch = g_new0(struct watch_pair, 1);
 	/* Watch for unix socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN;
-	watch->radio_id = g_io_add_watch_full(unix_io,
+	watch->radio_id = g_io_add_watch_full(node_io,
 				G_PRIORITY_DEFAULT, watch_cond,
-				unix_io_watch, watch,
-				unix_io_destroy);
+				node_io_watch, watch,
+				node_io_destroy);
 
 	/* Keep only one ref: GIOChannel watch */
-	g_io_channel_unref(unix_io);
+	g_io_channel_unref(node_io);
 
 	/* Watch for TCP socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
@@ -222,7 +224,9 @@ int manager_start(void)
 	server_io = g_io_channel_unix_new(sock);
 	g_io_channel_set_close_on_unref(server_io, TRUE);
 	g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
-	server_watch_id = g_io_add_watch(server_io, cond, accept_cb, NULL);
+
+	/* Use node_ops as parameter to allow multi drivers */
+	server_watch_id = g_io_add_watch(server_io, cond, accept_cb, node_ops);
 	g_io_channel_unref(server_io);
 
 	return 0;

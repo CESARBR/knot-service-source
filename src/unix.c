@@ -77,13 +77,24 @@ static int unix_listen(void)
 	return sock;
 }
 
+static int unix_accept(int srv_sockfd)
+{
+	int sockfd;
+
+	sockfd = accept(srv_sockfd, NULL, NULL);
+	if (sockfd == -1)
+		return -errno;
+
+	return sockfd;
+}
+
 static struct node_ops unix_ops = {
 	.name = "Unix",
 	.probe = unix_probe,
 	.remove = unix_remove,
 
 	.listen = unix_listen,
-	.accept = NULL,
+	.accept = unix_accept,
 	.recv = NULL,
 	.send = NULL
 };
