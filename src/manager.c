@@ -37,6 +37,7 @@
 #include <glib.h>
 #include <knot/proto.h>
 
+#include "node.h"
 #include "proto.h"
 
 /* Abstract unit socket namespace */
@@ -50,6 +51,7 @@ struct watch_pair {
 
 static unsigned int server_watch_id;
 static struct proto_ops *proto_ops;
+static struct node_ops *node_ops;
 
 static gboolean unix_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
@@ -260,4 +262,23 @@ int proto_ops_register(struct proto_ops *ops)
 void proto_ops_unregister(struct proto_ops *ops)
 {
 
+}
+
+int node_ops_register(struct node_ops *ops)
+{
+	/*
+	 * At the moment only onde instance is supported. The
+	 * ideia is try to support multiple radio technologies and
+	 * even proxy for any socket based communication. eg: Proxy
+	 * for external incoming connections, connecting it to Meshblu
+	 * or other backends.
+	 */
+	node_ops = ops;
+
+	return 0;
+}
+
+void node_ops_unregister(struct node_ops *ops)
+{
+	node_ops = NULL;
 }

@@ -48,3 +48,6 @@ struct node_ops {
  * they can be alternatives to integrate to glib main loop or other
  * event loop system.
  */
+
+int node_ops_register(struct node_ops *ops);
+void node_ops_unregister(struct node_ops *ops);
