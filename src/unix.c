@@ -26,31 +26,81 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * This 'driver' intends to be an abstraction for Radio technologies or
- * proxy for other services using TCP or any socket based communication.
- */
-struct node_ops {
-	const char *name;
-	int (*probe) (void);
-	void (*remove) (void);
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
-	int (*listen) (void); /* Enable incoming connections */
-	int (*accept) (int srv_sockfd); /* Returns a 'pollable' FD */
-	ssize_t (*recv) (int sockfd, void *buffer, size_t len);
-	ssize_t (*send) (int sockfd, const void *buffer, size_t len);
+
+#include "node.h"
+
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET	"knot"
+
+static int unix_probe(void)
+{
+
+	return 0;
+}
+
+static void unix_remove(void)
+{
+
+}
+
+static int unix_listen(void)
+{
+	int err, sock;
+	struct sockaddr_un addr;
+
+	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (sock < 0)
+		return -errno;
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
+	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		err = -errno;
+		close(sock);
+		return err;
+	}
+
+	if (listen(sock, 1) == -1) {
+		err = -errno;
+		close(sock);
+		return err;
+	}
+
+	return sock;
+}
+
+static struct node_ops unix_ops = {
+	.name = "Unix",
+	.probe = unix_probe,
+	.remove = unix_remove,
+
+	.listen = unix_listen,
+	.accept = NULL,
+	.recv = NULL,
+	.send = NULL
 };
 
 /*
- * For NRF24L01, there is only one file descriptor associated with
- * the SPI. In this case, sockfd can be just an integer used to map
- * internally the clients. Another approach are eventfd or socketpair,
- * they can be alternatives to integrate to glib main loop or other
- * event loop system.
+ * The following functions MAY be implemented as plugins
+ * initialization functions, avoiding function calls such
+ * as manager@manager_start()->node@node_init()->
+ * manager@node_ops_register()->node@node_probe()
  */
+int node_init(void)
+{
 
-int node_ops_register(struct node_ops *ops);
-void node_ops_unregister(struct node_ops *ops);
+	return node_ops_register(&unix_ops);
+}
 
-int node_init(void);
-void node_exit(void);
+void node_exit(void)
+{
+
+}

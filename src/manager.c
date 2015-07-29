@@ -40,9 +40,6 @@
 #include "node.h"
 #include "proto.h"
 
-/* Abstract unit socket namespace */
-#define KNOT_UNIX_SOCKET	"knot"
-
 struct watch_pair {
 	unsigned int radio_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
@@ -200,49 +197,43 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 int manager_start(void)
 {
-	int err, sock;
-	GIOCondition cond;
+	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
-	struct sockaddr_un addr;
+	int err, sock;
 
-	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	/*
+	 * TODO: implement a plugin based approach to avoid
+	 * potential 'reentrant' function calls.
+	 *
+	 * 'listen' callback must be called for all node_ops registered
+	 */
+	err = node_init();
+
+	node_ops->probe();
+
+	sock = node_ops->listen();
 	if (sock < 0) {
-		err = -errno;
-		goto done;
-	}
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
-	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
-		close(sock);
-		err = -errno;
-		goto done;
+		err = sock;
+		printf("%p listen(): %s(%d)\n", node_ops,
+						strerror(-err), -err);
+		return err;
 	}
 
 	server_io = g_io_channel_unix_new(sock);
 	g_io_channel_set_close_on_unref(server_io, TRUE);
 	g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
-
-	if (listen(sock, 1) == -1) {
-		g_io_channel_unref(server_io);
-		err = -errno;
-		goto done;
-	}
-
-	cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	server_watch_id = g_io_add_watch(server_io, cond, accept_cb, NULL);
 	g_io_channel_unref(server_io);
 
-	err = 0;
-
-done:
-	return err;
+	return 0;
 }
 
 void manager_stop(void)
 {
+	node_ops->remove();
+
+	node_exit();
+
 	if (server_watch_id)
 		g_source_remove(server_watch_id);
 }
