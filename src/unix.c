@@ -88,6 +88,11 @@ static int unix_accept(int srv_sockfd)
 	return sockfd;
 }
 
+static ssize_t unix_recv(int sockfd, void *buffer, size_t len)
+{
+	return recv(sockfd, buffer, len, 0);
+}
+
 static struct node_ops unix_ops = {
 	.name = "Unix",
 	.probe = unix_probe,
@@ -95,7 +100,7 @@ static struct node_ops unix_ops = {
 
 	.listen = unix_listen,
 	.accept = unix_accept,
-	.recv = NULL,
+	.recv = unix_recv,
 	.send = NULL
 };
 

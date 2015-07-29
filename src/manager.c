@@ -53,10 +53,10 @@ static struct node_ops *node_ops;
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
+	/* TODO: node_ops needs to be a parameter to allow multi drivers */
 	struct watch_pair *watch = user_data;
-	struct iovec iov[2];
-	knot_header hdr;
-	uint8_t payload[128];
+	uint8_t dgram[128];
+	const knot_header *hdr = (const knot_header *) dgram;
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -65,22 +65,17 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	iov[0].iov_base = &hdr;
-	iov[0].iov_len = sizeof(hdr);
-	iov[1].iov_base = payload;
-	iov[1].iov_len = sizeof(payload);
-
-	nbytes = readv(sock, iov, 2);
+	nbytes = node_ops->recv(sock, dgram, sizeof(dgram));
 	if (nbytes < 0) {
 		err = errno;
 		printf("readv(): %s(%d)\n", strerror(err), err);
 		return FALSE;
 	}
 
-	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr.opcode, hdr.len);
+	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr->opcode, hdr->len);
 
 	proto_sock = g_io_channel_unix_get_fd(watch->proto_io);
-	switch (hdr.opcode) {
+	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
 		err = proto_ops->signup(proto_sock);
 		break;
