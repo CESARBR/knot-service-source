@@ -39,6 +39,7 @@
 
 #include "node.h"
 #include "proto.h"
+#include "manager.h"
 
 struct watch_pair {
 	unsigned int radio_id;	/* Radio event source */

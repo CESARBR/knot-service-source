@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ -f config.status ]; then
+	make maintainer-clean
+fi
+
+./bootstrap && \
+    ./configure --enable-debug \
+		--prefix=/usr \
+		--sysconfdir=/etc $*
