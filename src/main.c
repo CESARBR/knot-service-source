@@ -35,7 +35,6 @@
 #include <glib.h>
 
 #include "manager.h"
-#include "ws.h"
 #include "http.h"
 
 static GMainLoop *main_loop;
@@ -74,16 +73,18 @@ int main(int argc, char *argv[])
 
 	g_option_context_free(context);
 
+	if (strcmp(opt_proto, "http") != 0) {
+		printf("IoT protocol not supported\n");
+		return 0;
+	}
+
 	signal(SIGTERM, sig_term);
 	signal(SIGINT, sig_term);
 
 	main_loop = g_main_loop_new(NULL, FALSE);
 
 	/* FIXME: Use a better mechanism to select dynamically protos */
-	if (strcmp(opt_proto, "http") == 0)
-		http_register();
-	else
-		ws_register();
+	http_register();
 
 	err = manager_start();
 	if (err < 0) {
@@ -95,10 +96,7 @@ int main(int argc, char *argv[])
 
 	g_main_loop_unref(main_loop);
 
-	if (strcmp(opt_proto, "http") == 0)
-		http_unregister();
-	else
-		ws_unregister();
+	http_unregister();
 
 	manager_stop();
 
