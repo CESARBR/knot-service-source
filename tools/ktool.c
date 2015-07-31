@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
 {
 	GOptionContext *context;
 	GError *gerr = NULL;
-	int err;
+	int err = 0;
 
 	printf("KNOT Tool\n");
 
