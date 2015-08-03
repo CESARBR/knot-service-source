@@ -60,7 +60,7 @@ static ssize_t nrf24_send(int sockfd, const void *buffer, size_t len)
 	return -ENOSYS;
 }
 
-static struct node_ops nrf24_ops = {
+struct node_ops nrf24_ops = {
 	.name = "Radio Head: nRF24",
 	.probe = nrf24_probe,
 	.remove = nrf24_remove,
@@ -70,18 +70,3 @@ static struct node_ops nrf24_ops = {
 	.recv = nrf24_recv,
 	.send = nrf24_send
 };
-
-/*
- * The following functions MAY be implemented as plugins
- * initialization functions, avoiding function calls such
- * as manager@manager_start()->node@node_init()->
- * manager@node_ops_register()->node@node_probe()
- */
-int node_init(void)
-{
-	return node_ops_register(&nrf24_ops);
-}
-
-void node_exit(void)
-{
-}

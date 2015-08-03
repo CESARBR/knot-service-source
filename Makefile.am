@@ -1,17 +1,20 @@
 AM_MAKEFLAGS = --no-print-directory
 
 include_HEADERS =
+modules_sources =
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
 libexec_PROGRAMS = src/knotd tools/ktool
 
+include Makefile.modules
+
 src_knotd_SOURCES = src/main.c \
 			src/manager.h src/manager.c \
 			src/proto.h src/node.h \
 			src/http.h src/http.c \
-			src/unix.c
+			$(modules_sources)
 
 src_knotd_LDADD = @GLIB_LIBS@
 src_knotd_LDFLAGS = $(AM_LDFLAGS)

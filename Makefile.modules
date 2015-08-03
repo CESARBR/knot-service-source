@@ -1,0 +1,13 @@
+# Target: Raspberry
+# nRF24L01 module for Raspberry
+# Wrapper for RadioHead RH_RF24 class
+modules_sources += src/rh_nrf24.c
+
+# Target: Raspberry and x86
+# TCP module for Linux
+# Wrapper for RadioHead RH_TCP class
+modules_sources += src/rh_tcp.c
+
+# Target: Raspberry and x86
+# Similar to RH_TCP. Use unix socket instead of real hw
+modules_sources += src/unix.c

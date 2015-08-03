@@ -165,11 +165,3 @@ static struct node_ops nrf24_ops = {
  * as manager@manager_start()->node@node_init()->
  * manager@node_ops_register()->node@node_probe()
  */
-int node_init(void)
-{
-	return node_ops_register(&nrf24_ops);
-}
-
-void node_exit(void)
-{
-}

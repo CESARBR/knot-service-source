@@ -98,7 +98,7 @@ static ssize_t unix_send(int sockfd, const void *buffer, size_t len)
 	return send(sockfd, buffer, len, 0);
 }
 
-static struct node_ops unix_ops = {
+struct node_ops unix_ops = {
 	.name = "Unix",
 	.probe = unix_probe,
 	.remove = unix_remove,
@@ -108,20 +108,3 @@ static struct node_ops unix_ops = {
 	.recv = unix_recv,
 	.send = unix_send
 };
-
-/*
- * The following functions MAY be implemented as plugins
- * initialization functions, avoiding function calls such
- * as manager@manager_start()->node@node_init()->
- * manager@node_ops_register()->node@node_probe()
- */
-int node_init(void)
-{
-
-	return node_ops_register(&unix_ops);
-}
-
-void node_exit(void)
-{
-
-}

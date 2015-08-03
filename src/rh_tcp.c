@@ -60,7 +60,7 @@ static ssize_t tcp_send(int sockfd, const void *buffer, size_t len)
 	return -ENOSYS;
 }
 
-static struct node_ops tcp_ops = {
+struct node_ops tcp_ops = {
 	.name = "Radio Head: TCP",
 	.probe = tcp_probe,
 	.remove = tcp_remove,
@@ -70,18 +70,3 @@ static struct node_ops tcp_ops = {
 	.recv = tcp_recv,
 	.send = tcp_send
 };
-
-/*
- * The following functions MAY be implemented as plugins
- * initialization functions, avoiding function calls such
- * as manager@manager_start()->node@node_init()->
- * manager@node_ops_register()->node@node_probe()
- */
-int node_init(void)
-{
-	return node_ops_register(&tcp_ops);
-}
-
-void node_exit(void)
-{
-}

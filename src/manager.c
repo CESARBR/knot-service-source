@@ -45,17 +45,33 @@ struct watch_pair {
 	unsigned int radio_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
+	struct node_ops *ops;
 };
 
 static unsigned int server_watch_id;
 static struct proto_ops *proto_ops;
-static struct node_ops *node_ops;
+
+/* TODO: After adding buildroot, investigate if it is possible
+ * to add macros for conditional builds, or a dynamic builtin
+ * plugin mechanism.
+ */
+extern struct node_ops unix_ops;
+extern struct node_ops nrf24_ops;
+extern struct node_ops tcp_ops;
+
+static struct node_ops *node_ops[] = {
+	&unix_ops,
+	&nrf24_ops,
+	&tcp_ops,
+	NULL
+};
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
 	/* TODO: node_ops needs to be a parameter to allow multi drivers */
 	struct watch_pair *watch = user_data;
+	struct node_ops *ops = watch->ops;
 	uint8_t dgram[128];
 	const knot_header *hdr = (const knot_header *) dgram;
 	ssize_t nbytes;
@@ -66,7 +82,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	nbytes = node_ops->recv(sock, dgram, sizeof(dgram));
+	nbytes = ops->recv(sock, dgram, sizeof(dgram));
 	if (nbytes < 0) {
 		err = errno;
 		printf("readv(): %s(%d)\n", strerror(err), err);
@@ -143,7 +159,7 @@ static void proto_io_destroy(gpointer user_data)
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
-	struct node_ops *node_ops = user_data;
+	struct node_ops *ops = user_data;
 	GIOChannel *node_io, *proto_io;
 	int sockfd, srv_sock, proto_sock;
 	GIOCondition watch_cond;
@@ -154,10 +170,10 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
-	printf("%p accept()\n", node_ops);
-	sockfd = node_ops->accept(srv_sock);
+	printf("%p accept()\n", ops);
+	sockfd = ops->accept(srv_sock);
 	if (sockfd < 0) {
-		printf("%p accept(): %s(%d)\n", node_ops,
+		printf("%p accept(): %s(%d)\n", ops,
 					strerror(-sockfd), -sockfd);
 		return FALSE;
 	}
@@ -190,6 +206,9 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	/* Keep one reference to call sign-off */
 	watch->proto_io = proto_io;
 
+	/* TODO: Create refcount */
+	watch->ops = ops;
+
 	return TRUE;
 }
 
@@ -197,42 +216,45 @@ int manager_start(void)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
-	int err, sock;
+	int err, sock, i;
 
-	/*
-	 * TODO: implement a plugin based approach to avoid
-	 * potential 'reentrant' function calls.
-	 *
-	 * 'listen' callback must be called for all node_ops registered
-	 */
-	err = node_init();
+	for (i = 0; node_ops[i]; i++) {
 
-	node_ops->probe();
+		printf("Probing %p: %s\n", node_ops[i], node_ops[i]->name);
 
-	sock = node_ops->listen();
-	if (sock < 0) {
-		err = sock;
-		printf("%p listen(): %s(%d)\n", node_ops,
+		if (node_ops[i]->probe() < 0)
+			continue;
+
+		sock = node_ops[i]->listen();
+		if (sock < 0) {
+			err = sock;
+			printf("%p listen(): %s(%d)\n", node_ops[i],
 						strerror(-err), -err);
-		return err;
+			node_ops[i]->remove();
+			continue;
+		}
+
+		server_io = g_io_channel_unix_new(sock);
+		g_io_channel_set_close_on_unref(server_io, TRUE);
+		g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
+
+		/* Use node_ops as parameter to allow multi drivers */
+		server_watch_id = g_io_add_watch(server_io, cond, accept_cb,
+								node_ops[i]);
+		g_io_channel_unref(server_io);
 	}
 
-	server_io = g_io_channel_unix_new(sock);
-	g_io_channel_set_close_on_unref(server_io, TRUE);
-	g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
-
-	/* Use node_ops as parameter to allow multi drivers */
-	server_watch_id = g_io_add_watch(server_io, cond, accept_cb, node_ops);
-	g_io_channel_unref(server_io);
 
 	return 0;
 }
 
 void manager_stop(void)
 {
-	node_ops->remove();
+	int i;
 
-	node_exit();
+	/* Remove only previously loaded modules */
+	for (i = 0; node_ops[i]; i++)
+		node_ops[i]->remove();
 
 	if (server_watch_id)
 		g_source_remove(server_watch_id);
@@ -253,23 +275,4 @@ int proto_ops_register(struct proto_ops *ops)
 void proto_ops_unregister(struct proto_ops *ops)
 {
 
-}
-
-int node_ops_register(struct node_ops *ops)
-{
-	/*
-	 * At the moment only onde instance is supported. The
-	 * ideia is try to support multiple radio technologies and
-	 * even proxy for any socket based communication. eg: Proxy
-	 * for external incoming connections, connecting it to Meshblu
-	 * or other backends.
-	 */
-	node_ops = ops;
-
-	return 0;
-}
-
-void node_ops_unregister(struct node_ops *ops)
-{
-	node_ops = NULL;
 }
