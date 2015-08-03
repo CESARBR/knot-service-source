@@ -5,6 +5,7 @@ if [ -f config.status ]; then
 fi
 
 ./bootstrap && \
-    ./configure --enable-debug \
+    ./configure --enable-maintainer-mode \
+		--enable-debug \
 		--prefix=/usr \
 		--sysconfdir=/etc $*
