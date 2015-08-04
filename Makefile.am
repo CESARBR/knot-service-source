@@ -2,6 +2,7 @@ AM_MAKEFLAGS = --no-print-directory
 
 include_HEADERS =
 modules_sources =
+modules_cflags =
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
@@ -18,7 +19,7 @@ src_knotd_SOURCES = src/main.c \
 
 src_knotd_LDADD = @GLIB_LIBS@
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS)
+src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
 tools_ktool_SOURCES = tools/ktool.c
 tools_ktool_LDADD = @GLIB_LIBS@

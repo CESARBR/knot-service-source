@@ -25,6 +25,9 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
 #include <stdio.h>
 #include <stdint.h>
@@ -56,13 +59,17 @@ static struct proto_ops *proto_ops;
  * plugin mechanism.
  */
 extern struct node_ops unix_ops;
+#ifdef HAVE_RADIOHEAD
 extern struct node_ops nrf24_ops;
 extern struct node_ops tcp_ops;
+#endif
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
+#ifdef HAVE_RADIOHEAD
 	&nrf24_ops,
 	&tcp_ops,
+#endif
 	NULL
 };
 

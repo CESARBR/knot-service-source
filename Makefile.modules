@@ -1,5 +1,14 @@
-# Target: Raspberry
-# nRF24L01 module for Raspberry
+# Target: Raspberry and x86
+# Similar to RH_TCP. Use unix socket instead of real hw
+modules_sources += src/unix.c
+
+if RADIOHEAD
+# Declare radio head preprocessor macro for conditional
+# build. See manager.c, node 'driver' array contains the
+# enabled drivers for the selected platform.
+modules_cflags += -DRADIOHEAD
+
+# Target: Raspberry# nRF24L01 module for Raspberry
 # Wrapper for RadioHead RH_RF24 class
 modules_sources += src/rh_nrf24.c
 
@@ -7,7 +16,4 @@ modules_sources += src/rh_nrf24.c
 # TCP module for Linux
 # Wrapper for RadioHead RH_TCP class
 modules_sources += src/rh_tcp.c
-
-# Target: Raspberry and x86
-# Similar to RH_TCP. Use unix socket instead of real hw
-modules_sources += src/unix.c
+endif

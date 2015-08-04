@@ -32,4 +32,14 @@ PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
 AC_SUBST(GLIB_CFLAGS)
 AC_SUBST(GLIB_LIBS)
 
+AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
+				[path to Radio Head directory]),
+					[path_radioheaddir=${withval}])
+if (test "${path_radioheaddir}"); then
+	AC_SUBST(RADIOHEADDIR, [${path_radioheaddir}])
+	AC_DEFINE([HAVE_RADIOHEAD],[1],[Enable radio head])
+fi
+
+AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
+
 AC_OUTPUT(Makefile)
