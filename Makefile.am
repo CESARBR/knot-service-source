@@ -14,7 +14,6 @@ include Makefile.modules
 src_knotd_SOURCES = src/main.c \
 			src/manager.h src/manager.c \
 			src/proto.h src/node.h \
-			src/http.h src/http.c \
 			$(modules_sources)
 
 src_knotd_LDADD = @GLIB_LIBS@

@@ -17,3 +17,6 @@ modules_sources += src/rh_nrf24.c
 # Wrapper for RadioHead RH_TCP class
 modules_sources += src/rh_tcp.c
 endif
+
+# IoT protocol: Meshblu HTTP/REST
+modules_sources += src/http.h src/http.c
