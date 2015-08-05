@@ -26,6 +26,11 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+struct json_buffer {
+	char *data;
+	size_t size;
+};
+
 /* Node operations */
 struct proto_ops {
 
@@ -38,8 +43,8 @@ struct proto_ops {
 	int (*signin) (int sock, const char *token);
 
 	/* Low level communication abstraction */
-	ssize_t (*send) (int sock, const uint8_t *buf, size_t count);
-	ssize_t (*recv) (int sock, uint8_t *buf, size_t count);
+	ssize_t (*send) (int sock, const uint8_t *json, size_t count);
+	int (*recv) (int sock, struct json_buffer *jbuf);
 };
 
 /* Used by the driver implementation */
