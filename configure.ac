@@ -38,6 +38,12 @@ PKG_CHECK_MODULES(CURL, libcurl,
 AC_SUBST(CURL_CFLAGS)
 AC_SUBST(CURL_LIBS)
 
+PKG_CHECK_MODULES(JSON, json-c,
+  [AC_DEFINE([HAVE_JSON],[1],[Use JSON])],
+  [AC_MSG_ERROR("json-c missing")])
+AC_SUBST(JSON_CFLAGS)
+AC_SUBST(JSON_LIBS)
+
 AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
 				[path to Radio Head directory]),
 					[path_radioheaddir=${withval}])
