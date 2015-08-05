@@ -39,7 +39,7 @@ struct proto_ops {
 	void (*close) (int sock);
 
 	/* Abstraction for session establishment or registration */
-	int (*signup) (int sock);
+	int (*signup) (int sock, struct json_buffer *jbuf);
 	int (*signin) (int sock, const char *token);
 
 	/* Low level communication abstraction */

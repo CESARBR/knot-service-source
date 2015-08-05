@@ -81,6 +81,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	struct node_ops *ops = watch->ops;
 	uint8_t dgram[128];
 	const knot_header *hdr = (const knot_header *) dgram;
+	struct json_buffer jbuf;
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -101,7 +102,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	proto_sock = g_io_channel_unix_get_fd(watch->proto_io);
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
-		err = proto_ops->signup(proto_sock);
+		err = proto_ops->signup(proto_sock, &jbuf);
 		break;
 	default:
 		/* TODO: reply unknown command */

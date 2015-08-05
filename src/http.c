@@ -75,7 +75,7 @@ static int http_connect(void)
 	return sock;
 }
 
-static int http_signup(int sock)
+static int http_signup(int sock, struct json_buffer *jbuf)
 {
 	return -ENOSYS;
 }
