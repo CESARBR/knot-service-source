@@ -32,6 +32,12 @@ PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
 AC_SUBST(GLIB_CFLAGS)
 AC_SUBST(GLIB_LIBS)
 
+PKG_CHECK_MODULES(CURL, libcurl,
+  [AC_DEFINE([HAVE_CURL],[1],[Use CURL])],
+  [AC_MSG_ERROR("Curl missing")])
+AC_SUBST(CURL_CFLAGS)
+AC_SUBST(CURL_LIBS)
+
 AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
 				[path to Radio Head directory]),
 					[path_radioheaddir=${withval}])
