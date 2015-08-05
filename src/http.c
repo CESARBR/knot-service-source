@@ -31,17 +31,38 @@
 #include <errno.h>
 #include <string.h>
 #include <netdb.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <curl/curl.h>
 
 #include "proto.h"
 #include "http.h"
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
+#define MESHBLU_URL		MESHBLU_HOST "/devices"
 
 static struct in_addr host_addr;
+
+static size_t write_cb(void *contents, size_t size, size_t nmemb,
+							void *user_data)
+{
+	struct json_buffer *jbuf = (struct json_buffer *) user_data;
+	size_t realsize = size * nmemb;
+
+	jbuf->data = (char *) realloc(jbuf->data, jbuf->size + realsize + 1);
+	if (jbuf->data == NULL) {
+		printf("Not enough memory\n");
+		return 0;
+	}
+
+	memcpy(jbuf->data + jbuf->size, contents, realsize);
+	jbuf->size += realsize;
+
+	return realsize;
+}
 
 static int http_connect(void)
 {
@@ -77,7 +98,25 @@ static int http_connect(void)
 
 static int http_signup(int sock, struct json_buffer *jbuf)
 {
-	return -ENOSYS;
+	CURL *curl;
+	CURLcode res;
+
+	curl = curl_easy_init();
+	if (curl == NULL)
+		return -ENOMEM;
+
+	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_URL);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "gateway");
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
+	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
+
+	res = curl_easy_perform(curl);
+
+	curl_easy_cleanup(curl);
+
+	return (res == CURLE_OK  ? 0 : -EIO);
 }
 
 static int http_signin(int sock, const char *token)

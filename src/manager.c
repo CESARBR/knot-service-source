@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <errno.h>
 #include <unistd.h>
+#include <stdlib.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -81,7 +83,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	struct node_ops *ops = watch->ops;
 	uint8_t dgram[128];
 	const knot_header *hdr = (const knot_header *) dgram;
-	struct json_buffer jbuf;
+	struct json_buffer jbuf = { .data = NULL, .size = 0 };
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -103,6 +105,8 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
 		err = proto_ops->signup(proto_sock, &jbuf);
+		printf("%s: %s\n", __PRETTY_FUNCTION__, jbuf.data);
+		free(jbuf.data);
 		break;
 	default:
 		/* TODO: reply unknown command */
