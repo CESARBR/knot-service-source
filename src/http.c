@@ -43,7 +43,7 @@
 
 static struct in_addr host_addr;
 
-static int socket_connect(void)
+static int http_connect(void)
 {
 	struct sockaddr_in server;
 	int sock, err;
@@ -71,43 +71,6 @@ static int socket_connect(void)
 		close(sock);
 		return -err;
 	}
-
-	return sock;
-}
-
-static int http_connect(void)
-{
-	int sock;
-	ssize_t nbytes;
-	char post[] = "POST /devices HTTP/1.1\n"			\
-		       "Host: meshblu.octoblu.com\n"			\
-		       "Content-Type: application/x-www-form-urlencoded\n" \
-		       "Content-Length: 0\r\n\n";
-	char buffer[1024];
-
-	sock = socket_connect();
-	if (sock < 0)
-		return sock;
-
-	/*
-	 * Create UUID and token. This is a testing purpose only.
-	 * FIXME: Add the proper calls to signup the Meshblu node.
-	 */
-
-	nbytes = send(sock, post, strlen(post), 0);
-
-	printf("Meshblu Request(%ld bytes):\n%s\n", nbytes, post);
-
-	memset(buffer, 0, sizeof(buffer));
-	nbytes = recv(sock, buffer, sizeof(buffer), 0);
-
-	printf("Meshblu Response:\n%s\n", buffer);
-
-	/*
-	 * At this point, UUID and token doesn't need to be exposed
-	 * externally. A hash table can be created here to map the
-	 * socket to the proper identification (UUID & token).
-	 */
 
 	return sock;
 }
