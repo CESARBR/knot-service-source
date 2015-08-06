@@ -172,12 +172,48 @@ static int http_get(int sock, const char *uuid, const char *token,
 	return (res == CURLE_OK  ? 0 : -EIO);
 }
 
+static int http_post(int sock, const char *uuid, const char *token,
+						const char *fields)
+{
+	char data_url[strlen(MESHBLU_DATA_URL) + 38];
+	char auth_uuid[55], auth_token[60];
+	struct curl_slist *headers = NULL;
+	CURL *curl;
+	CURLcode res;
+
+	curl = curl_easy_init();
+	if(curl == NULL)
+		return -ENOMEM;
+
+	snprintf(data_url, sizeof(data_url), "%s%s", MESHBLU_DATA_URL, uuid);
+	snprintf(auth_uuid, sizeof(auth_uuid), "meshblu_auth_uuid: %s", uuid);
+	snprintf(auth_token, sizeof(auth_token), "meshblu_auth_token:%s",
+									token);
+
+	headers = curl_slist_append(headers, auth_uuid);
+	headers = curl_slist_append(headers, auth_token);
+
+	curl_easy_setopt(curl, CURLOPT_URL, data_url);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
+
+	res = curl_easy_perform(curl);
+
+	curl_easy_cleanup(curl);
+	curl_slist_free_all(headers);
+
+	return (res == CURLE_OK  ? 0 : -EIO);
+}
+
 static struct proto_ops ops = {
 	.connect = http_connect,
 	.close = http_close,
 	.signup = http_signup,
 	.signin = http_signin,
 	.get = http_get,
+	.post = http_post,
 };
 
 int http_register(void)
