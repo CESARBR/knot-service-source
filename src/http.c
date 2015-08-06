@@ -41,8 +41,11 @@
 #include "proto.h"
 #include "http.h"
 
+#define UUID			"007ad6f6-b9d5-40c6-a705-a2b035305ece"
+#define TOKEN			"bdbe12f158ee95fb04ab92975ea7c3fc3ba597ab"
 #define MESHBLU_HOST		"meshblu.octoblu.com"
-#define MESHBLU_URL		MESHBLU_HOST "/devices"
+#define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
+#define MESHBLU_UUID_URL	MESHBLU_HOST "/data/" UUID
 
 static struct in_addr host_addr;
 
@@ -105,7 +108,7 @@ static int http_signup(int sock, struct json_buffer *jbuf)
 	if (curl == NULL)
 		return -ENOMEM;
 
-	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_URL);
+	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_DEV_URL);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "gateway");
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
@@ -129,11 +132,44 @@ static void http_close(int sock)
 
 }
 
+static int http_recv(int sock, struct json_buffer *jbuf)
+{
+	struct curl_slist *headers = NULL;
+	CURL *curl;
+	CURLcode res;
+
+	curl = curl_easy_init();
+	if (curl == NULL)
+		return -ENOMEM;
+
+	headers = curl_slist_append(headers, "Accept: application/json");
+	headers = curl_slist_append(headers, "Content-Type: application/json");
+	headers = curl_slist_append(headers, "charsets: utf-8");
+	headers = curl_slist_append(headers, "meshblu_auth_uuid:" UUID);
+	headers = curl_slist_append(headers, "meshblu_auth_token:" TOKEN);
+
+	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_UUID_URL);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
+	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
+
+	res = curl_easy_perform(curl);
+	curl_slist_free_all(headers);
+
+	curl_easy_cleanup(curl);
+
+	return (res == CURLE_OK  ? 0 : -EIO);
+}
+
 static struct proto_ops ops = {
 	.connect = http_connect,
 	.close = http_close,
 	.signup = http_signup,
 	.signin = http_signin,
+	.recv = http_recv,
 };
 
 int http_register(void)
