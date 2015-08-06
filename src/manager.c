@@ -38,6 +38,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <json-c/json.h>
 
 #include <glib.h>
 #include <knot/proto.h>
@@ -55,6 +56,8 @@ struct session {
 	unsigned int proto_id;	/* TCP/backend event source */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 	struct node_ops *ops;
+	char *uuid;
+	char *token;
 };
 
 static unsigned int server_watch_id;
@@ -78,6 +81,28 @@ static struct node_ops *node_ops[] = {
 #endif
 	NULL
 };
+
+static void parse_device_info(const char *json_str, struct session *session)
+{
+	json_object *jobj,*json_uuid, *json_token;
+	const char *uuid, *token;
+
+	jobj = json_tokener_parse(json_str);
+	if (jobj == NULL)
+		return;
+
+	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
+		return;
+
+	if (!json_object_object_get_ex(jobj, "token", &json_token))
+		return;
+
+	uuid = json_object_get_string(json_uuid);
+	token = json_object_get_string(json_token);
+
+	session->uuid = g_strdup(uuid);
+	session->token = g_strdup(token);
+}
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
@@ -110,6 +135,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	case KNOT_OP_REGISTER:
 		err = proto_ops->signup(proto_sock, &jbuf);
 		printf("%s: %s\n", __PRETTY_FUNCTION__, jbuf.data);
+		parse_device_info(jbuf.data, session);
 		free(jbuf.data);
 		break;
 	default:
@@ -142,6 +168,12 @@ static void node_io_destroy(gpointer user_data)
 
 	if (session->proto_id)
 		g_source_remove(session->proto_id);
+
+	if (session->token)
+		g_free(session->token);
+
+	if (session->uuid)
+		g_free(session->uuid);
 
 	g_free(session);
 }
