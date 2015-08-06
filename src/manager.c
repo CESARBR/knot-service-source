@@ -46,7 +46,11 @@
 #include "proto.h"
 #include "manager.h"
 
-struct watch_pair {
+/*
+ * Device session storing the connected
+ * device context: 'drivers' and file descriptors
+ */
+struct session {
 	unsigned int radio_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
@@ -79,8 +83,8 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
 	/* TODO: node_ops needs to be a parameter to allow multi drivers */
-	struct watch_pair *watch = user_data;
-	struct node_ops *ops = watch->ops;
+	struct session *session = user_data;
+	struct node_ops *ops = session->ops;
 	uint8_t dgram[128];
 	const knot_header *hdr = (const knot_header *) dgram;
 	struct json_buffer jbuf = { .data = NULL, .size = 0 };
@@ -101,7 +105,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr->opcode, hdr->len);
 
-	proto_sock = g_io_channel_unix_get_fd(watch->proto_io);
+	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
 		err = proto_ops->signup(proto_sock, &jbuf);
@@ -122,24 +126,24 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 static void node_io_destroy(gpointer user_data)
 {
 
-	struct watch_pair *watch = user_data;
+	struct session *session = user_data;
 	int sock;
 
 	/* Mark as removed */
-	watch->radio_id = 0;
+	session->radio_id = 0;
 
 	/*
 	 * When the protocol connection (backend) is dropped
 	 * call signoff & unref the GIOChannel.
 	 */
-	sock = g_io_channel_unix_get_fd(watch->proto_io);
+	sock = g_io_channel_unix_get_fd(session->proto_io);
 	proto_ops->close(sock);
-	g_io_channel_unref(watch->proto_io);
+	g_io_channel_unref(session->proto_io);
 
-	if (watch->proto_id)
-		g_source_remove(watch->proto_id);
+	if (session->proto_id)
+		g_source_remove(session->proto_id);
 
-	g_free(watch);
+	g_free(session);
 }
 
 static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
@@ -152,7 +156,7 @@ static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 
 static void proto_io_destroy(gpointer user_data)
 {
-	struct watch_pair *watch = user_data;
+	struct session *session = user_data;
 
 	/*
 	 * Remove Unix socket GIOChannel watch when protocol
@@ -162,10 +166,10 @@ static void proto_io_destroy(gpointer user_data)
 	 */
 
 	/* Mark protocol watch as removed */
-	watch->proto_id = 0;
+	session->proto_id = 0;
 
-	if (watch->radio_id)
-	    g_source_remove(watch->radio_id);
+	if (session->radio_id)
+	    g_source_remove(session->radio_id);
 }
 
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
@@ -175,7 +179,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	GIOChannel *node_io, *proto_io;
 	int sockfd, srv_sock, proto_sock;
 	GIOCondition watch_cond;
-	struct watch_pair *watch;
+	struct session *session;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
@@ -197,12 +201,12 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	proto_io = g_io_channel_unix_new(proto_sock);
 	g_io_channel_set_close_on_unref(proto_io, TRUE);
 
-	watch = g_new0(struct watch_pair, 1);
+	session = g_new0(struct session, 1);
 	/* Watch for unix socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN;
-	watch->radio_id = g_io_add_watch_full(node_io,
+	session->radio_id = g_io_add_watch_full(node_io,
 				G_PRIORITY_DEFAULT, watch_cond,
-				node_io_watch, watch,
+				node_io_watch, session,
 				node_io_destroy);
 
 	/* Keep only one ref: GIOChannel watch */
@@ -210,16 +214,16 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	/* Watch for TCP socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
-	watch->proto_id = g_io_add_watch_full(proto_io,
+	session->proto_id = g_io_add_watch_full(proto_io,
 				G_PRIORITY_DEFAULT, watch_cond,
-				proto_io_watch, watch,
+				proto_io_watch, session,
 				proto_io_destroy);
 
 	/* Keep one reference to call sign-off */
-	watch->proto_io = proto_io;
+	session->proto_io = proto_io;
 
 	/* TODO: Create refcount */
-	watch->ops = ops;
+	session->ops = ops;
 
 	return TRUE;
 }
