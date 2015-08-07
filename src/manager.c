@@ -107,7 +107,6 @@ static void parse_device_info(const char *json_str, struct session *session)
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
-	/* TODO: node_ops needs to be a parameter to allow multi drivers */
 	struct session *session = user_data;
 	struct node_ops *ops = session->ops;
 	uint8_t dgram[128];
