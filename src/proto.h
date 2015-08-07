@@ -45,7 +45,8 @@ struct proto_ops {
 	/* Low level communication abstraction */
 	ssize_t (*post) (int sock, const char *uuid, const char *token,
 					const uint8_t *json, size_t count);
-	int (*get) (int sock, struct json_buffer *jbuf);
+	int (*get) (int sock, const char *uuid, const char *token,
+						struct json_buffer *jbuf);
 };
 
 /* Used by the driver implementation */

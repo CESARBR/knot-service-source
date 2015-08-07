@@ -41,11 +41,9 @@
 #include "proto.h"
 #include "http.h"
 
-#define UUID			"007ad6f6-b9d5-40c6-a705-a2b035305ece"
-#define TOKEN			"bdbe12f158ee95fb04ab92975ea7c3fc3ba597ab"
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
-#define MESHBLU_UUID_URL	MESHBLU_HOST "/data/" UUID
+#define MESHBLU_DATA_URL	MESHBLU_HOST "/data/"
 
 static struct in_addr host_addr;
 
@@ -132,9 +130,12 @@ static void http_close(int sock)
 
 }
 
-static int http_get(int sock, struct json_buffer *jbuf)
+static int http_get(int sock, const char *uuid, const char *token,
+						struct json_buffer *jbuf)
 {
 	struct curl_slist *headers = NULL;
+	char auth_uuid[55], auth_token[60];
+	char data_url[strlen(MESHBLU_DATA_URL) + 38];
 	CURL *curl;
 	CURLcode res;
 
@@ -142,13 +143,20 @@ static int http_get(int sock, struct json_buffer *jbuf)
 	if (curl == NULL)
 		return -ENOMEM;
 
+	snprintf(auth_uuid, sizeof(auth_uuid),
+				"meshblu_auth_uuid:%s", uuid);
+	snprintf(auth_token, sizeof(auth_token),
+				"meshblu_auth_token:%s", token);
+	snprintf(data_url, sizeof(data_url),
+				"%s%s", MESHBLU_DATA_URL, uuid);
+
 	headers = curl_slist_append(headers, "Accept: application/json");
 	headers = curl_slist_append(headers, "Content-Type: application/json");
 	headers = curl_slist_append(headers, "charsets: utf-8");
-	headers = curl_slist_append(headers, "meshblu_auth_uuid:" UUID);
-	headers = curl_slist_append(headers, "meshblu_auth_token:" TOKEN);
+	headers = curl_slist_append(headers, auth_uuid);
+	headers = curl_slist_append(headers, auth_token);
 
-	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_UUID_URL);
+	curl_easy_setopt(curl, CURLOPT_URL, data_url);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
