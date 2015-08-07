@@ -43,7 +43,7 @@ struct proto_ops {
 	int (*signin) (int sock, const char *token);
 
 	/* Low level communication abstraction */
-	ssize_t (*send) (int sock, const uint8_t *json, size_t count);
+	ssize_t (*post) (int sock, const uint8_t *json, size_t count);
 	int (*get) (int sock, struct json_buffer *jbuf);
 };
 
