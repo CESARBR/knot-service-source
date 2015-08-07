@@ -132,7 +132,7 @@ static void http_close(int sock)
 
 }
 
-static int http_recv(int sock, struct json_buffer *jbuf)
+static int http_get(int sock, struct json_buffer *jbuf)
 {
 	struct curl_slist *headers = NULL;
 	CURL *curl;
@@ -169,7 +169,7 @@ static struct proto_ops ops = {
 	.close = http_close,
 	.signup = http_signup,
 	.signin = http_signin,
-	.recv = http_recv,
+	.get = http_get,
 };
 
 int http_register(void)
