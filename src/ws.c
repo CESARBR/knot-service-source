@@ -191,25 +191,8 @@ static int callback_lws_http(struct libwebsocket_context *this,
 			       void *user, void *in, size_t len)
 {
 
-	if (reason != LWS_CALLBACK_GET_THREAD_ID)
-		printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__,
-					reason, lws_reason2str(reason));
-
-	switch (reason) {
-	case LWS_CALLBACK_CLOSED:
-		break;
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-		break;
-	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-		break;
-	case LWS_CALLBACK_CLIENT_RECEIVE:
-		break;
-	case LWS_CALLBACK_CLIENT_WRITEABLE:
-		break;
-	/* TODO: Investigate other reasons that needs to be handled */
-	default:
-		break;
-	}
+	printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__,
+				      reason, lws_reason2str(reason));
 
 	return 0;
 }
