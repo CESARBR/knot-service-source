@@ -109,6 +109,9 @@ static int http_signup(int sock, struct json_buffer *jbuf)
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "gateway");
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+
+	/* TODO: make sure that it is smaller than KNOT timeout */
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
 
