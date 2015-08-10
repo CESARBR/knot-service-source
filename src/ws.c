@@ -35,7 +35,6 @@
 #include <glib.h>
 
 #include "proto.h"
-#include "ws.h"
 
 struct libwebsocket_context *context;
 static GHashTable *wstable;
@@ -168,7 +167,7 @@ static void ws_close(int sock)
 		printf("Removing key: sock %d not found!\n", sock);
 }
 
-static int ws_signup(int sock)
+static int ws_signup(int sock, struct json_buffer *jbuf)
 {
 	return -ENOSYS;
 }
@@ -177,13 +176,6 @@ static int ws_signin(int sock, const char *token)
 {
 	return -ENOSYS;
 }
-
-static struct proto_ops ops = {
-	.connect = ws_connect,
-	.close = ws_close,
-	.signup = ws_signup,
-	.signin = ws_signin,
-};
 
 static int callback_lws_http(struct libwebsocket_context *this,
 			       struct libwebsocket *wsi,
@@ -209,7 +201,7 @@ static struct libwebsocket_protocols protocols[] = {
 	}
 };
 
-int ws_register(void)
+static int ws_probe(void)
 {
 	struct lws_context_creation_info info;
 
@@ -225,14 +217,22 @@ int ws_register(void)
 
 	wstable = g_hash_table_new(g_direct_hash, g_direct_equal);
 
-	return proto_ops_register(&ops);
+	return 0;
 }
 
-void ws_unregister(void)
+static void ws_remove(void)
 {
 	g_hash_table_destroy(wstable);
 
 	libwebsocket_context_destroy(context);
-
-	proto_ops_unregister(&ops);
 }
+
+struct proto_ops proto_ws = {
+	.name = "ws",	/* websockets */
+	.probe = ws_probe,
+	.remove = ws_remove,
+	.connect = ws_connect,
+	.close = ws_close,
+	.signup = ws_signup,
+	.signin = ws_signin,
+};

@@ -44,6 +44,12 @@ PKG_CHECK_MODULES(JSON, json-c,
 AC_SUBST(JSON_CFLAGS)
 AC_SUBST(JSON_LIBS)
 
+PKG_CHECK_MODULES(WEBSOCKETS, libwebsockets,
+  [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
+  [websockets="no"])
+AC_SUBST(WEBSOCKETS_CFLAGS)
+AC_SUBST(WEBSOCKETS_LIBS)
+
 AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
 				[path to Radio Head directory]),
 					[path_radioheaddir=${withval}])
@@ -52,6 +58,7 @@ if (test "${path_radioheaddir}"); then
 	AC_DEFINE([HAVE_RADIOHEAD],[1],[Enable radio head])
 fi
 
+AM_CONDITIONAL(WEBSOCKETS, (test "${websockets}" != "no"))
 AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
 
 AC_OUTPUT(Makefile)

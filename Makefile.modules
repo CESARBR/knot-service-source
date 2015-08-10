@@ -22,3 +22,10 @@ endif
 modules_sources += src/http.c
 modules_cflags += @CURL_CFLAGS@ @JSON_CFLAGS@
 modules_ldadd += @CURL_LIBS@ @JSON_LIBS@
+
+if WEBSOCKETS
+# IoT protocol: Meshblu Websockets
+modules_sources += src/ws.c
+modules_cflags += @WEBSOCKETS_CFLAGS@
+modules_ldadd += @WEBSOCKETS_LIBS@
+endif
