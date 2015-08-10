@@ -202,6 +202,9 @@ static int http_post(int sock, const char *uuid, const char *token,
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+
+	/* TODO: make sure that it is smaller than KNOT timeout */
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
 
 	res = curl_easy_perform(curl);
