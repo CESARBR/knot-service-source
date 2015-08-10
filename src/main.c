@@ -35,12 +35,11 @@
 #include <glib.h>
 
 #include "manager.h"
-#include "http.h"
 
 static GMainLoop *main_loop;
 
 /* Default is websockets */
-static const char *opt_proto = "ws";
+static const char *opt_proto = "http";
 
 static void sig_term(int sig)
 {
@@ -73,30 +72,21 @@ int main(int argc, char *argv[])
 
 	g_option_context_free(context);
 
-	if (strcmp(opt_proto, "http") != 0) {
-		printf("IoT protocol not supported\n");
-		return 0;
-	}
-
 	signal(SIGTERM, sig_term);
 	signal(SIGINT, sig_term);
 
 	main_loop = g_main_loop_new(NULL, FALSE);
 
-	/* FIXME: Use a better mechanism to select dynamically protos */
-	http_register();
-
-	err = manager_start();
+	err = manager_start(opt_proto);
 	if (err < 0) {
 		printf("start(): %s (%d)\n", strerror(-err), -err);
+		g_main_loop_unref(main_loop);
 		goto done;
 	}
 
 	g_main_loop_run(main_loop);
 
 	g_main_loop_unref(main_loop);
-
-	http_unregister();
 
 	manager_stop();
 

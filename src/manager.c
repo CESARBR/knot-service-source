@@ -61,7 +61,20 @@ struct session {
 };
 
 static unsigned int server_watch_id;
-static struct proto_ops *proto_ops;
+
+extern struct proto_ops proto_http;
+
+static struct proto_ops *proto_ops[] = {
+	&proto_http,
+	NULL
+};
+
+/*
+ * Select default IoT protocol index. TODO: Later it can
+ * be member of 'session' struct, allowing nodes to select
+ * dynamically the wanted IoT protocol at run time.
+ */
+static int proto_index = 0;
 
 /* TODO: After adding buildroot, investigate if it is possible
  * to add macros for conditional builds, or a dynamic builtin
@@ -132,7 +145,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
-		err = proto_ops->signup(proto_sock, &jbuf);
+		err = proto_ops[proto_index]->signup(proto_sock, &jbuf);
 		printf("%s: %s\n", __PRETTY_FUNCTION__, jbuf.data);
 		parse_device_info(jbuf.data, session);
 		free(jbuf.data);
@@ -162,7 +175,7 @@ static void node_io_destroy(gpointer user_data)
 	 * call signoff & unref the GIOChannel.
 	 */
 	sock = g_io_channel_unix_get_fd(session->proto_io);
-	proto_ops->close(sock);
+	proto_ops[proto_index]->close(sock);
 	g_io_channel_unref(session->proto_io);
 
 	if (session->proto_id)
@@ -228,7 +241,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	node_io = g_io_channel_unix_new(sockfd);
 	g_io_channel_set_close_on_unref(node_io, TRUE);
 
-	proto_sock = proto_ops->connect();
+	proto_sock = proto_ops[proto_index]->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
 	g_io_channel_set_close_on_unref(proto_io, TRUE);
 
@@ -259,15 +272,40 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-int manager_start(void)
+int manager_start(const char *proto)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
 	int err, sock, i;
 
+	/*
+	 * Selecting meshblu IoT protocols & services: HTTP/REST,
+	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
+	 * implements an abstraction similar to WEB client operations.
+	 * TODO: later support dynamic protocol selection.
+	 */
+
+	for (i = 0; proto_ops[i]; i++) {
+		if (strcmp(proto, proto_ops[i]->name) != 0)
+			continue;
+
+		if (proto_ops[i]->probe() < 0)
+			return -EIO;
+
+		printf("proto_ops(%p): %s\n", proto_ops[i], proto_ops[i]->name);
+		proto_index = i;
+	}
+
+	/*
+	 * Probing all access technologies: nRF24L01, BTLE, TCP, Unix
+	 * sockets, Serial, etc. 'node_ops' drivers implements an
+	 * abstraction similar to server sockets, it enables incoming
+	 * connections and provides functions to receive and send data
+	 * streams from/to KNOT nodes.
+	 */
 	for (i = 0; node_ops[i]; i++) {
 
-		printf("Probing %p: %s\n", node_ops[i], node_ops[i]->name);
+		printf("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
 
 		if (node_ops[i]->probe() < 0)
 			continue;
@@ -291,7 +329,6 @@ int manager_start(void)
 		g_io_channel_unref(server_io);
 	}
 
-
 	return 0;
 }
 
@@ -303,23 +340,8 @@ void manager_stop(void)
 	for (i = 0; node_ops[i]; i++)
 		node_ops[i]->remove();
 
+	proto_ops[proto_index]->remove();
+
 	if (server_watch_id)
 		g_source_remove(server_watch_id);
-}
-
-int proto_ops_register(struct proto_ops *ops)
-{
-	/*
-	 * At the moment only onde instance is supported. The
-	 * ideia is try to support dynamic selection of back-end
-	 * service.
-	 */
-	proto_ops = ops;
-
-	return 0;
-}
-
-void proto_ops_unregister(struct proto_ops *ops)
-{
-
 }

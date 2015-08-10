@@ -26,5 +26,5 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int manager_start(void);
+int manager_start(const char *proto);
 void manager_stop(void);

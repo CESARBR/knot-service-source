@@ -39,7 +39,6 @@
 #include <curl/curl.h>
 
 #include "proto.h"
-#include "http.h"
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
@@ -207,16 +206,7 @@ static int http_post(int sock, const char *uuid, const char *token,
 	return (res == CURLE_OK  ? 0 : -EIO);
 }
 
-static struct proto_ops ops = {
-	.connect = http_connect,
-	.close = http_close,
-	.signup = http_signup,
-	.signin = http_signin,
-	.get = http_get,
-	.post = http_post,
-};
-
-int http_register(void)
+static int http_probe(void)
 {
 	struct hostent *host;
 	int err;
@@ -236,12 +226,22 @@ int http_register(void)
 
 	fprintf(stdout, "Meshblu IP: %s\n", inet_ntoa(host_addr));
 
-	return proto_ops_register(&ops);
+	return 0;
 }
 
-void http_unregister(void)
+static void http_remove(void)
 {
-	/* TODO: replace by a built-in plugin mechnism */
-
-	proto_ops_unregister(&ops);
 }
+
+struct proto_ops proto_http = {
+	.name = "http",
+	.probe = http_probe,
+	.remove = http_remove,
+
+	.connect = http_connect,
+	.close = http_close,
+	.signup = http_signup,
+	.signin = http_signin,
+	.get = http_get,
+	.post = http_post,
+};

@@ -33,6 +33,9 @@ struct json_buffer {
 
 /* Node operations */
 struct proto_ops {
+	const char *name;
+	int (*probe) (void);
+	void (*remove) (void);
 
 	/* Abstraction for connect & close/sign-off */
 	int (*connect) (void);
@@ -48,7 +51,3 @@ struct proto_ops {
 	int (*get) (int sock, const char *uuid, const char *token,
 						struct json_buffer *jbuf);
 };
-
-/* Used by the driver implementation */
-int proto_ops_register(struct proto_ops *ops);
-void proto_ops_unregister(struct proto_ops *ops);

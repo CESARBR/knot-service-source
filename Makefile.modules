@@ -19,6 +19,6 @@ modules_sources += src/rh_tcp.c
 endif
 
 # IoT protocol: Meshblu HTTP/REST
-modules_sources += src/http.h src/http.c
+modules_sources += src/http.c
 modules_cflags += @CURL_CFLAGS@ @JSON_CFLAGS@
 modules_ldadd += @CURL_LIBS@ @JSON_LIBS@
