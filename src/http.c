@@ -162,6 +162,9 @@ static int http_get(int sock, const char *uuid, const char *token,
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+
+	/* TODO: make sure that it is smaller than KNOT timeout */
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
