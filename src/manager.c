@@ -101,6 +101,63 @@ static struct node_ops *node_ops[] = {
 	NULL
 };
 
+struct owner {
+	char *uuid;
+	char *token;
+};
+
+static struct owner *owner;
+
+static GKeyFile *load_config(const char *file)
+{
+	GError *gerr = NULL;
+	GKeyFile *keyfile;
+
+	keyfile = g_key_file_new();
+
+	g_key_file_set_list_separator(keyfile, ',');
+
+	if (!g_key_file_load_from_file(keyfile, file, 0, &gerr)) {
+		printf("Parsing %s: %s\n", file, gerr->message);
+		g_error_free(gerr);
+		g_key_file_free(keyfile);
+		return NULL;
+	}
+
+	return keyfile;
+}
+
+static int parse_config(GKeyFile *config)
+{
+	GError *gerr = NULL;
+	char *uuid, *token;
+
+	uuid = g_key_file_get_string(config, "Credential", "UUID", &gerr);
+	if (gerr) {
+		printf("%s", gerr->message);
+		g_clear_error(&gerr);
+		return -EINVAL;
+	} else
+		printf("UUID=%s\n", uuid);
+
+	token = g_key_file_get_string(config, "Credential", "TOKEN", &gerr);
+	if (gerr) {
+		printf("%s", gerr->message);
+		g_clear_error(&gerr);
+		g_free(uuid);
+		return -EINVAL;
+	} else
+		printf("TOKEN=%s\n", token);
+
+	/* TODO: UUID & TOKEN consistency */
+
+	owner = g_new0(struct owner, 1);
+	owner->uuid = uuid;
+	owner->token= token;
+
+	return 0;
+}
+
 static void parse_device_info(const char *json_str, struct session *session)
 {
 	json_object *jobj,*json_uuid, *json_token;
@@ -278,11 +335,23 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-int manager_start(const char *proto)
+int manager_start(const char *file, const char *proto)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
+	GKeyFile *keyfile;
 	int err, sock, i;
+
+	keyfile = load_config(file);
+	if (keyfile == NULL)
+		return -ENOENT;
+
+	err = parse_config(keyfile);
+
+	g_key_file_free(keyfile);
+
+	if (err	< 0)
+		return err;
 
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
@@ -350,4 +419,10 @@ void manager_stop(void)
 
 	if (server_watch_id)
 		g_source_remove(server_watch_id);
+
+	if (owner) {
+		g_free(owner->uuid);
+		g_free(owner->token);
+		g_free(owner);
+	}
 }

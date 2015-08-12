@@ -40,6 +40,7 @@ static GMainLoop *main_loop;
 
 /* Default is websockets */
 static const char *opt_proto = "http";
+static const char *opt_cfg;
 
 static void sig_term(int sig)
 {
@@ -47,6 +48,8 @@ static void sig_term(int sig)
 }
 
 static GOptionEntry options[] = {
+	{ "config", 'f', 0, G_OPTION_ARG_STRING, &opt_cfg,
+					"configuration file path", NULL },
 	{ "proto", 'p', 0, G_OPTION_ARG_STRING, &opt_proto,
 					"protocol", "eg: http or ws" },
 	{ NULL },
@@ -77,7 +80,7 @@ int main(int argc, char *argv[])
 
 	main_loop = g_main_loop_new(NULL, FALSE);
 
-	err = manager_start(opt_proto);
+	err = manager_start(opt_cfg, opt_proto);
 	if (err < 0) {
 		printf("start(): %s (%d)\n", strerror(-err), -err);
 		g_main_loop_unref(main_loop);
