@@ -107,7 +107,7 @@ static int http_signup(int sock, struct json_buffer *jbuf)
 
 	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_DEV_URL);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "gateway");
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 
 	/* TODO: make sure that it is smaller than KNOT timeout */
@@ -201,7 +201,7 @@ static int http_post(int sock, const char *uuid, const char *token,
 	curl_easy_setopt(curl, CURLOPT_URL, data_url);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
 	/* TODO: make sure that it is smaller than KNOT timeout */
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
