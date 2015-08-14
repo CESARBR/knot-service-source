@@ -98,7 +98,8 @@ static int http_connect(void)
 	return sock;
 }
 
-static int http_signup(int sock, struct json_buffer *jbuf)
+static int http_signup(int sock, const char *owner_uuid,
+					struct json_buffer *jbuf)
 {
 	CURL *curl;
 	CURLcode res;

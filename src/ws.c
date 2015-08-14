@@ -167,7 +167,8 @@ static void ws_close(int sock)
 		printf("Removing key: sock %d not found!\n", sock);
 }
 
-static int ws_signup(int sock, struct json_buffer *jbuf)
+static int ws_signup(int sock, const char *owner_uuid,
+					struct json_buffer *jbuf)
 {
 	return -ENOSYS;
 }

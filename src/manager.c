@@ -208,7 +208,8 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
-		err = proto_ops[proto_index]->signup(proto_sock, &jbuf);
+		err = proto_ops[proto_index]->signup(proto_sock,
+						owner->uuid, &jbuf);
 		printf("%s: %s\n", __PRETTY_FUNCTION__, jbuf.data);
 		parse_device_info(jbuf.data, session);
 		free(jbuf.data);
