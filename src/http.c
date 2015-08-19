@@ -103,13 +103,16 @@ static int http_signup(int sock, const char *owner_uuid,
 {
 	CURL *curl;
 	CURLcode res;
+	char postfield[43];
 
 	curl = curl_easy_init();
 	if (curl == NULL)
 		return -ENOMEM;
 
+	snprintf(postfield, sizeof(postfield), "owner=%s", owner_uuid);
+
 	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_DEV_URL);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "gateway");
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfield);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 
