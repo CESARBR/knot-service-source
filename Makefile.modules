@@ -2,6 +2,13 @@
 # Similar to RH_TCP. Use unix socket instead of real hw
 modules_sources += src/unix.c
 
+# Target: x86
+# Serial proxy. Using an Arduino acting like a SPI <-> Serial
+# proxy this approach allows debugging and developing on
+# x86 machines using serial connection to connect to nRF24L01 radio.
+modules_sources += src/serial.c
+
+
 if RADIOHEAD
 # Declare radio head preprocessor macro for conditional
 # build. See manager.c, node 'driver' array contains the
