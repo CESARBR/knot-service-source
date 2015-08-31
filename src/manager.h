@@ -26,5 +26,5 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int manager_start(const char *file, const char *proto);
+int manager_start(const char *file, const char *proto, const char *tty);
 void manager_stop(void);
