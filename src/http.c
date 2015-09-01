@@ -63,6 +63,9 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 	memcpy(jbuf->data + jbuf->size, contents, realsize);
 	jbuf->size += realsize;
 
+	/* Forcing NULL terminated string */
+	jbuf->data[jbuf->size] = 0;
+
 	return realsize;
 }
 
