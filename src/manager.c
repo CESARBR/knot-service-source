@@ -45,6 +45,7 @@
 
 #include "node.h"
 #include "proto.h"
+#include "serial.h"
 #include "manager.h"
 
 /*
@@ -356,6 +357,10 @@ int manager_start(const char *file, const char *proto, const char *tty)
 	if (err	< 0)
 		return err;
 
+	/* Tell Serial which port to use */
+	if (tty)
+		serial_load_config(tty);
+
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
 	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
@@ -387,11 +392,10 @@ int manager_start(const char *file, const char *proto, const char *tty)
 		if ((strcmp("Serial", node_ops[i]->name) == 0) && tty == NULL)
 			continue;
 
-		printf("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
-
 		if (node_ops[i]->probe() < 0)
 			continue;
 
+		printf("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
 		sock = node_ops[i]->listen();
 		if (sock < 0) {
 			err = sock;
