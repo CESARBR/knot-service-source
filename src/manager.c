@@ -161,26 +161,28 @@ static int parse_config(GKeyFile *config)
 	return 0;
 }
 
-static void parse_device_info(const char *json_str, struct session *session)
+static int parse_device_info(const char *json_str, struct session *session)
 {
 	json_object *jobj,*json_uuid, *json_token;
 	const char *uuid, *token;
 
 	jobj = json_tokener_parse(json_str);
 	if (jobj == NULL)
-		return;
+		return -EINVAL;
 
 	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
-		return;
+		return -EINVAL;
 
 	if (!json_object_object_get_ex(jobj, "token", &json_token))
-		return;
+		return -EINVAL;
 
 	uuid = json_object_get_string(json_uuid);
 	token = json_object_get_string(json_token);
 
 	session->uuid = g_strdup(uuid);
 	session->token = g_strdup(token);
+
+	return 0;
 }
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
@@ -190,7 +192,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	struct node_ops *ops = session->ops;
 	uint8_t dgram[128];
 	const knot_header *hdr = (const knot_header *) dgram;
-	struct json_buffer jbuf = { .data = NULL, .size = 0 };
+	struct json_buffer jbuf;
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -211,9 +213,15 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->opcode) {
 	case KNOT_OP_REGISTER:
+		memset(&jbuf, 0, sizeof(jbuf));
 		err = proto_ops[proto_index]->signup(proto_sock,
 						owner->uuid, &jbuf);
-		printf("%s: %s\n", __PRETTY_FUNCTION__, jbuf.data);
+		if (err < 0) {
+			printf("manager signup: %s(%d)\n",
+						strerror(-err), -err);
+			return FALSE;
+		}
+
 		parse_device_info(jbuf.data, session);
 		free(jbuf.data);
 		break;
