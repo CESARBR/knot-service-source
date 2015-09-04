@@ -21,7 +21,8 @@ $(pkg-config --cflags --libs zlib) \
 $WSLIB_STATIC
 
 How to check for memory leaks and open file descriptors:
-$valgrind --leak-check=full --track-fds=yes ./src/knotd
+$valgrind --leak-check=full --track-fds=yes ./src/knotd \
+--config=$(pwd)/src/knot.conf --proto=http --tty=/dev/USB0
 
 How to build (client):
 $gcc $(pkg-config --libs --cflags glib-2.0) -g -O0 \
