@@ -36,7 +36,8 @@
 #include <sys/un.h>
 #include <glib.h>
 
-#include <knot/proto.h>
+#include <proto-net/knot_proto_net.h>
+#include <proto-app/knot_proto_app.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
@@ -75,22 +76,18 @@ static int unix_connect(void)
 
 static int cmd_register(void)
 {
-	struct iovec iov[2];
-	knot_header hdr;
-	knot_cmd_reg cmd;
+	knot_msg_register msg;
+	const char *devname = "dummy0";
+	int len = strlen(devname);
 	ssize_t nbytes;
 	int err;
 
-	hdr.opcode = KNOT_OP_REGISTER;
-	hdr.len = sizeof(cmd);
-	cmd.type = KNOT_TYPE_UNKNOWN;
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	msg.hdr.payload_len = len;
+	strncpy(msg.devName, devname, len);
 
-	iov[0].iov_base = &hdr;
-	iov[0].iov_len = sizeof(hdr);
-	iov[1].iov_base = &cmd;
-	iov[1].iov_len = sizeof(cmd);
-
-	nbytes = writev(sock, iov, 2);
+	nbytes = write(sock, &msg, sizeof(msg.hdr) + len);
 	if (nbytes < 0) {
 		err = errno;
 		printf("writev(): %s(%d)\n", strerror(err), err);

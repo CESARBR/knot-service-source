@@ -41,7 +41,9 @@
 #include <json-c/json.h>
 
 #include <glib.h>
-#include <knot/proto.h>
+
+#include <proto-net/knot_proto_net.h>
+#include <proto-app/knot_proto_app.h>
 
 #include "node.h"
 #include "proto.h"
@@ -191,7 +193,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	struct session *session = user_data;
 	struct node_ops *ops = session->ops;
 	uint8_t dgram[128];
-	const knot_header *hdr = (const knot_header *) dgram;
+	const knot_msg_header *hdr = (const knot_msg_header *) dgram;
 	struct json_buffer jbuf;
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
@@ -208,11 +210,11 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
-	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr->opcode, hdr->len);
+	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr->type, hdr->payload_len);
 
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
-	switch (hdr->opcode) {
-	case KNOT_OP_REGISTER:
+	switch (hdr->type) {
+	case KNOT_MSG_REGISTER_REQ:
 		memset(&jbuf, 0, sizeof(jbuf));
 		err = proto_ops[proto_index]->signup(proto_sock,
 						owner->uuid, &jbuf);
