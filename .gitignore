@@ -25,6 +25,8 @@ src/knotd
 
 tools/ktool
 
+unit/ktest
+
 cscope.in.out
 cscope.out
 cscope.po.out

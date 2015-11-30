@@ -4,11 +4,12 @@ include_HEADERS =
 modules_sources =
 modules_ldadd =
 modules_cflags =
+INCLUDES =
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
-libexec_PROGRAMS = src/knotd tools/ktool
+libexec_PROGRAMS = src/knotd tools/ktool unit/ktest
 
 include Makefile.modules
 
@@ -26,6 +27,11 @@ tools_ktool_LDADD = @GLIB_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
 tools_ktool_CFLAGS = $(AM_CFLAGS)
 
+unit_ktest_SOURCES = unit/ktest.c
+unit_ktest_LDADD = @GLIB_LIBS@
+unit_ktest_LDFLAGS = $(AM_LDFLAGS)
+unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
+
 DISTCLEANFILES =
 
 MAINTAINERCLEANFILES = Makefile.in \
@@ -33,4 +39,4 @@ MAINTAINERCLEANFILES = Makefile.in \
 	ltmain.sh depcomp compile missing install-sh
 
 clean-local:
-	$(RM) -r src/knotd tools/ktool
+	$(RM) -r src/knotd tools/ktool unit/ktest
