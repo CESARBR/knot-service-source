@@ -73,22 +73,21 @@ int main(int argc, char *argv[])
 		printf("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
 		g_option_context_free(context);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	g_option_context_free(context);
+
+	err = manager_start(opt_cfg, opt_proto, opt_tty);
+	if (err < 0) {
+		printf("start(): %s (%d)\n", strerror(-err), -err);
+		return EXIT_FAILURE;
+	}
 
 	signal(SIGTERM, sig_term);
 	signal(SIGINT, sig_term);
 
 	main_loop = g_main_loop_new(NULL, FALSE);
-
-	err = manager_start(opt_cfg, opt_proto, opt_tty);
-	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
-		g_main_loop_unref(main_loop);
-		goto done;
-	}
 
 	g_main_loop_run(main_loop);
 
@@ -98,8 +97,5 @@ int main(int argc, char *argv[])
 
 	printf("Exiting\n");
 
-	return err;
-
-done:
-	return err;
+	return EXIT_SUCCESS;
 }
