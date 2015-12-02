@@ -34,6 +34,7 @@
 
 #include <glib.h>
 
+#include "log.h"
 #include "proto.h"
 
 struct libwebsocket_context *context;
@@ -146,7 +147,7 @@ static int ws_connect(void)
 
 	if (ws == NULL) {
 		int err = errno;
-		printf("libwebsocket_client_connect(): %s(%d)\n",
+		LOG_ERROR("libwebsocket_client_connect(): %s(%d)\n",
 							strerror(err), err);
 		return -err;
 	}
@@ -164,7 +165,7 @@ static int ws_connect(void)
 static void ws_close(int sock)
 {
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
-		printf("Removing key: sock %d not found!\n", sock);
+		LOG_ERROR("Removing key: sock %d not found!\n", sock);
 }
 
 static int ws_signup(int sock, const char *owner_uuid,
@@ -184,8 +185,7 @@ static int callback_lws_http(struct libwebsocket_context *this,
 			       void *user, void *in, size_t len)
 {
 
-	printf("%s reason(%02X): %s\n", __PRETTY_FUNCTION__,
-				      reason, lws_reason2str(reason));
+	LOG_INFO("reason(%02X): %s\n", reason, lws_reason2str(reason));
 
 	return 0;
 }

@@ -45,6 +45,7 @@
 #include <proto-net/knot_proto_net.h>
 #include <proto-app/knot_proto_app.h>
 
+#include "log.h"
 #include "node.h"
 #include "proto.h"
 #include "serial.h"
@@ -123,7 +124,7 @@ static GKeyFile *load_config(const char *file)
 	g_key_file_set_list_separator(keyfile, ',');
 
 	if (!g_key_file_load_from_file(keyfile, file, 0, &gerr)) {
-		printf("Parsing %s: %s\n", file, gerr->message);
+		LOG_ERROR("Parsing %s: %s\n", file, gerr->message);
 		g_error_free(gerr);
 		g_key_file_free(keyfile);
 		return NULL;
@@ -139,20 +140,20 @@ static int parse_config(GKeyFile *config)
 
 	uuid = g_key_file_get_string(config, "Credential", "UUID", &gerr);
 	if (gerr) {
-		printf("%s", gerr->message);
+		LOG_ERROR("%s", gerr->message);
 		g_clear_error(&gerr);
 		return -EINVAL;
 	} else
-		printf("UUID=%s\n", uuid);
+		LOG_INFO("UUID=%s\n", uuid);
 
 	token = g_key_file_get_string(config, "Credential", "TOKEN", &gerr);
 	if (gerr) {
-		printf("%s", gerr->message);
+		LOG_ERROR("%s", gerr->message);
 		g_clear_error(&gerr);
 		g_free(uuid);
 		return -EINVAL;
 	} else
-		printf("TOKEN=%s\n", token);
+		LOG_INFO("TOKEN=%s\n", token);
 
 	/* TODO: UUID & TOKEN consistency */
 
@@ -206,11 +207,11 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	nbytes = ops->recv(sock, dgram, sizeof(dgram));
 	if (nbytes < 0) {
 		err = errno;
-		printf("readv(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
 		return FALSE;
 	}
 
-	printf("KNOT OP: 0x%02X LEN: %02x\n", hdr->type, hdr->payload_len);
+	LOG_INFO("KNOT OP: 0x%02X LEN: %02x\n", hdr->type, hdr->payload_len);
 
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->type) {
@@ -219,7 +220,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		err = proto_ops[proto_index]->signup(proto_sock,
 						owner->uuid, &jbuf);
 		if (err < 0) {
-			printf("manager signup: %s(%d)\n",
+			LOG_ERROR("manager signup: %s(%d)\n",
 						strerror(-err), -err);
 			return FALSE;
 		}
@@ -233,7 +234,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	}
 
 	if (err)
-		printf("KNOT IoT proto error: %s(%d)\n", strerror(err), err);
+		LOG_ERROR("KNOT IoT proto error: %s(%d)\n", strerror(err), err);
 
 	return TRUE;
 }
@@ -307,10 +308,10 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
-	printf("%p accept()\n", ops);
+	LOG_INFO("%p accept()\n", ops);
 	sockfd = ops->accept(srv_sock);
 	if (sockfd < 0) {
-		printf("%p accept(): %s(%d)\n", ops,
+		LOG_ERROR("%p accept(): %s(%d)\n", ops,
 					strerror(-sockfd), -sockfd);
 		return FALSE;
 	}
@@ -385,7 +386,7 @@ int manager_start(const char *file, const char *proto, const char *tty)
 		if (proto_ops[i]->probe() < 0)
 			return -EIO;
 
-		printf("proto_ops(%p): %s\n", proto_ops[i], proto_ops[i]->name);
+		LOG_INFO("proto_ops(%p): %s\n", proto_ops[i], proto_ops[i]->name);
 		proto_index = i;
 	}
 
@@ -405,11 +406,11 @@ int manager_start(const char *file, const char *proto, const char *tty)
 		if (node_ops[i]->probe() < 0)
 			continue;
 
-		printf("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
+		LOG_INFO("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
 		sock = node_ops[i]->listen();
 		if (sock < 0) {
 			err = sock;
-			printf("%p listen(): %s(%d)\n", node_ops[i],
+			LOG_ERROR("%p listen(): %s(%d)\n", node_ops[i],
 						strerror(-err), -err);
 			node_ops[i]->remove();
 			continue;

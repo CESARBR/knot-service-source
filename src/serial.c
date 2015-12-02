@@ -41,6 +41,7 @@
 
 #include <glib.h>
 
+#include "log.h"
 #include "node.h"
 #include "serial.h"
 
@@ -112,7 +113,7 @@ static gboolean tty_data_watch(GIOChannel *io, GIOCondition cond,
 		/* New pipe: trigger accept */
 		if (write(srvfd, &pipeid, sizeof(pipeid)) < 0) {
 			err = errno;
-			printf("serial: write(): %s(%d)\n", strerror(err), err);
+			LOG_ERROR("serial: write(): %s(%d)\n", strerror(err), err);
 		}
 	} else {
 		/* Existent pipe: forward data */
@@ -122,7 +123,7 @@ static gboolean tty_data_watch(GIOChannel *io, GIOCondition cond,
 		pipepair = list->data;
 		if (write(pipepair->sock, &buffer[6], size) < 0) {
 			err = errno;
-			printf("serial: write(): %s(%d)\n", strerror(err), err);
+			LOG_ERROR("serial: write(): %s(%d)\n", strerror(err), err);
 		}
 	}
 
@@ -136,7 +137,7 @@ static int serial_probe(void)
 
 	if (stat(serial_opts.tty, &st) < 0) {
 		err = errno;
-		printf("serial stat(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("serial stat(): %s(%d)\n", strerror(err), err);
 	}
 
 	return -err;
@@ -212,17 +213,17 @@ static int serial_accept(int srv_sockfd)
 
 	if (read(srv_sockfd, &pipeid, sizeof(pipeid)) < 0) {
 		err = errno;
-		printf("serial: accept(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("serial: accept(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv) < 0) {
 		err = errno;
-		printf("serial: socketpair(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("serial: socketpair(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
-	printf("New thing accept(%d) pipeid:%ld\n", sv[0], pipeid);
+	LOG_INFO("New thing accept(%d) pipeid:%ld\n", sv[0], pipeid);
 
 	pipepair = g_new0(struct pipe_pair, 1);
 	pipepair->sock = sv[1];

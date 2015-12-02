@@ -38,6 +38,7 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
+#include "log.h"
 #include "proto.h"
 
 #define CURL_OP_TIMEOUT		10	/* 10 seconds */
@@ -56,7 +57,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 
 	jbuf->data = (char *) realloc(jbuf->data, jbuf->size + realsize + 1);
 	if (jbuf->data == NULL) {
-		printf("Not enough memory\n");
+		LOG_ERROR("Not enough memory\n");
 		return 0;
 	}
 
@@ -81,7 +82,7 @@ static int http_connect(void)
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock == -1) {
 		err = errno;
-		printf("Meshblu socket(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("Meshblu socket(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
@@ -92,7 +93,7 @@ static int http_connect(void)
 
 	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0){
 		err = errno;
-		printf("Meshblu connect(): %s(%d)\n", strerror(err), err);
+		LOG_ERROR("Meshblu connect(): %s(%d)\n", strerror(err), err);
 
 		close(sock);
 		return -err;
@@ -235,14 +236,14 @@ static int http_probe(void)
 	host = gethostbyname(MESHBLU_HOST);
 	if  (host == NULL) {
 		err = errno;
-		printf("gethostbyname(%s): %s (%d)\n", MESHBLU_HOST,
+		LOG_ERROR("gethostbyname(%s): %s (%d)\n", MESHBLU_HOST,
 						       strerror(err), err);
 		return -err;
 	}
 
 	host_addr.s_addr = *((unsigned long *) host-> h_addr_list[0]);
 
-	fprintf(stdout, "Meshblu IP: %s\n", inet_ntoa(host_addr));
+	LOG_INFO("Meshblu IP: %s\n", inet_ntoa(host_addr));
 
 	return 0;
 }

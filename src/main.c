@@ -34,6 +34,7 @@
 
 #include <glib.h>
 
+#include "log.h"
 #include "manager.h"
 
 static GMainLoop *main_loop;
@@ -64,13 +65,13 @@ int main(int argc, char *argv[])
 	GError *gerr = NULL;
 	int err;
 
-	printf("KNOT Gateway\n");
+	LOG_INFO("KNOT Gateway\n");
 
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
 
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		printf("Invalid arguments: %s\n", gerr->message);
+		LOG_ERROR("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
 		g_option_context_free(context);
 		return EXIT_FAILURE;
@@ -80,7 +81,7 @@ int main(int argc, char *argv[])
 
 	err = manager_start(opt_cfg, opt_proto, opt_tty);
 	if (err < 0) {
-		printf("start(): %s (%d)\n", strerror(-err), -err);
+		LOG_ERROR("start(): %s (%d)\n", strerror(-err), -err);
 		return EXIT_FAILURE;
 	}
 
@@ -95,7 +96,7 @@ int main(int argc, char *argv[])
 
 	manager_stop();
 
-	printf("Exiting\n");
+	LOG_INFO("Exiting\n");
 
 	return EXIT_SUCCESS;
 }

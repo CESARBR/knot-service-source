@@ -39,6 +39,7 @@
 #include <fcntl.h>
 #include <linux/spi/spidev.h>
 
+#include "log.h"
 #include "node.h"
 
 /* TODO: Use GKeyFile to read the device path, or bus & chip select */
@@ -56,7 +57,7 @@ static int nrf24_probe(void)
 	spifd = open(spidevpath, O_RDWR | O_CLOEXEC);
 	if (spifd == -1) {
 		err = errno;
-		printf("%s open(): %s(%d)\n", spidevpath,
+		LOG_ERROR("%s open(): %s(%d)\n", spidevpath,
 					strerror(err), err);
 		return -err;
 	}
@@ -64,7 +65,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_WR_MODE, SPI_MODE_0);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_WR_MODE): %s(%d)\n", spidevpath,
+		LOG_ERROR("%s ioctl(SPI_IOC_WR_MODE): %s(%d)\n", spidevpath,
 							strerror(err), err);
 		goto done;
 	}
@@ -72,7 +73,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_RD_MODE, SPI_MODE_0);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_RD_MODE): %s(%d)\n", spidevpath,
+		LOG_ERROR("%s ioctl(SPI_IOC_RD_MODE): %s(%d)\n", spidevpath,
 							strerror(err), err);
 		goto done;
 	}
@@ -81,7 +82,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_WR_BITS_PER_WORD, 0x08);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_WR_BITS_PER_WORD): %s(%d)\n",
+		LOG_ERROR("%s ioctl(SPI_IOC_WR_BITS_PER_WORD): %s(%d)\n",
 						spidevpath, strerror(err), err);
 		goto done;
 	}
@@ -90,7 +91,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_RD_BITS_PER_WORD, 0x08);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_RD_BITS_PER_WORD): %s(%d)\n",
+		LOG_ERROR("%s ioctl(SPI_IOC_RD_BITS_PER_WORD): %s(%d)\n",
 						spidevpath, strerror(err), err);
 		goto done;
 	}
@@ -99,7 +100,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_WR_MAX_SPEED_HZ, 8000000);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_WR_MAX_SPEED_HZ): %s(%d)\n",
+		LOG_ERROR("%s ioctl(SPI_IOC_WR_MAX_SPEED_HZ): %s(%d)\n",
 				spidevpath, strerror(err), err);
 		goto done;
 	}
@@ -108,7 +109,7 @@ static int nrf24_probe(void)
 	err = ioctl(spifd, SPI_IOC_RD_MAX_SPEED_HZ, 8000000);
 	if (err < 0) {
 		err = errno;
-		printf("%s ioctl(SPI_IOC_WD_MAX_SPEED_HZ): %s(%d)\n",
+		LOG_ERROR("%s ioctl(SPI_IOC_WD_MAX_SPEED_HZ): %s(%d)\n",
 				spidevpath, strerror(err), err);
 		goto done;
 	}
