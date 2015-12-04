@@ -184,7 +184,12 @@ static int http_get(int sock, const char *uuid, const char *token,
 
 	curl_easy_cleanup(curl);
 
-	return (res == CURLE_OK  ? 0 : -EIO);
+	if (res != CURLE_OK) {
+		LOG_ERROR("curl: %s(%d)\n", curl_easy_strerror(res), res);
+		return -EIO;
+	}
+
+	return 0;
 }
 
 static int http_post(int sock, const char *uuid, const char *token,
