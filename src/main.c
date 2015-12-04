@@ -79,6 +79,11 @@ int main(int argc, char *argv[])
 
 	g_option_context_free(context);
 
+	if (!opt_cfg) {
+		LOG_ERROR("Missing KNOT configuration file!\n");
+		return EXIT_FAILURE;
+	}
+
 	err = manager_start(opt_cfg, opt_proto, opt_tty);
 	if (err < 0) {
 		LOG_ERROR("start(): %s (%d)\n", strerror(-err), -err);
