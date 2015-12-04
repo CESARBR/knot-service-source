@@ -41,7 +41,7 @@
 #include "log.h"
 #include "proto.h"
 
-#define CURL_OP_TIMEOUT		10	/* 10 seconds */
+#define CURL_OP_TIMEOUT		30	/* 30 seconds */
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
