@@ -195,7 +195,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	struct node_ops *ops = session->ops;
 	uint8_t dgram[128];
 	const knot_msg_header *hdr = (const knot_msg_header *) dgram;
-	struct json_buffer jbuf;
+	json_raw_t json;
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -216,17 +216,17 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 	switch (hdr->type) {
 	case KNOT_MSG_REGISTER_REQ:
-		memset(&jbuf, 0, sizeof(jbuf));
+		memset(&json, 0, sizeof(json));
 		err = proto_ops[proto_index]->signup(proto_sock,
-						owner->uuid, &jbuf);
+						owner->uuid, &json);
 		if (err < 0) {
 			LOG_ERROR("manager signup: %s(%d)\n",
 						strerror(-err), -err);
 			return FALSE;
 		}
 
-		parse_device_info(jbuf.data, session);
-		free(jbuf.data);
+		parse_device_info(json.data, session);
+		free(json.data);
 		break;
 	default:
 		/* TODO: reply unknown command */

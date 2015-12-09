@@ -169,7 +169,7 @@ static void ws_close(int sock)
 }
 
 static int ws_signup(int sock, const char *owner_uuid,
-					struct json_buffer *jbuf)
+					json_raw_t *json)
 {
 	return -ENOSYS;
 }

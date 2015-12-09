@@ -26,10 +26,10 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-struct json_buffer {
+typedef struct {
 	char *data;
 	size_t size;
-};
+} json_raw_t;
 
 /* Node operations */
 struct proto_ops {
@@ -42,13 +42,12 @@ struct proto_ops {
 	void (*close) (int sock);
 
 	/* Abstraction for session establishment or registration */
-	int (*signup) (int sock, const char *owner_uuid,
-					struct json_buffer *jbuf);
+	int (*signup) (int sock, const char *owner_uuid, json_raw_t *json);
 	int (*signin) (int sock, const char *token);
 
 	/* Low level communication abstraction */
 	int (*post) (int sock, const char *uuid, const char *token,
 						const char *fields);
 	int (*get) (int sock, const char *uuid, const char *token,
-						struct json_buffer *jbuf);
+							 json_raw_t *json);
 };

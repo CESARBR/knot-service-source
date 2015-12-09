@@ -52,20 +52,20 @@ static struct in_addr host_addr;
 static size_t write_cb(void *contents, size_t size, size_t nmemb,
 							void *user_data)
 {
-	struct json_buffer *jbuf = (struct json_buffer *) user_data;
+	json_raw_t *json = (json_raw_t *) user_data;
 	size_t realsize = size * nmemb;
 
-	jbuf->data = (char *) realloc(jbuf->data, jbuf->size + realsize + 1);
-	if (jbuf->data == NULL) {
+	json->data = (char *) realloc(json->data, json->size + realsize + 1);
+	if (json->data == NULL) {
 		LOG_ERROR("Not enough memory\n");
 		return 0;
 	}
 
-	memcpy(jbuf->data + jbuf->size, contents, realsize);
-	jbuf->size += realsize;
+	memcpy(json->data + json->size, contents, realsize);
+	json->size += realsize;
 
 	/* Forcing NULL terminated string */
-	jbuf->data[jbuf->size] = 0;
+	json->data[json->size] = 0;
 
 	return realsize;
 }
@@ -103,7 +103,7 @@ static int http_connect(void)
 }
 
 static int http_signup(int sock, const char *owner_uuid,
-					struct json_buffer *jbuf)
+					json_raw_t *json)
 {
 	CURL *curl;
 	CURLcode res;
@@ -122,7 +122,7 @@ static int http_signup(int sock, const char *owner_uuid,
 
 	/* TODO: make sure that it is smaller than KNOT timeout */
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, json);
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
 
 	res = curl_easy_perform(curl);
@@ -143,7 +143,7 @@ static void http_close(int sock)
 }
 
 static int http_get(int sock, const char *uuid, const char *token,
-						struct json_buffer *jbuf)
+						json_raw_t *json)
 {
 	struct curl_slist *headers = NULL;
 	char auth_uuid[55], auth_token[60];
@@ -176,7 +176,7 @@ static int http_get(int sock, const char *uuid, const char *token,
 	/* TODO: make sure that it is smaller than KNOT timeout */
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, jbuf);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, json);
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
 
 	res = curl_easy_perform(curl);
