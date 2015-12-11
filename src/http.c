@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <ctype.h>
 #include <errno.h>
 #include <string.h>
 #include <netdb.h>
@@ -38,16 +39,48 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
+/*FIXME: Avoid cross headers dependency! */
+#include <proto-app/knot_types.h>
+#include <proto-net/knot_proto_net.h>
+#include <proto-app/knot_proto_app.h>
+
 #include "log.h"
 #include "proto.h"
 
-#define CURL_OP_TIMEOUT		30	/* 30 seconds */
+#define CURL_OP_TIMEOUT					30	/* 30 seconds */
+#define URL_SIZE					128
+#define REQUEST_SIZE					10
+#define TOKEN_SIZE		KNOT_PROTOCOL_TOKEN_LEN
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
 #define MESHBLU_DATA_URL	MESHBLU_HOST "/data/"
 
+
+/* Credential registered on meshblu service */
+#define UUID_SIZE			KNOT_PROTOCOL_UUID_LEN
+
+#define MESHBLU_AUTH_UUID			"meshblu_auth_uuid: "
+#define MESHBLU_AUTH_UUID_SIZE			sizeof(MESHBLU_AUTH_UUID)
+#define MESHBLU_AUTH_TOKEN			"meshblu_auth_token: "
+#define MESHBLU_AUTH_TOKEN_SIZE			sizeof(MESHBLU_AUTH_TOKEN)
+
+
 static struct in_addr host_addr;
+
+static curl_socket_t opensocket(void *clientp, curlsocktype purpose,
+						struct curl_sockaddr *address)
+{
+	/* Socket is passed through CURLOPT_OPENSOCKETDATA option */
+	return *(curl_socket_t *) clientp;
+}
+
+static int sockopt_callback(void *clientp, curl_socket_t curlfd,
+							curlsocktype purpose)
+{
+	/* This return code was added in libcurl 7.21.5 */
+	return CURL_SOCKOPT_ALREADY_CONNECTED;
+}
 
 static size_t write_cb(void *contents, size_t size, size_t nmemb,
 							void *user_data)
@@ -68,6 +101,109 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 	json->data[json->size] = 0;
 
 	return realsize;
+}
+
+/* Fetch and return url body via curl */
+static CURLcode fetch_url(int sockfd, const char *action, const char *json,
+		credential_t *auth, json_raw_t *fetch, const char *request)
+{
+	char token[MESHBLU_AUTH_TOKEN_SIZE + TOKEN_SIZE];
+	char uuid[MESHBLU_AUTH_UUID_SIZE + UUID_SIZE];
+	char upcase_request[REQUEST_SIZE + 1];
+	struct curl_slist *headers = NULL;
+	CURL *ch;
+	CURLcode rcode;
+	size_t i;
+
+	if(!request || !fetch) {
+		LOG_ERROR("CURL error - %s(%d)\n",
+		      curl_easy_strerror(CURLE_BAD_FUNCTION_ARGUMENT),
+			CURLE_BAD_FUNCTION_ARGUMENT);
+
+		return CURLE_BAD_FUNCTION_ARGUMENT;
+	}
+
+	LOG_INFO("action: %s\n", action);
+
+	ch = curl_easy_init();
+	if (ch == NULL) {
+		LOG_ERROR("CURL error - %s(%d)\n",
+		      curl_easy_strerror(CURLE_FAILED_INIT), CURLE_FAILED_INIT);
+		return CURLE_FAILED_INIT;
+	}
+
+	if (fetch->data)
+		free(fetch->data);
+
+	fetch->data = NULL;
+	fetch->size = 0;
+
+	strncpy(upcase_request, request, sizeof(upcase_request));
+	for (i = 0; i < strlen(upcase_request); i++)
+		upcase_request[i] = toupper(upcase_request[i]);
+
+	curl_easy_setopt(ch, CURLOPT_CUSTOMREQUEST, upcase_request);
+
+	curl_easy_setopt(ch, CURLOPT_URL, action);
+
+	LOG_INFO("HTTP(%s): %s\n", upcase_request, action);
+
+	if (auth && auth->uuid && auth->token) {
+
+		snprintf(uuid, sizeof(uuid), "%s%s", MESHBLU_AUTH_UUID,
+							auth->uuid);
+		headers = curl_slist_append(headers, uuid);
+		snprintf(token, sizeof(token), "%s%s", MESHBLU_AUTH_TOKEN,
+							auth->token);
+		headers = curl_slist_append(headers, token);
+		LOG_INFO(" AUTH: %s\n       %s\n", uuid, token);
+	}
+
+	if (json) {
+		headers = curl_slist_append(headers,
+						"Accept: application/json");
+		headers = curl_slist_append(headers,
+					    "Content-Type: application/json");
+		headers = curl_slist_append(headers, "charsets: utf-8");
+		curl_easy_setopt(ch, CURLOPT_POSTFIELDS, json);
+		LOG_INFO(" JSON TX: %s\n", json);
+	}
+
+	if (headers)
+		curl_easy_setopt(ch, CURLOPT_HTTPHEADER, headers);
+
+	curl_easy_setopt(ch, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt(ch, CURLOPT_WRITEDATA, fetch);
+	curl_easy_setopt(ch, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+	/* TODO: make sure that it is smaller than KNOT timeout */
+	curl_easy_setopt(ch, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
+	curl_easy_setopt(ch, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(ch, CURLOPT_MAXREDIRS, 1L);
+	curl_easy_setopt(ch, CURLOPT_NOPROGRESS, 1L);
+
+	if(sockfd > 0) {
+		curl_easy_setopt(ch, CURLOPT_OPENSOCKETFUNCTION, opensocket);
+		curl_easy_setopt(ch, CURLOPT_OPENSOCKETDATA, &sockfd);
+		curl_easy_setopt(ch, CURLOPT_SOCKOPTFUNCTION, sockopt_callback);
+	}
+
+	rcode = curl_easy_perform(ch);
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(ch);
+
+	if(rcode != CURLE_OK) {
+		LOG_ERROR("CURL error - %s(%d)\n", curl_easy_strerror(rcode),
+									rcode);
+		return rcode;
+	}
+
+	if (fetch->data)
+		LOG_INFO(" JSON RX: %s\n", fetch->data);
+	else
+		LOG_INFO(" JSON RX: Empty\n");
+
+	return rcode;
 }
 
 static int http_connect(void)
@@ -132,10 +268,17 @@ static int http_signup(int sock, const char *owner_uuid,
 	return (res == CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_signin(int sock, const char *token)
+static int http_signin(int sock, credential_t *auth, const char *uuid,
+							json_raw_t *json)
 {
-	return -ENOSYS;
+	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+
+	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
+	return (fetch_url(sock, data_url, NULL, auth, json, "GET") ==
+							CURLE_OK  ? 0 : -EIO);
 }
+
+
 
 static void http_close(int sock)
 {

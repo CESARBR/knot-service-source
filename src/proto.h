@@ -31,6 +31,11 @@ typedef struct {
 	size_t size;
 } json_raw_t;
 
+typedef struct {
+	char *uuid;
+	char *token;
+} credential_t;
+
 /* Node operations */
 struct proto_ops {
 	const char *name;
@@ -43,7 +48,8 @@ struct proto_ops {
 
 	/* Abstraction for session establishment or registration */
 	int (*signup) (int sock, const char *owner_uuid, json_raw_t *json);
-	int (*signin) (int sock, const char *token);
+	int (*signin) (int sock, credential_t *auth, const char *uuid,
+							json_raw_t *json);
 
 	/* Low level communication abstraction */
 	int (*post) (int sock, const char *uuid, const char *token,
