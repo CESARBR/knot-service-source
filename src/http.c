@@ -278,7 +278,15 @@ static int http_signin(int sock, credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
+static int http_signout(int sock, credential_t *auth, const char *uuid,
+							json_raw_t *jbuf)
+{
+	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
 
+	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
+	return (fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE") ==
+							CURLE_OK  ? 0 : -EIO);
+}
 
 static void http_close(int sock)
 {
@@ -409,6 +417,7 @@ struct proto_ops proto_http = {
 	.close = http_close,
 	.signup = http_signup,
 	.signin = http_signin,
+	.signout = http_signout,
 	.get = http_get,
 	.post = http_post,
 };

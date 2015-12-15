@@ -50,7 +50,8 @@ struct proto_ops {
 	int (*signup) (int sock, const char *owner_uuid, json_raw_t *json);
 	int (*signin) (int sock, credential_t *auth, const char *uuid,
 							json_raw_t *json);
-
+	int (*signout)(int sock, credential_t *auth, const char *uuid,
+							json_raw_t *jbuf);
 	/* Low level communication abstraction */
 	int (*post) (int sock, const char *uuid, const char *token,
 						const char *fields);
