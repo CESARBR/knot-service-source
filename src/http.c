@@ -274,6 +274,16 @@ static int http_schema(int sock, credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
+static int http_data(int sock, credential_t *auth, const char *uuid,
+					     const char *jreq, json_raw_t *json)
+{
+	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + UUID_SIZE];
+
+	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DATA_URL, uuid);
+	return(fetch_url(sock, data_url, jreq, auth, json, "POST") ==
+							CURLE_OK  ? 0 : -EIO);
+}
+
 static void http_close(int sock)
 {
 
@@ -405,6 +415,7 @@ struct proto_ops proto_http = {
 	.signin = http_signin,
 	.signout = http_signout,
 	.schema = http_schema,
+	.data = http_data,
 	.get = http_get,
 	.post = http_post,
 };
