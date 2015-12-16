@@ -289,94 +289,6 @@ static void http_close(int sock)
 
 }
 
-static int http_get(int sock, const char *uuid, const char *token,
-						json_raw_t *json)
-{
-	struct curl_slist *headers = NULL;
-	char auth_uuid[55], auth_token[60];
-	char data_url[strlen(MESHBLU_DATA_URL) + 38];
-	CURL *curl;
-	CURLcode res;
-
-	curl = curl_easy_init();
-	if (curl == NULL)
-		return -ENOMEM;
-
-	snprintf(auth_uuid, sizeof(auth_uuid),
-				"meshblu_auth_uuid:%s", uuid);
-	snprintf(auth_token, sizeof(auth_token),
-				"meshblu_auth_token:%s", token);
-	snprintf(data_url, sizeof(data_url),
-				"%s%s", MESHBLU_DATA_URL, uuid);
-
-	headers = curl_slist_append(headers, "Accept: application/json");
-	headers = curl_slist_append(headers, "Content-Type: application/json");
-	headers = curl_slist_append(headers, "charsets: utf-8");
-	headers = curl_slist_append(headers, auth_uuid);
-	headers = curl_slist_append(headers, auth_token);
-
-	curl_easy_setopt(curl, CURLOPT_URL, data_url);
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-
-	/* TODO: make sure that it is smaller than KNOT timeout */
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, json);
-	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
-
-	res = curl_easy_perform(curl);
-	curl_slist_free_all(headers);
-
-	curl_easy_cleanup(curl);
-
-	if (res != CURLE_OK) {
-		LOG_ERROR("curl: %s(%d)\n", curl_easy_strerror(res), res);
-		return -EIO;
-	}
-
-	return 0;
-}
-
-static int http_post(int sock, const char *uuid, const char *token,
-						const char *fields)
-{
-	char data_url[strlen(MESHBLU_DATA_URL) + 38];
-	char auth_uuid[55], auth_token[60];
-	struct curl_slist *headers = NULL;
-	CURL *curl;
-	CURLcode res;
-
-	curl = curl_easy_init();
-	if(curl == NULL)
-		return -ENOMEM;
-
-	snprintf(data_url, sizeof(data_url), "%s%s", MESHBLU_DATA_URL, uuid);
-	snprintf(auth_uuid, sizeof(auth_uuid), "meshblu_auth_uuid: %s", uuid);
-	snprintf(auth_token, sizeof(auth_token), "meshblu_auth_token:%s",
-									token);
-
-	headers = curl_slist_append(headers, auth_uuid);
-	headers = curl_slist_append(headers, auth_token);
-
-	curl_easy_setopt(curl, CURLOPT_URL, data_url);
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-
-	/* TODO: make sure that it is smaller than KNOT timeout */
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
-	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
-
-	res = curl_easy_perform(curl);
-
-	curl_easy_cleanup(curl);
-	curl_slist_free_all(headers);
-
-	return (res == CURLE_OK  ? 0 : -EIO);
-}
-
 static int http_probe(void)
 {
 	struct hostent *host;
@@ -416,6 +328,4 @@ struct proto_ops proto_http = {
 	.signout = http_signout,
 	.schema = http_schema,
 	.data = http_data,
-	.get = http_get,
-	.post = http_post,
 };

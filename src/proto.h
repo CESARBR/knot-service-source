@@ -57,10 +57,4 @@ struct proto_ops {
 					const char *jreq, json_raw_t *json);
 	int (*data) (int sock, credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *jbuf);
-
-	/* Low level communication abstraction */
-	int (*post) (int sock, const char *uuid, const char *token,
-						const char *fields);
-	int (*get) (int sock, const char *uuid, const char *token,
-							 json_raw_t *json);
 };
