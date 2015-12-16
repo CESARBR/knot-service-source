@@ -52,6 +52,9 @@ struct proto_ops {
 							json_raw_t *json);
 	int (*signout)(int sock, credential_t *auth, const char *uuid,
 							json_raw_t *jbuf);
+	/* Abstraction for device data */
+	int (*schema) (int sock, credential_t *auth, const char *uuid,
+					const char *jreq, json_raw_t *json);
 	/* Low level communication abstraction */
 	int (*post) (int sock, const char *uuid, const char *token,
 						const char *fields);
