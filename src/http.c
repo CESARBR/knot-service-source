@@ -238,34 +238,10 @@ static int http_connect(void)
 	return sock;
 }
 
-static int http_signup(int sock, const char *owner_uuid,
-					json_raw_t *json)
+static int http_signup(int sock, const char *jreq, json_raw_t *json)
 {
-	CURL *curl;
-	CURLcode res;
-	char postfield[43];
-
-	curl = curl_easy_init();
-	if (curl == NULL)
-		return -ENOMEM;
-
-	snprintf(postfield, sizeof(postfield), "owner=%s", owner_uuid);
-
-	curl_easy_setopt(curl, CURLOPT_URL, MESHBLU_DEV_URL);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfield);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-
-	/* TODO: make sure that it is smaller than KNOT timeout */
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_OP_TIMEOUT);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, json);
-	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &sock);
-
-	res = curl_easy_perform(curl);
-
-	curl_easy_cleanup(curl);
-
-	return (res == CURLE_OK  ? 0 : -EIO);
+	return (fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json, "POST") ==
+							CURLE_OK  ? 0 : -EIO);
 }
 
 static int http_signin(int sock, credential_t *auth, const char *uuid,
