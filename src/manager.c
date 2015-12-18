@@ -107,12 +107,7 @@ static struct node_ops *node_ops[] = {
 	NULL
 };
 
-struct owner {
-	char *uuid;
-	char *token;
-};
-
-static struct owner *owner;
+static credential_t *owner;
 
 static GKeyFile *load_config(const char *file)
 {
@@ -159,7 +154,7 @@ static int parse_config(GKeyFile *config)
 				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN)
 		return -EINVAL;
 
-	owner = g_new0(struct owner, 1);
+	owner = g_new0(credential_t, 1);
 	owner->uuid = uuid;
 	owner->token= token;
 
