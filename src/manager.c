@@ -155,7 +155,9 @@ static int parse_config(GKeyFile *config)
 	} else
 		LOG_INFO("TOKEN=%s\n", token);
 
-	/* TODO: UUID & TOKEN consistency */
+	if (strlen(uuid) != KNOT_PROTOCOL_UUID_LEN ||
+				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN)
+		return -EINVAL;
 
 	owner = g_new0(struct owner, 1);
 	owner->uuid = uuid;
