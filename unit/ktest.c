@@ -26,12 +26,68 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdio.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include <glib.h>
+
+#include "src/log.h"
+
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET			"knot"
+
+static int sockfd;
+
+static int unix_connect(void)
+{
+	struct sockaddr_un addr;
+	int err, sock;
+
+	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		err = errno;
+		LOG_ERROR(" >socket failure: %s (%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strcpy(addr.sun_path + 1, KNOT_UNIX_SOCKET);
+
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		LOG_ERROR("connect(): %s (%d)", strerror(err), err);
+		close(sock);
+		return -err;
+	}
+
+	return sock;
+}
+
+static void connection_test(void)
+{
+	sockfd = unix_connect();
+	g_assert(sockfd > 0);
+}
+
+static void close_test(void)
+{
+	g_assert(close(sockfd) == 0);
+	sockfd = -1;
+}
 
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
-	g_test_init(&argc, &argv, NULL);
+	g_test_init (&argc, &argv, NULL);
+
+	/* TEST 1: Unix socket connection  */
+	g_test_add_func("/1/connect", connection_test);
+	g_test_add_func("/1/close", close_test);
 
 	return g_test_run();
 }

@@ -28,7 +28,9 @@ tools_ktool_LDADD = @GLIB_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
 tools_ktool_CFLAGS = $(AM_CFLAGS)
 
-unit_ktest_SOURCES = unit/ktest.c
+unit_ktest_SOURCES = unit/ktest.c 			\
+			src/log.h
+
 unit_ktest_LDADD = @GLIB_LIBS@
 unit_ktest_LDFLAGS = $(AM_LDFLAGS)
 unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
