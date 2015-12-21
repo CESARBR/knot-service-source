@@ -64,7 +64,7 @@ struct session {
 	char *token;
 };
 
-static unsigned int server_watch_id;
+static GSList *server_watch = NULL;
 
 extern struct proto_ops proto_http;
 #ifdef HAVE_WEBSOCKETS
@@ -353,6 +353,7 @@ int manager_start(const char *file, const char *proto, const char *tty)
 	GIOChannel *server_io;
 	GKeyFile *keyfile;
 	int err, sock, i;
+	guint server_watch_id;
 
 	keyfile = load_config(file);
 	if (keyfile == NULL)
@@ -403,7 +404,6 @@ int manager_start(const char *file, const char *proto, const char *tty)
 		if (node_ops[i]->probe() < 0)
 			continue;
 
-		LOG_INFO("node_ops(%p): %s\n", node_ops[i], node_ops[i]->name);
 		sock = node_ops[i]->listen();
 		if (sock < 0) {
 			err = sock;
@@ -421,6 +421,12 @@ int manager_start(const char *file, const char *proto, const char *tty)
 		server_watch_id = g_io_add_watch(server_io, cond, accept_cb,
 								node_ops[i]);
 		g_io_channel_unref(server_io);
+
+		LOG_INFO("node_ops(%p): (%s) watch: %d\n", node_ops[i],
+					node_ops[i]->name, server_watch_id);
+
+		server_watch = g_slist_prepend(server_watch,
+				      GUINT_TO_POINTER(server_watch_id));
 	}
 
 	return 0;
@@ -428,6 +434,8 @@ int manager_start(const char *file, const char *proto, const char *tty)
 
 void manager_stop(void)
 {
+	GSList *list;
+	guint server_watch_id;
 	int i;
 
 	/* Remove only previously loaded modules */
@@ -436,8 +444,14 @@ void manager_stop(void)
 
 	proto_ops[proto_index]->remove();
 
-	if (server_watch_id)
+	for (list = server_watch; list; list = g_slist_next(list)) {
+		server_watch_id = GPOINTER_TO_UINT(list->data);
 		g_source_remove(server_watch_id);
+
+		LOG_INFO("Removed watch: %d\n", server_watch_id);
+	}
+
+	g_slist_free(server_watch);
 
 	if (owner) {
 		g_free(owner->uuid);
