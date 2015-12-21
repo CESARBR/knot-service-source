@@ -15,6 +15,7 @@ include Makefile.modules
 
 src_knotd_SOURCES = src/main.c \
 			src/manager.h src/manager.c \
+			src/msg.c src/msg.h \
 			src/proto.h src/node.h \
 			src/log.h \
 			$(modules_sources)

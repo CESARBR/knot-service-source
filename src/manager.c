@@ -38,7 +38,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <json-c/json.h>
 
 #include <glib.h>
 
@@ -49,6 +48,7 @@
 #include "node.h"
 #include "proto.h"
 #include "serial.h"
+#include "msg.h"
 #include "manager.h"
 
 /*
@@ -60,8 +60,6 @@ struct session {
 	unsigned int proto_id;	/* TCP/backend event source */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 	struct node_ops *ops;
-	char *uuid;
-	char *token;
 };
 
 static GSList *server_watch = NULL;
@@ -161,38 +159,12 @@ static int parse_config(GKeyFile *config)
 	return 0;
 }
 
-static int parse_device_info(const char *json_str, struct session *session)
-{
-	json_object *jobj,*json_uuid, *json_token;
-	const char *uuid, *token;
-
-	jobj = json_tokener_parse(json_str);
-	if (jobj == NULL)
-		return -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
-		return -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "token", &json_token))
-		return -EINVAL;
-
-	uuid = json_object_get_string(json_uuid);
-	token = json_object_get_string(json_token);
-
-	session->uuid = g_strdup(uuid);
-	session->token = g_strdup(token);
-
-	return 0;
-}
-
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *ops = session->ops;
-	uint8_t dgram[128];
-	const knot_msg_header *hdr = (const knot_msg_header *) dgram;
-	json_raw_t json;
+	uint8_t ipdu[512]; /* FIXME: */
 	ssize_t nbytes;
 	int sock, proto_sock, err = 0;
 
@@ -201,35 +173,17 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	nbytes = ops->recv(sock, dgram, sizeof(dgram));
+	nbytes = ops->recv(sock, ipdu, sizeof(ipdu));
 	if (nbytes < 0) {
 		err = errno;
 		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
 		return FALSE;
 	}
 
-	LOG_INFO("KNOT OP: 0x%02X LEN: %02x\n", hdr->type, hdr->payload_len);
-
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
-	switch (hdr->type) {
-	case KNOT_MSG_REGISTER_REQ:
-		memset(&json, 0, sizeof(json));
-		err = proto_ops[proto_index]->signup(proto_sock,
-						owner->uuid, &json);
-		if (err < 0) {
-			LOG_ERROR("manager signup: %s(%d)\n",
-						strerror(-err), -err);
-			return FALSE;
-		}
 
-		parse_device_info(json.data, session);
-		free(json.data);
-		break;
-	default:
-		/* TODO: reply unknown command */
-		break;
-	}
-
+	err = msg_process(owner, proto_sock, proto_ops[proto_index],
+							ipdu, nbytes);
 	if (err)
 		LOG_ERROR("KNOT IoT proto error: %s(%d)\n", strerror(err), err);
 
@@ -255,12 +209,6 @@ static void node_io_destroy(gpointer user_data)
 
 	if (session->proto_id)
 		g_source_remove(session->proto_id);
-
-	if (session->token)
-		g_free(session->token);
-
-	if (session->uuid)
-		g_free(session->uuid);
 
 	g_free(session);
 }
