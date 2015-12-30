@@ -131,6 +131,26 @@ static void register_test_missing_devname(void)
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
+static void register_test_empty_devname(void)
+{
+	knot_msg kmsg, kresp;
+	ssize_t size;
+
+	memset(&kmsg, 0, sizeof(knot_msg));
+	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+
+	kmsg.hdr.payload_len = 1;
+	size = do_request(&kmsg, sizeof(kmsg.reg), &kresp);
+
+	/* Response consistency */
+	g_assert(size == sizeof(kresp.action));
+	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+
+	/* Response opcode & result */
+	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
+	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
+}
+
 static void register_test_invalid_payload_len(void)
 {
 	knot_msg kmsg, kresp;
@@ -161,6 +181,8 @@ int main(int argc, char *argv[])
 
 	g_test_add_func("/1/register_missing_devname",
 				register_test_missing_devname);
+	g_test_add_func("/1/register_empty_devname",
+				register_test_empty_devname);
 	g_test_add_func("/1/register_invalid_payload_len",
 				register_test_invalid_payload_len);
 
