@@ -172,6 +172,30 @@ static void register_test_invalid_payload_len(void)
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
+static void register_test_valid_devname(void)
+{
+	knot_msg kmsg, kresp;
+	ssize_t size;
+
+	memset(&kmsg, 0, sizeof(knot_msg));
+	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+
+	/* Copying name to registration message */
+	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
+	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
+
+	size = do_request(&kmsg, sizeof(kmsg.reg), &kresp);
+
+	/* Response consistency */
+	g_assert(size == sizeof(kresp.cred));
+
+	/* Response opcode & result */
+	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
+	g_assert(kresp.action.result == KNOT_SUCCESS);
+
+	LOG_INFO("UUID: %s\n", kresp.cred.uuid);
+}
+
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
@@ -185,6 +209,8 @@ int main(int argc, char *argv[])
 				register_test_empty_devname);
 	g_test_add_func("/1/register_invalid_payload_len",
 				register_test_invalid_payload_len);
+	g_test_add_func("/1/register_valid_devname",
+				register_test_valid_devname);
 
 	g_test_add_func("/1/close", close_test);
 
