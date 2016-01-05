@@ -45,17 +45,17 @@ static credential_t *parse_device_info(const char *json_str)
 {
 	json_object *jobj,*json_uuid, *json_token;
 	const char *uuid, *token;
-	credential_t *credential;
+	credential_t *credential = NULL;
 
 	jobj = json_tokener_parse(json_str);
 	if (jobj == NULL)
 		return NULL;
 
 	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
-		return NULL;
+		goto done;
 
 	if (!json_object_object_get_ex(jobj, "token", &json_token))
-		return NULL;
+		goto done;
 
 	uuid = json_object_get_string(json_uuid);
 	token = json_object_get_string(json_token);
@@ -63,6 +63,9 @@ static credential_t *parse_device_info(const char *json_str)
 	credential = g_new0(credential_t, 1);
 	credential->uuid = g_strdup(uuid);
 	credential->token = g_strdup(token);
+
+done:
+	json_object_put(jobj);
 
 	return credential;
 }
