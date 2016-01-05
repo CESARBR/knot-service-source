@@ -164,17 +164,17 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 {
 	struct session *session = user_data;
 	struct node_ops *ops = session->ops;
-	uint8_t ipdu[512]; /* FIXME: */
-	ssize_t nbytes;
-	int sock, proto_sock, err = 0;
+	uint8_t ipdu[512], opdu[512]; /* FIXME: */
+	ssize_t recvbytes, sentbytes, olen;
+	int sock, proto_sock, err;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
 		return FALSE;
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	nbytes = ops->recv(sock, ipdu, sizeof(ipdu));
-	if (nbytes < 0) {
+	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
+	if (recvbytes < 0) {
 		err = errno;
 		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
 		return FALSE;
@@ -182,10 +182,22 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 
-	err = msg_process(owner, proto_sock, proto_ops[proto_index],
-							ipdu, nbytes);
-	if (err)
-		LOG_ERROR("KNOT IoT proto error: %s(%d)\n", strerror(err), err);
+	olen = msg_process(owner, proto_sock, proto_ops[proto_index],
+					ipdu, recvbytes, opdu, sizeof(opdu));
+	/* olen: output length or -errno */
+	if (olen < 0) {
+		/* Server didn't reply any error */
+		LOG_ERROR("KNOT IoT proto error: %s(%ld)\n",
+						strerror(-olen), -olen);
+		return TRUE;
+	}
+
+	/* Response from the gateway: error or response for the given command */
+
+	sentbytes = ops->send(sock, opdu, olen);
+	if (sentbytes < 0)
+		LOG_ERROR("node_ops: %s(%ld)\n",
+					strerror(-sentbytes), -sentbytes);
 
 	return TRUE;
 }

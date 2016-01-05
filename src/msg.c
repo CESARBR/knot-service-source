@@ -27,6 +27,7 @@
  */
 
 #include <stdio.h>
+#include <errno.h>
 
 #include <string.h>
 #include <glib.h>
@@ -66,37 +67,130 @@ static credential_t *parse_device_info(const char *json_str)
 	return credential;
 }
 
-ssize_t msg_process(const credential_t *owner, int proto_sock,
-				const struct proto_ops *proto_ops,
-				const void *ipdu, ssize_t ilen)
+static int8_t msg_register(const credential_t *owner, int proto_sock,
+				    const struct proto_ops *proto_ops,
+				    const knot_msg_register *kreq,
+				    knot_msg_credential *krsp)
 {
-	const knot_msg_header *ihdr = ipdu;
 	credential_t *credential;
+	json_object *jobj;
+	const char *jobjstring;
 	json_raw_t json;
 	int err;
 
-	LOG_INFO("KNOT OP: 0x%02X LEN: %02x\n", ihdr->type, ihdr->payload_len);
+	if (kreq->devName[0] == '\0') {
+		LOG_ERROR("Empty device name!\n");
+		return KNOT_REGISTER_INVALID_DEVICENAME;
+	}
 
-	switch (ihdr->type) {
+	jobj = json_object_new_object();
+	if (!jobj) {
+		LOG_ERROR("JSON: no memory\n");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	json_object_object_add(jobj, "KNOTDevice",
+				json_object_new_string("type"));
+	json_object_object_add(jobj, "name",
+			       json_object_new_string(kreq->devName));
+	json_object_object_add(jobj, "owner",
+				json_object_new_string(owner->uuid));
+
+	jobjstring = json_object_to_json_string(jobj);
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->signup(proto_sock, jobjstring, &json);
+
+	json_object_put(jobj);
+
+	if (err < 0) {
+		LOG_ERROR("manager signup: %s(%d)\n", strerror(-err), -err);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	credential = parse_device_info(json.data);
+	if (!credential) {
+		LOG_ERROR("Unexpected response!\n");
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	LOG_INFO("UUID: %s, TOKEN: %s\n", credential->uuid, credential->token);
+
+	if (credential->uuid && strlen(credential->uuid) != 36) {
+		LOG_ERROR("Invalid UUID\n");
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	strcpy(krsp->uuid, credential->uuid);
+
+	/* Payload length includes the result, and UUID */
+	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+
+	g_free(credential->uuid);
+	g_free(credential->token);
+	g_free(credential);
+
+	free(json.data);
+
+	return KNOT_SUCCESS;
+}
+
+ssize_t msg_process(const credential_t *owner, int proto_sock,
+				const struct proto_ops *proto_ops,
+				const void *ipdu, size_t ilen,
+				void *opdu, size_t omtu)
+{
+	const knot_msg *kreq = ipdu;
+	knot_msg *krsp = opdu;
+	uint8_t rtype;
+	int8_t result = KNOT_INVALID_DATA;
+
+	/* Verify if output PDU has a min length */
+	if (omtu < sizeof(knot_msg)) {
+		LOG_ERROR("Output PDU: invalid PDU length\n");
+		return -EINVAL;
+	}
+
+	/* Response is always the next opcode */
+	rtype = kreq->hdr.type + 1;
+
+	/* Set a default payload length for error */
+	krsp->hdr.payload_len = sizeof(krsp->action.result);
+
+	/* At least header should be received */
+	if (ilen < sizeof(knot_msg_header)) {
+		LOG_ERROR("Input PDU: invalid PDU length\n");
+		goto done;
+	}
+
+	/* Missing payload? */
+	if (kreq->hdr.payload_len == 0) {
+		LOG_ERROR("Input PDU: invalid PDU length\n");
+		/* FIXME */
+		result = KNOT_REGISTER_INVALID_DEVICENAME;
+		goto done;
+	}
+
+	LOG_INFO("KNOT OP: 0x%02X LEN: %02x\n",
+				kreq->hdr.type, kreq->hdr.payload_len);
+
+	switch (kreq->hdr.type) {
 	case KNOT_MSG_REGISTER_REQ:
-		memset(&json, 0, sizeof(json));
-		err = proto_ops->signup(proto_sock, owner->uuid, &json);
-		if (err < 0) {
-			LOG_ERROR("manager signup: %s(%d)\n",
-						strerror(-err), -err);
-			return FALSE;
-		}
 
-		/* TODO: leaking */
-		credential = parse_device_info(json.data);
-		LOG_INFO("UUID: %s, TOKEN: %s\n", credential->uuid,
-							credential->token);
-		free(json.data);
+		/* Payload length is set by the caller */
+		result = msg_register(owner, proto_sock, proto_ops,
+						&kreq->reg, &krsp->cred);
 		break;
 	default:
 		/* TODO: reply unknown command */
 		break;
 	}
 
-	return 0;
+done:
+	krsp->hdr.type = rtype;
+
+	krsp->action.result = result;
+
+	/* Return the actual amount of octets to be transmitted */
+	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
 }

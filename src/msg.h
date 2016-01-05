@@ -28,4 +28,5 @@
 
 ssize_t msg_process(const credential_t *owner, int proto_sock,
 				const struct proto_ops *proto_ops,
-				const void *ipdu, ssize_t ilen);
+				const void *ipdu, size_t ilen,
+				void *opdu, size_t olen);

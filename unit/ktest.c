@@ -128,7 +128,7 @@ static void register_test_missing_devname(void)
 
 	/* Response opcode & result */
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_INVALID_DATA);
+	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
 
 static void register_test_empty_devname(void)
@@ -169,7 +169,7 @@ static void register_test_invalid_payload_len(void)
 
 	/* Response opcode & result */
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_INVALID_DATA);
+	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
 
 static void register_test_valid_devname(void)
