@@ -80,6 +80,7 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 	const char *jobjstring;
 	json_raw_t json;
 	int err;
+	int8_t result;
 
 	if (kreq->devName[0] == '\0') {
 		LOG_ERROR("Empty device name!\n");
@@ -119,9 +120,11 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 
 	LOG_INFO("UUID: %s, TOKEN: %s\n", credential->uuid, credential->token);
 
-	if (credential->uuid && strlen(credential->uuid) != 36) {
-		LOG_ERROR("Invalid UUID\n");
-		return KNOT_CLOUD_FAILURE;
+	/* Parse function never returns NULL for 'uuid' or 'token' fields */
+	if (strlen(credential->uuid) != 36 || strlen(credential->token) != 40) {
+		LOG_ERROR("Invalid UUID or token!\n");
+		result = KNOT_CLOUD_FAILURE;
+		goto done;
 	}
 
 	strcpy(krsp->uuid, credential->uuid);
@@ -129,13 +132,16 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 	/* Payload length includes the result, and UUID */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
 
+	result = KNOT_SUCCESS;
+
+done:
 	g_free(credential->uuid);
 	g_free(credential->token);
 	g_free(credential);
 
 	free(json.data);
 
-	return KNOT_SUCCESS;
+	return result;
 }
 
 ssize_t msg_process(const credential_t *owner, int proto_sock,
