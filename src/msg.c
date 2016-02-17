@@ -113,6 +113,9 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 	}
 
 	credential = parse_device_info(json.data);
+
+	free(json.data);
+
 	if (!credential) {
 		LOG_ERROR("Unexpected response!\n");
 		return KNOT_CLOUD_FAILURE;
@@ -138,8 +141,6 @@ done:
 	g_free(credential->uuid);
 	g_free(credential->token);
 	g_free(credential);
-
-	free(json.data);
 
 	return result;
 }
