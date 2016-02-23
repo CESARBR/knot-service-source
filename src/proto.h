@@ -48,13 +48,13 @@ struct proto_ops {
 
 	/* Abstraction for session establishment or registration */
 	int (*signup) (int sock, const char *owner_uuid, json_raw_t *json);
-	int (*signin) (int sock, credential_t *auth, const char *uuid,
+	int (*signin) (int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json);
-	int (*signout)(int sock, credential_t *auth, const char *uuid,
+	int (*signout)(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf);
 	/* Abstraction for device data */
-	int (*schema) (int sock, credential_t *auth, const char *uuid,
+	int (*schema) (int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json);
-	int (*data) (int sock, credential_t *auth, const char *uuid,
+	int (*data) (int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *jbuf);
 };

@@ -105,7 +105,8 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 
 /* Fetch and return url body via curl */
 static CURLcode fetch_url(int sockfd, const char *action, const char *json,
-		credential_t *auth, json_raw_t *fetch, const char *request)
+				const credential_t *auth, json_raw_t *fetch,
+				const char *request)
 {
 	char token[MESHBLU_AUTH_TOKEN_SIZE + TOKEN_SIZE];
 	char uuid[MESHBLU_AUTH_UUID_SIZE + UUID_SIZE];
@@ -244,7 +245,7 @@ static int http_signup(int sock, const char *jreq, json_raw_t *json)
 							CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_signin(int sock, credential_t *auth, const char *uuid,
+static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
@@ -254,7 +255,7 @@ static int http_signin(int sock, credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_signout(int sock, credential_t *auth, const char *uuid,
+static int http_signout(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
@@ -264,7 +265,7 @@ static int http_signout(int sock, credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_schema(int sock, credential_t *auth, const char *uuid,
+static int http_schema(int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
@@ -274,7 +275,7 @@ static int http_schema(int sock, credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_data(int sock, credential_t *auth, const char *uuid,
+static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + UUID_SIZE];
