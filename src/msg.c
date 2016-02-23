@@ -145,6 +145,47 @@ done:
 	return result;
 }
 
+static int8_t msg_unregister(const credential_t *owner, int proto_sock,
+				    const struct proto_ops *proto_ops,
+				    const knot_msg_unregister *kreq)
+{
+	json_raw_t jbuf = { NULL, 0 };
+	int8_t result;
+	int err;
+
+	/* 36 octets */
+	if (kreq->hdr.payload_len != sizeof(kreq->uuid)) {
+		LOG_ERROR("Wrong payload length!\n");
+		result = KNOT_INVALID_DATA;
+		goto done;
+	}
+
+	/*
+	 * Owner UUID and Token are always valid. These parameters
+	 * are verified when they are loaded from storage. Permission
+	 * related to owner & devices needs to be checked by the backend
+	 * service. eg: Device doesn't belongs to the current owner.
+	 */
+
+	LOG_INFO("signout: %36s\n", kreq->uuid);
+
+	err = proto_ops->signout(proto_sock, owner, kreq->uuid, &jbuf);
+	if (err < 0) {
+		result = KNOT_CLOUD_FAILURE;
+		LOG_ERROR("signout %s failed %s (%d)\n",
+					kreq->uuid, strerror(-err), -err);
+		goto done;
+	}
+
+	result = KNOT_SUCCESS;
+
+done:
+	if (jbuf.data)
+		free(jbuf.data);
+
+	return result;
+}
+
 ssize_t msg_process(const credential_t *owner, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
@@ -190,6 +231,10 @@ ssize_t msg_process(const credential_t *owner, int proto_sock,
 		/* Payload length is set by the caller */
 		result = msg_register(owner, proto_sock, proto_ops,
 						&kreq->reg, &krsp->cred);
+		break;
+	case KNOT_MSG_UNREGISTER_REQ:
+		result = msg_unregister(owner, proto_sock, proto_ops,
+								&kreq->unreg);
 		break;
 	default:
 		/* TODO: reply unknown command */
