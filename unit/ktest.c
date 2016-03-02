@@ -217,6 +217,27 @@ static void unregister_test_invalid_payload_len0(void)
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
+static void unregister_test_invalid_large_payload(void)
+{
+	knot_msg kmsg, kresp;
+
+	memset(&kmsg, 0, sizeof(kmsg));
+	memset(&kresp, 0, sizeof(kresp));
+	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+
+	/*
+	 * Sending: payload_len == sizeof(kmsg.unreg) - sizeof(kmsg.hdr) + 1
+	 * Expected: 'KNOT_INVALID_DATA'
+	 */
+
+	kmsg.hdr.payload_len = sizeof(kmsg.unreg) - sizeof(kmsg.hdr) + 1;
+	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
+							sizeof(kresp.action));
+	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
+	g_assert(kresp.action.result == KNOT_INVALID_DATA);
+}
+
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
@@ -235,6 +256,8 @@ int main(int argc, char *argv[])
 
 	g_test_add_func("/1/unregister_invalid_payload_len0",
 				unregister_test_invalid_payload_len0);
+	g_test_add_func("/1/unregister_test_invalid_large_payload",
+				unregister_test_invalid_large_payload);
 
 	g_test_add_func("/1/close", close_test);
 
