@@ -70,6 +70,50 @@ done:
 	return credential;
 }
 
+static int8_t json_result(const char *jraw)
+{
+	json_object *jobj, *jfield;
+	int8_t result = KNOT_ERROR_UNKNOWN;
+	int code;
+
+	if(jraw == NULL)
+		return KNOT_NO_DATA;
+
+	jobj = json_tokener_parse(jraw);
+	if (jobj == NULL)
+		return KNOT_GW_FAILURE;
+
+	if (json_object_object_get_ex(jobj, "code", &jfield) != TRUE)
+		goto done;
+
+	code = json_object_get_int(jfield);
+	if(json_object_object_get_ex(jobj, "message", &jfield) != TRUE)
+		goto done;
+
+	switch(code) {
+	case 200:
+		result = KNOT_SUCCESS;
+		break;
+		/* Unauthorized */
+	case 401:
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		break;
+		/* Device not found */
+	case 404:
+		result = KNOT_DEVICE_NOT_FOUND;
+		break;
+	default:
+		LOG_ERROR("'%s' code=%d\n",
+			  json_object_get_string(jfield), code);
+		break;
+	}
+
+done:
+	json_object_put(jobj);
+
+	return result;
+}
+
 static int8_t msg_register(const credential_t *owner, int proto_sock,
 				    const struct proto_ops *proto_ops,
 				    const knot_msg_register *kreq,
@@ -177,7 +221,9 @@ static int8_t msg_unregister(const credential_t *owner, int proto_sock,
 		goto done;
 	}
 
-	result = KNOT_SUCCESS;
+	result = json_result(jbuf.data);
+
+	/* Propagate KNOT result to the caller */
 
 done:
 	if (jbuf.data)
