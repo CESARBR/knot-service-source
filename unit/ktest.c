@@ -177,6 +177,7 @@ static void register_test_valid_devname(void)
 	knot_msg kmsg, kresp;
 	ssize_t size;
 
+	memset(&kresp, 0, sizeof(kresp));
 	memset(&kmsg, 0, sizeof(knot_msg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
