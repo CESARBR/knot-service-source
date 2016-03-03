@@ -241,6 +241,9 @@ static void unregister_test_invalid_large_payload(void)
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
+
+	signal(SIGPIPE, SIG_IGN);
+
 	g_test_init (&argc, &argv, NULL);
 
 	g_test_add_func("/1/connect", connection_test);
