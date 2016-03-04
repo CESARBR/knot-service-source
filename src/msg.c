@@ -263,8 +263,6 @@ ssize_t msg_process(const credential_t *owner, int proto_sock,
 	/* Missing payload? */
 	if (kreq->hdr.payload_len == 0) {
 		LOG_ERROR("Input PDU: invalid PDU length\n");
-		/* FIXME */
-		result = KNOT_REGISTER_INVALID_DEVICENAME;
 		goto done;
 	}
 

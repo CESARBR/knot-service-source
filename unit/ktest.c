@@ -128,7 +128,7 @@ static void register_test_missing_devname(void)
 
 	/* Response opcode & result */
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
+	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
 static void register_test_empty_devname(void)
