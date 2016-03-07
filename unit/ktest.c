@@ -47,6 +47,7 @@
 #define	KTEST_DEVICE_NAME			"ktest_unit_test"
 
 static int sockfd;
+static char uuid128[KNOT_PROTOCOL_UUID_LEN];
 
 static int unix_connect(void)
 {
@@ -195,6 +196,7 @@ static void register_test_valid_devname(void)
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 
 	LOG_INFO("UUID: %s\n", kresp.cred.uuid);
+	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 }
 
 static void unregister_test_invalid_payload_len0(void)
@@ -238,6 +240,23 @@ static void unregister_test_invalid_large_payload(void)
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
+static void unregister_test_valid_device(void)
+{
+	knot_msg kmsg, kresp;
+
+	memset(&kmsg, 0, sizeof(kmsg));
+	memset(&kresp, 0, sizeof(kresp));
+	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+
+	kmsg.hdr.payload_len = sizeof(kmsg.unreg.uuid);
+	memcpy(kmsg.unreg.uuid, uuid128, sizeof(kmsg.unreg.uuid));
+	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
+							sizeof(kresp.action));
+	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
+	g_assert(kresp.action.result == KNOT_SUCCESS);
+}
+
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
@@ -261,6 +280,8 @@ int main(int argc, char *argv[])
 				unregister_test_invalid_payload_len0);
 	g_test_add_func("/1/unregister_test_invalid_large_payload",
 				unregister_test_invalid_large_payload);
+	g_test_add_func("/1/unregister_test_valid_device",
+				unregister_test_valid_device);
 
 	g_test_add_func("/1/close", close_test);
 
