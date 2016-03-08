@@ -83,6 +83,22 @@ static int8_t json_result(const char *jraw)
 	if (jobj == NULL)
 		return KNOT_GW_FAILURE;
 
+	if (json_object_object_get_ex(jobj, "error", &jfield)) {
+		const char *msg = json_object_get_string(jfield);
+		if(strcmp("Device not found", msg) == 0)
+			result = KNOT_INVALID_DEVICE;
+
+		/* Allow overwritting if 'code' is available */
+	}
+
+	/*
+	 * In addition to 'error', 'code' may be included in the
+	 * returned JSON error message. In general, 'error' is
+	 * generic message (string format). 'code' is a HTTP
+	 * error. The logic implemented here, returns the KNOT
+	 * error equivalent to the HTTP error returned or a generic
+	 * error when 'code' is not found.
+	 */
 	if (json_object_object_get_ex(jobj, "code", &jfield) != TRUE)
 		goto done;
 
