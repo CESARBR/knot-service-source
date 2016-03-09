@@ -266,24 +266,39 @@ int main(int argc, char *argv[])
 	g_test_init (&argc, &argv, NULL);
 
 	g_test_add_func("/1/connect", connection_test);
-
 	g_test_add_func("/1/register_missing_devname",
 				register_test_missing_devname);
-	g_test_add_func("/1/register_empty_devname",
-				register_test_empty_devname);
-	g_test_add_func("/1/register_invalid_payload_len",
-				register_test_invalid_payload_len);
-	g_test_add_func("/1/register_valid_devname",
-				register_test_valid_devname);
-
-	g_test_add_func("/1/unregister_invalid_payload_len0",
-				unregister_test_invalid_payload_len0);
-	g_test_add_func("/1/unregister_test_invalid_large_payload",
-				unregister_test_invalid_large_payload);
-	g_test_add_func("/1/unregister_test_valid_device",
-				unregister_test_valid_device);
-
 	g_test_add_func("/1/close", close_test);
+
+	g_test_add_func("/2/connect", connection_test);
+	g_test_add_func("/2/register_empty_devname",
+				register_test_empty_devname);
+	g_test_add_func("/2/close", close_test);
+
+	g_test_add_func("/3/connect", connection_test);
+	g_test_add_func("/3/register_invalid_payload_len",
+				register_test_invalid_payload_len);
+	g_test_add_func("/3/close", close_test);
+
+	g_test_add_func("/4/connect", connection_test);
+	g_test_add_func("/4/register_valid_devname",
+				register_test_valid_devname);
+	g_test_add_func("/4/close", close_test);
+
+	g_test_add_func("/5/connect", connection_test);
+	g_test_add_func("/5/unregister_invalid_payload_len0",
+				unregister_test_invalid_payload_len0);
+	g_test_add_func("/5/close", close_test);
+
+	g_test_add_func("/6/connect", connection_test);
+	g_test_add_func("/6/unregister_test_invalid_large_payload",
+				unregister_test_invalid_large_payload);
+	g_test_add_func("/6/close", close_test);
+
+	g_test_add_func("/7/connect", connection_test);
+	g_test_add_func("/7/unregister_test_valid_device",
+				unregister_test_valid_device);
+	g_test_add_func("/7/close", close_test);
 
 	return g_test_run();
 }
