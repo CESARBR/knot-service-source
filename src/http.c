@@ -239,7 +239,7 @@ static int http_connect(void)
 	return sock;
 }
 
-static int http_signup(int sock, const char *jreq, json_raw_t *json)
+static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 {
 	return (fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json, "POST") ==
 							CURLE_OK  ? 0 : -EIO);
@@ -324,7 +324,7 @@ struct proto_ops proto_http = {
 
 	.connect = http_connect,
 	.close = http_close,
-	.signup = http_signup,
+	.mknode = http_mknode,
 	.signin = http_signin,
 	.signout = http_signout,
 	.schema = http_schema,

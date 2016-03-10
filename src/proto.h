@@ -47,7 +47,7 @@ struct proto_ops {
 	void (*close) (int sock);
 
 	/* Abstraction for session establishment or registration */
-	int (*signup) (int sock, const char *owner_uuid, json_raw_t *json);
+	int (*mknode) (int sock, const char *owner_uuid, json_raw_t *json);
 	int (*signin) (int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json);
 	int (*signout)(int sock, const credential_t *auth, const char *uuid,

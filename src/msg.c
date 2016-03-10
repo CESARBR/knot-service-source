@@ -163,12 +163,12 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 	jobjstring = json_object_to_json_string(jobj);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->signup(proto_sock, jobjstring, &json);
+	err = proto_ops->mknode(proto_sock, jobjstring, &json);
 
 	json_object_put(jobj);
 
 	if (err < 0) {
-		LOG_ERROR("manager signup: %s(%d)\n", strerror(-err), -err);
+		LOG_ERROR("manager mknode: %s(%d)\n", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
 

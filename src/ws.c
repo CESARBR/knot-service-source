@@ -168,7 +168,7 @@ static void ws_close(int sock)
 		LOG_ERROR("Removing key: sock %d not found!\n", sock);
 }
 
-static int ws_signup(int sock, const char *owner_uuid,
+static int ws_mknode(int sock, const char *owner_uuid,
 					json_raw_t *json)
 {
 	return -ENOSYS;
@@ -234,6 +234,6 @@ struct proto_ops proto_ws = {
 	.remove = ws_remove,
 	.connect = ws_connect,
 	.close = ws_close,
-	.signup = ws_signup,
+	.mknode = ws_mknode,
 	.signin = ws_signin,
 };
