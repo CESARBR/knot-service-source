@@ -255,7 +255,7 @@ static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							CURLE_OK  ? 0 : -EIO);
 }
 
-static int http_signout(int sock, const credential_t *auth, const char *uuid,
+static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
@@ -326,7 +326,7 @@ struct proto_ops proto_http = {
 	.close = http_close,
 	.mknode = http_mknode,
 	.signin = http_signin,
-	.signout = http_signout,
+	.rmnode = http_rmnode,
 	.schema = http_schema,
 	.data = http_data,
 };
