@@ -56,8 +56,9 @@
  * device context: 'drivers' and file descriptors
  */
 struct session {
-	unsigned int radio_id;	/* Radio event source */
+	unsigned int node_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
+	GIOChannel *node_io;	/* Radio GIOChannel reference */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 	struct node_ops *ops;
 };
@@ -168,8 +169,11 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	ssize_t recvbytes, sentbytes, olen;
 	int sock, proto_sock, err;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+		/* Mark as removed */
+		session->node_id = 0;
 		return FALSE;
+	}
 
 	sock = g_io_channel_unix_get_fd(io);
 
@@ -177,7 +181,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	if (recvbytes < 0) {
 		err = errno;
 		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
-		return FALSE;
+		return TRUE;
 	}
 
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
@@ -206,21 +210,21 @@ static void node_io_destroy(gpointer user_data)
 {
 
 	struct session *session = user_data;
-	int sock;
+	GIOChannel *proto_io;
 
-	/* Mark as removed */
-	session->radio_id = 0;
+	proto_io = session->proto_io;
 
-	/*
-	 * When the protocol connection (backend) is dropped
-	 * call signoff & unref the GIOChannel.
-	 */
-	sock = g_io_channel_unix_get_fd(session->proto_io);
-	proto_ops[proto_index]->close(sock);
-	g_io_channel_unref(session->proto_io);
-
-	if (session->proto_id)
+	if (session->proto_id) {
+		/* Trigger proto destroy callback */
 		g_source_remove(session->proto_id);
+
+		/* Mark for shutdown */
+		g_io_channel_shutdown(proto_io, FALSE, NULL);
+	}
+
+	/* Release last reference and shutdown */
+	g_io_channel_unref(proto_io);
+	LOG_INFO("proto_io unref(%p)\n", proto_io);
 
 	g_free(session);
 }
@@ -228,7 +232,13 @@ static void node_io_destroy(gpointer user_data)
 static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 					       gpointer user_data)
 {
-	/* Return FALSE to remove protocol GIOChannel reference */
+	struct session *session = user_data;
+
+	/*
+	 * Mark protocol watch as removed. Return
+	 * FALSE to remove GIOChannel watch.
+	 */
+	session->proto_id = 0;
 
 	return FALSE;
 }
@@ -236,19 +246,26 @@ static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 static void proto_io_destroy(gpointer user_data)
 {
 	struct session *session = user_data;
+	GIOChannel *node_io;
 
 	/*
-	 * Remove Unix socket GIOChannel watch when protocol
-	 * socket disconnects. Removing the watch triggers
-	 * channe unref and consequently disconnection of
-	 * the Unix socket
+	 * Assign to a temporary reference: 'session' might be
+	 * freed by node destroy callback (triggered by source
+	 * remove).
 	 */
+	node_io = session->node_io;
 
-	/* Mark protocol watch as removed */
-	session->proto_id = 0;
+	if (session->node_id) {
+		/* Trigger node destroy callback */
+		g_source_remove(session->node_id);
 
-	if (session->radio_id)
-	    g_source_remove(session->radio_id);
+		/* Mark for shutdown */
+		g_io_channel_shutdown(node_io, TRUE, NULL);
+	}
+
+	/* Release last reference and shutdown */
+	g_io_channel_unref(node_io);
+	LOG_INFO("node_io unref(%p)\n", node_io);
 }
 
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
@@ -265,7 +282,6 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
-	LOG_INFO("%p accept()\n", ops);
 	sockfd = ops->accept(srv_sock);
 	if (sockfd < 0) {
 		LOG_ERROR("%p accept(): %s(%d)\n", ops,
@@ -274,23 +290,19 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	}
 
 	node_io = g_io_channel_unix_new(sockfd);
-	g_io_channel_set_close_on_unref(node_io, TRUE);
 
 	proto_sock = proto_ops[proto_index]->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
-	g_io_channel_set_close_on_unref(proto_io, TRUE);
 
 	session = g_new0(struct session, 1);
 	/* Watch for unix socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN;
-	session->radio_id = g_io_add_watch_full(node_io,
+	session->node_id = g_io_add_watch_full(node_io,
 				G_PRIORITY_DEFAULT, watch_cond,
 				node_io_watch, session,
 				node_io_destroy);
 
-	/* Keep only one ref: GIOChannel watch */
-	g_io_channel_unref(node_io);
-
+	session->node_io = node_io;
 	/* Watch for TCP socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
 	session->proto_id = g_io_add_watch_full(proto_io,
@@ -303,6 +315,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	/* TODO: Create refcount */
 	session->ops = ops;
+
+	LOG_INFO("node:%p proto:%p\n", node_io, proto_io);
 
 	return TRUE;
 }
