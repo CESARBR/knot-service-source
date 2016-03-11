@@ -24,3 +24,9 @@ $valgrind --leak-check=full --track-fds=yes ./src/knotd \
 How to test (Unix sockets):
 $src/knotd
 $tools/ktool connect
+
+Setup before running knotd:
+'src/knot.conf' file must be updated according to a valid user settings.
+
+Register an account at 'https://app.octoblu.com' and get the UUID
+and token required to change 'src/knot.conf'
