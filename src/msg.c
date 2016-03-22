@@ -70,66 +70,6 @@ done:
 	return credential;
 }
 
-static int8_t json_result(const char *jraw)
-{
-	json_object *jobj, *jfield;
-	int8_t result = KNOT_ERROR_UNKNOWN;
-	int code;
-
-	if(jraw == NULL)
-		return KNOT_NO_DATA;
-
-	jobj = json_tokener_parse(jraw);
-	if (jobj == NULL)
-		return KNOT_GW_FAILURE;
-
-	if (json_object_object_get_ex(jobj, "error", &jfield)) {
-		const char *msg = json_object_get_string(jfield);
-		if(strcmp("Device not found", msg) == 0)
-			result = KNOT_INVALID_DEVICE;
-
-		/* Allow overwritting if 'code' is available */
-	}
-
-	/*
-	 * In addition to 'error', 'code' may be included in the
-	 * returned JSON error message. In general, 'error' is
-	 * generic message (string format). 'code' is a HTTP
-	 * error. The logic implemented here, returns the KNOT
-	 * error equivalent to the HTTP error returned or a generic
-	 * error when 'code' is not found.
-	 */
-	if (json_object_object_get_ex(jobj, "code", &jfield) != TRUE)
-		goto done;
-
-	code = json_object_get_int(jfield);
-	if(json_object_object_get_ex(jobj, "message", &jfield) != TRUE)
-		goto done;
-
-	switch(code) {
-	case 200:
-		result = KNOT_SUCCESS;
-		break;
-		/* Unauthorized */
-	case 401:
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		break;
-		/* Device not found */
-	case 404:
-		result = KNOT_DEVICE_NOT_FOUND;
-		break;
-	default:
-		LOG_ERROR("'%s' code=%d\n",
-			  json_object_get_string(jfield), code);
-		break;
-	}
-
-done:
-	json_object_put(jobj);
-
-	return result;
-}
-
 static int8_t msg_register(const credential_t *owner, int proto_sock,
 				    const struct proto_ops *proto_ops,
 				    const knot_msg_register *kreq,
@@ -237,9 +177,7 @@ static int8_t msg_unregister(const credential_t *owner, int proto_sock,
 		goto done;
 	}
 
-	result = json_result(jbuf.data);
-
-	/* Propagate KNOT result to the caller */
+	result = KNOT_SUCCESS;
 
 done:
 	if (jbuf.data)

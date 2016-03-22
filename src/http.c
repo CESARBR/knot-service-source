@@ -104,7 +104,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 }
 
 /* Fetch and return url body via curl */
-static CURLcode fetch_url(int sockfd, const char *action, const char *json,
+static long fetch_url(int sockfd, const char *action, const char *json,
 				const credential_t *auth, json_raw_t *fetch,
 				const char *request)
 {
@@ -114,23 +114,20 @@ static CURLcode fetch_url(int sockfd, const char *action, const char *json,
 	struct curl_slist *headers = NULL;
 	CURL *ch;
 	CURLcode rcode;
+	long ehttp;
 	size_t i;
 
 	if(!request || !fetch) {
-		LOG_ERROR("CURL error - %s(%d)\n",
-		      curl_easy_strerror(CURLE_BAD_FUNCTION_ARGUMENT),
-			CURLE_BAD_FUNCTION_ARGUMENT);
-
-		return CURLE_BAD_FUNCTION_ARGUMENT;
+		LOG_ERROR("Invalid argument!\n");
+		return -EINVAL;
 	}
 
 	LOG_INFO("action: %s\n", action);
 
 	ch = curl_easy_init();
 	if (ch == NULL) {
-		LOG_ERROR("CURL error - %s(%d)\n",
-		      curl_easy_strerror(CURLE_FAILED_INIT), CURLE_FAILED_INIT);
-		return CURLE_FAILED_INIT;
+		LOG_ERROR("curl_easy_init(): init failed\n");
+		return -EIO;
 	}
 
 	if (fetch->data)
@@ -190,13 +187,24 @@ static CURLcode fetch_url(int sockfd, const char *action, const char *json,
 	}
 
 	rcode = curl_easy_perform(ch);
+
 	curl_slist_free_all(headers);
-	curl_easy_cleanup(ch);
 
 	if(rcode != CURLE_OK) {
-		LOG_ERROR("CURL error - %s(%d)\n", curl_easy_strerror(rcode),
-									rcode);
-		return rcode;
+		curl_easy_cleanup(ch);
+		LOG_ERROR("curl_easy_perform(): %s(%d)\n",
+					curl_easy_strerror(rcode), rcode);
+		return -EIO;
+	}
+
+	rcode = curl_easy_getinfo(ch, CURLINFO_RESPONSE_CODE, &ehttp);
+
+	curl_easy_cleanup(ch);
+
+	if (rcode != CURLE_OK) {
+		LOG_ERROR("curl_easy_getinfo(): %s(%d)\n",
+					curl_easy_strerror(rcode), rcode);
+		return -EIO;
 	}
 
 	if (fetch->data)
@@ -204,7 +212,9 @@ static CURLcode fetch_url(int sockfd, const char *action, const char *json,
 	else
 		LOG_INFO(" JSON RX: Empty\n");
 
-	return rcode;
+	LOG_INFO("HTTP: %ld\n", ehttp);
+
+	return ehttp;
 }
 
 static int http_connect(void)
@@ -241,48 +251,92 @@ static int http_connect(void)
 
 static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 {
-	return (fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json, "POST") ==
-							CURLE_OK  ? 0 : -EIO);
+	long result = fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json,
+								"POST");
+	/*
+	 * HTTP 201: Created
+	 * Return '0' if device has been created or 'result'. In general,
+	 * when 'result != 201', it is a negative value mapped to generic
+	 * Linux -errno codes.
+	 */
+
+	return (result != 201 ? result : 0);
 }
 
 static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	return (fetch_url(sock, data_url, NULL, auth, json, "GET") ==
-							CURLE_OK  ? 0 : -EIO);
+	result = fetch_url(sock, data_url, NULL, auth, json, "GET");
+
+	/*
+	 * HTTP 200: OK
+	 * Return '0' if signin not fails or 'result'. In general,
+	 * when 'result != 200', it is a negative value mapped to
+	 * generic Linux -errno codes.
+	 */
+
+	return (result != 200 ? result : 0);
 }
 
 static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	return (fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE") ==
-							CURLE_OK  ? 0 : -EIO);
+	result = fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE");
+
+	/*
+	 * HTTP 200: OK
+	 * Return '0' if rmnode not fails or 'result'. In general, when
+	 * 'result != 200', it is a negative value mapped to generic
+	 * Linux -errno codes.
+	 */
+
+	return (result != 200 ? result : 0);
 }
 
 static int http_schema(int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	return (fetch_url(sock, data_url, jreq, auth, json, "PUT") ==
-							CURLE_OK  ? 0 : -EIO);
+	result = fetch_url(sock, data_url, jreq, auth, json, "PUT");
+
+	/*
+	 * HTTP 200: OK
+	 * Return '0' if schema not fails or 'result'. In general, when
+	 * 'result != 200', it is a negative value mapped to generic
+	 * Linux -errno codes.
+	 */
+
+	return (result != 200 ? result : 0);
 }
 
 static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + UUID_SIZE];
+	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DATA_URL, uuid);
-	return(fetch_url(sock, data_url, jreq, auth, json, "POST") ==
-							CURLE_OK  ? 0 : -EIO);
+	result = fetch_url(sock, data_url, jreq, auth, json, "POST");
+
+	/*
+	 * HTTP 200: OK
+	 * Return '0' if data not fails or 'result'. In general, when
+	 * 'result != 200', it is a negative value mapped to generic
+	 * Linux -errno codes.
+	 */
+
+	return (result != 200 ? result : 0);
 }
 
 static void http_close(int sock)
