@@ -44,7 +44,7 @@
 
 static int sock;
 static gboolean opt_add = FALSE;
-static gboolean opt_rm = FALSE;
+static char *opt_uuid = NULL;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
@@ -108,14 +108,46 @@ static int cmd_register(void)
 		return -EPROTO;
 	}
 
-	printf("UUID: %*s\n", KNOT_PROTOCOL_UUID_LEN, crdntl.uuid);
+	printf("UUID: %*s\n", (int) sizeof(crdntl.uuid), crdntl.uuid);
 
 	return 0;
 }
 
 static int cmd_unregister(void)
 {
-	return -ENOSYS;
+	knot_msg_unregister msg;
+	knot_msg_result rslt;
+	ssize_t nbytes;
+	int err;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+	msg.hdr.payload_len = sizeof(msg.uuid);
+	strncpy(msg.uuid, opt_uuid, sizeof(msg.uuid));
+
+	nbytes = write(sock, &msg, sizeof(msg));
+	if (nbytes < 0) {
+		err = errno;
+		printf("KNOT Unregister: %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	memset(&rslt, 0, sizeof(rslt));
+	nbytes = read(sock, &rslt, sizeof(rslt));
+	if (nbytes < 0) {
+		err = errno;
+		printf("KNOT Unregister read(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if (rslt.result != KNOT_SUCCESS) {
+		printf("KNOT Unregister: error(0x%02x)\n", rslt.result);
+		return -EPROTO;
+	}
+
+	printf("KNOT Unregister: OK\n");
+
+	return 0;
 }
 
 static int cmd_id(void)
@@ -165,7 +197,7 @@ static GOptionEntry options[] = {
 	{ "add", 'a', 0, G_OPTION_ARG_NONE, &opt_add,
 				"Register a device to Meshblu",
 				NULL },
-	{ "remove", 'r', 0, G_OPTION_ARG_NONE, &opt_rm,
+	{ "remove", 'r', 0, G_OPTION_ARG_STRING, &opt_uuid,
 				"Unregister a device from Meshblu",
 				NULL },
 	{ "id", 'i', 0, G_OPTION_ARG_NONE, &opt_id,
@@ -219,8 +251,8 @@ int main(int argc, char *argv[])
 	if (opt_add) {
 		printf("Registering node ...\n");
 		err = cmd_register();
-	} else if (opt_rm) {
-		printf("Unregistering node ...\n");
+	} else if (opt_uuid) {
+		printf("Unregistering node: %s\n", opt_uuid);
 		err = cmd_unregister();
 	} else if (opt_id) {
 		printf("Identifying node ...\n");
