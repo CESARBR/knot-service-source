@@ -77,6 +77,7 @@ static int unix_connect(void)
 static int cmd_register(void)
 {
 	knot_msg_register msg;
+	knot_msg_credential crdntl;
 	const char *devname = "dummy0";
 	int len = strlen(devname);
 	ssize_t nbytes;
@@ -93,6 +94,21 @@ static int cmd_register(void)
 		printf("writev(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
+
+	memset(&crdntl, 0, sizeof(crdntl));
+	nbytes = read(sock, &crdntl, sizeof(crdntl));
+	if (nbytes < 0) {
+		err = errno;
+		printf("KNOT Register read(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if (crdntl.result != KNOT_SUCCESS) {
+		printf("KNOT Register: error(0x%02x)\n", crdntl.result);
+		return -EPROTO;
+	}
+
+	printf("UUID: %*s\n", KNOT_PROTOCOL_UUID_LEN, crdntl.uuid);
 
 	return 0;
 }
