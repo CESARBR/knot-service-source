@@ -39,18 +39,12 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
-/*FIXME: Avoid cross headers dependency! */
-#include <proto-app/knot_types.h>
-#include <proto-net/knot_proto_net.h>
-#include <proto-app/knot_proto_app.h>
-
 #include "log.h"
 #include "proto.h"
 
 #define CURL_OP_TIMEOUT					30	/* 30 seconds */
 #define URL_SIZE					128
 #define REQUEST_SIZE					10
-#define TOKEN_SIZE		KNOT_PROTOCOL_TOKEN_LEN
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
@@ -58,7 +52,12 @@
 
 
 /* Credential registered on meshblu service */
-#define UUID_SIZE			KNOT_PROTOCOL_UUID_LEN
+
+/* UUID128 on string format:   xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx */
+#define MESHBLU_UUID_SIZE			36
+
+/* Meshblu secret token: 40 chars */
+#define MESHBLU_TOKEN_SIZE			40
 
 #define MESHBLU_AUTH_UUID			"meshblu_auth_uuid: "
 #define MESHBLU_AUTH_UUID_SIZE			sizeof(MESHBLU_AUTH_UUID)
@@ -108,8 +107,8 @@ static long fetch_url(int sockfd, const char *action, const char *json,
 				const credential_t *auth, json_raw_t *fetch,
 				const char *request)
 {
-	char token[MESHBLU_AUTH_TOKEN_SIZE + TOKEN_SIZE];
-	char uuid[MESHBLU_AUTH_UUID_SIZE + UUID_SIZE];
+	char token[MESHBLU_AUTH_TOKEN_SIZE + MESHBLU_TOKEN_SIZE];
+	char uuid[MESHBLU_AUTH_UUID_SIZE + MESHBLU_UUID_SIZE];
 	char upcase_request[REQUEST_SIZE + 1];
 	struct curl_slist *headers = NULL;
 	CURL *ch;
@@ -266,7 +265,7 @@ static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
 	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
@@ -285,7 +284,7 @@ static int http_signin(int sock, const credential_t *auth, const char *uuid,
 static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
 	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
@@ -304,7 +303,7 @@ static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 static int http_schema(int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + UUID_SIZE];
+	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
 	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
@@ -323,7 +322,7 @@ static int http_schema(int sock, const credential_t *auth, const char *uuid,
 static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + UUID_SIZE];
+	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + MESHBLU_UUID_SIZE];
 	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DATA_URL, uuid);
