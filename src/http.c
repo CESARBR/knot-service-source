@@ -67,6 +67,22 @@
 
 static struct in_addr host_addr;
 
+static int http2errno(long ehttp)
+{
+	switch (ehttp) {
+	case 200: /* OK */
+	case 201: /* Created */
+		return 0;
+	case 401: /* Unauthorized */
+	case 403: /* Forbidden */
+		return -EPERM;
+	case 404: /* Not Found */
+		return -ENOENT;
+	}
+
+	return -EIO;
+}
+
 static curl_socket_t opensocket(void *clientp, curlsocktype purpose,
 						struct curl_sockaddr *address)
 {
@@ -103,7 +119,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 }
 
 /* Fetch and return url body via curl */
-static long fetch_url(int sockfd, const char *action, const char *json,
+static int fetch_url(int sockfd, const char *action, const char *json,
 				const credential_t *auth, json_raw_t *fetch,
 				const char *request)
 {
@@ -126,7 +142,7 @@ static long fetch_url(int sockfd, const char *action, const char *json,
 	ch = curl_easy_init();
 	if (ch == NULL) {
 		LOG_ERROR("curl_easy_init(): init failed\n");
-		return -EIO;
+		return -ENOMEM;
 	}
 
 	if (fetch->data)
@@ -213,7 +229,7 @@ static long fetch_url(int sockfd, const char *action, const char *json,
 
 	LOG_INFO("HTTP: %ld\n", ehttp);
 
-	return ehttp;
+	return http2errno(ehttp);
 }
 
 static int http_connect(void)
@@ -250,92 +266,78 @@ static int http_connect(void)
 
 static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 {
-	long result = fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json,
-								"POST");
 	/*
 	 * HTTP 201: Created
-	 * Return '0' if device has been created or 'result'. In general,
-	 * when 'result != 201', it is a negative value mapped to generic
-	 * Linux -errno codes.
+	 * Return '0' if device has been created or a negative value
+	 * mapped to generic Linux -errno codes.
 	 */
 
-	return (result != 201 ? result : 0);
+	return fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json, "POST");
+
 }
 
 static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
-	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	result = fetch_url(sock, data_url, NULL, auth, json, "GET");
 
 	/*
 	 * HTTP 200: OK
-	 * Return '0' if signin not fails or 'result'. In general,
-	 * when 'result != 200', it is a negative value mapped to
-	 * generic Linux -errno codes.
+	 * Return '0' if signin not fails or a negative value
+	 * mapped to generic Linux -errno codes.
 	 */
 
-	return (result != 200 ? result : 0);
+	return fetch_url(sock, data_url, NULL, auth, json, "GET");
 }
 
 static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
-	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	result = fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE");
 
 	/*
 	 * HTTP 200: OK
-	 * Return '0' if rmnode not fails or 'result'. In general, when
-	 * 'result != 200', it is a negative value mapped to generic
-	 * Linux -errno codes.
+	 * Return '0' if rmnode not fails or a negative value
+	 * mapped to generic Linux -errno codes.
 	 */
 
-	return (result != 200 ? result : 0);
+	return fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE");
 }
 
 static int http_schema(int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
-	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
-	result = fetch_url(sock, data_url, jreq, auth, json, "PUT");
 
 	/*
 	 * HTTP 200: OK
-	 * Return '0' if schema not fails or 'result'. In general, when
-	 * 'result != 200', it is a negative value mapped to generic
-	 * Linux -errno codes.
+	 * Return '0' if schema not fails or a negative value
+	 * mapped to generic Linux -errno codes.
 	 */
 
-	return (result != 200 ? result : 0);
+	return fetch_url(sock, data_url, jreq, auth, json, "PUT");
 }
 
 static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
 	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + MESHBLU_UUID_SIZE];
-	long result;
 
 	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DATA_URL, uuid);
-	result = fetch_url(sock, data_url, jreq, auth, json, "POST");
 
 	/*
 	 * HTTP 200: OK
-	 * Return '0' if data not fails or 'result'. In general, when
-	 * 'result != 200', it is a negative value mapped to generic
-	 * Linux -errno codes.
+	 * Return '0' if data not fails or a negative value
+	 * mapped to generic Linux -errno codes.
 	 */
 
-	return (result != 200 ? result : 0);
+	return fetch_url(sock, data_url, jreq, auth, json, "POST");
 }
 
 static void http_close(int sock)
