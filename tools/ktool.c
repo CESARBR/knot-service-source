@@ -31,7 +31,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
+
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <glib.h>
@@ -44,7 +46,9 @@
 
 static int sock;
 static gboolean opt_add = FALSE;
+static gboolean opt_schema = FALSE;
 static char *opt_uuid = NULL;
+static char *opt_json = NULL;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
@@ -150,6 +154,43 @@ static int cmd_unregister(void)
 	return 0;
 }
 
+static int cmd_schema(void)
+{
+	struct stat sb;
+	int err;
+
+	if (!opt_uuid) {
+		printf("Device's UUID missing!\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * In order to allow a more flexible way to manage schemas, ktool
+	 * receives a JSON file and convert it to KNOT protocol format.
+	 * Variable length argument could be another alternative, however
+	 * it will not be intuitive to the users to inform the data id, type,
+	 * and values.
+	 */
+
+	if (!opt_json) {
+		printf("Device's SCHEMA missing!\n");
+		return -EINVAL;
+	}
+
+	if (stat(opt_json, &sb) == -1) {
+		err = errno;
+		printf("json file: %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if ((sb.st_mode & S_IFMT) != S_IFREG) {
+		printf("json file: invalid argument!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int cmd_id(void)
 {
 	int err;
@@ -192,6 +233,15 @@ static int cmd_unsubscribe(void)
  * devices. Commands are based on KNOT protocol, and they should be mapped
  * to any specific backend.
  */
+
+static GOptionEntry schema_options[] = {
+	{ "uuid", 0, 0, G_OPTION_ARG_STRING, &opt_uuid,
+						"Device's UUID", NULL },
+	{ "json", 0, 0, G_OPTION_ARG_FILENAME, &opt_json,
+						"Path to JSON file", NULL },
+	{ NULL },
+};
+
 static GOptionEntry options[] = {
 
 	{ "add", 'a', 0, G_OPTION_ARG_NONE, &opt_add,
@@ -199,6 +249,9 @@ static GOptionEntry options[] = {
 				NULL },
 	{ "remove", 'r', 0, G_OPTION_ARG_STRING, &opt_uuid,
 				"Unregister a device from Meshblu",
+				NULL },
+	{ "schema", 'h', 0, G_OPTION_ARG_NONE, &opt_schema,
+				"Get/Put JSON representing device's schema",
 				NULL },
 	{ "id", 'i', 0, G_OPTION_ARG_NONE, &opt_id,
 				"Identify a Meshblu device",
@@ -219,6 +272,7 @@ static void sig_term(int sig)
 int main(int argc, char *argv[])
 {
 	GOptionContext *context;
+	GOptionGroup *schema_group;
 	GError *gerr = NULL;
 	int err = 0;
 
@@ -226,6 +280,18 @@ int main(int argc, char *argv[])
 
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
+
+	/* Define options for setting or reading JSON schema of a given
+	   device(UUID):
+	    read:
+		ktool --schema --uuid=value
+	    write:
+		ktool --schema --uuid=value --json=filename
+	 */
+	schema_group = g_option_group_new("schema", "Schema options",
+					"Show all schema options", NULL, NULL);
+	g_option_context_add_group(context, schema_group);
+	g_option_group_add_entries(schema_group, schema_options);
 
 	/* TODO: Use GOptionGroup to inform parameters */
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
@@ -251,6 +317,9 @@ int main(int argc, char *argv[])
 	if (opt_add) {
 		printf("Registering node ...\n");
 		err = cmd_register();
+	} else if (opt_schema) {
+		printf("Registering JSON schema for a device ...\n");
+		err = cmd_schema();
 	} else if (opt_uuid) {
 		printf("Unregistering node: %s\n", opt_uuid);
 		err = cmd_unregister();
@@ -265,6 +334,11 @@ int main(int argc, char *argv[])
 		err = cmd_unsubscribe();
 	}
 
+	if (err < 0) {
+		close(sock);
+		return err;
+	}
+
 	g_main_loop_run(main_loop);
 	g_main_loop_unref(main_loop);
 
@@ -272,5 +346,5 @@ int main(int argc, char *argv[])
 
 	close(sock);
 
-	return err;
+	return 0;
 }
