@@ -47,6 +47,7 @@
 static int sock;
 static gboolean opt_add = FALSE;
 static gboolean opt_schema = FALSE;
+static gboolean opt_data = FALSE;
 static char *opt_uuid = NULL;
 static char *opt_json = NULL;
 static gboolean opt_id = FALSE;
@@ -191,6 +192,43 @@ static int cmd_schema(void)
 	return 0;
 }
 
+static int cmd_data(void)
+{
+	struct stat sb;
+	int err;
+
+	if (!opt_uuid) {
+		printf("Device's UUID missing!\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * In order to allow a more flexible way to manage data, ktool
+	 * receives a JSON file and convert it to KNOT protocol format.
+	 * Variable length argument could be another alternative, however
+	 * it will not be intuitive to the users to inform the data id, type,
+	 * and values.
+	 */
+
+	if (!opt_json) {
+		printf("Device's data missing!\n");
+		return -EINVAL;
+	}
+
+	if (stat(opt_json, &sb) == -1) {
+		err = errno;
+		printf("json file: %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if ((sb.st_mode & S_IFMT) != S_IFREG) {
+		printf("json file: invalid argument!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int cmd_id(void)
 {
 	int err;
@@ -253,6 +291,8 @@ static GOptionEntry options[] = {
 	{ "schema", 'h', 0, G_OPTION_ARG_NONE, &opt_schema,
 				"Get/Put JSON representing device's schema",
 				NULL },
+	{ "data", 'd', 0, G_OPTION_ARG_NONE, &opt_data,
+				"Sends data of a given device", NULL },
 	{ "id", 'i', 0, G_OPTION_ARG_NONE, &opt_id,
 				"Identify a Meshblu device",
 				NULL },
@@ -320,6 +360,9 @@ int main(int argc, char *argv[])
 	} else if (opt_schema) {
 		printf("Registering JSON schema for a device ...\n");
 		err = cmd_schema();
+	} else if (opt_data) {
+		printf("Setting data for a device ...\n");
+		err = cmd_data();
 	} else if (opt_uuid) {
 		printf("Unregistering node: %s\n", opt_uuid);
 		err = cmd_unregister();
