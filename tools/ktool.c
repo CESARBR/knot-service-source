@@ -38,11 +38,15 @@
 #include <sys/un.h>
 #include <glib.h>
 
+#include <json-c/json.h>
+
 #include <proto-net/knot_proto_net.h>
 #include <proto-app/knot_proto_app.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
+
+typedef void (*json_object_func_t) (void *data, void *user_data);
 
 static int sock;
 static gboolean opt_add = FALSE;
@@ -77,6 +81,70 @@ static int unix_connect(void)
 	}
 
 	return sock;
+}
+
+static void print_json_value(void *data, void *user_data)
+{
+	struct json_object *jobj = data;
+	enum json_type type;
+	const char *name;
+
+	type = json_object_get_type(jobj);
+	name = json_type_to_name(type);
+
+	switch (type) {
+	case json_type_null:
+		break;
+	case json_type_boolean:
+		printf("%s(%s)\n", json_object_get_boolean(jobj) ?
+					"true": "false", name);
+		break;
+	case json_type_double:
+		printf("%lf(%s)\n", json_object_get_double(jobj), name);
+		break;
+	case json_type_int:
+		printf("%d(%s)\n", json_object_get_int(jobj), name);
+		break;
+	case json_type_string:
+		printf("%s(%s)\n", json_object_get_string(jobj), name);
+		break;
+	case json_type_object:
+		break;
+	case json_type_array:
+		break;
+	}
+}
+
+static void json_object_foreach(struct json_object *jobj,
+				json_object_func_t func, void *user_data)
+{
+	struct json_object *next;
+	enum json_type type;
+
+	if (!jobj)
+		return;
+
+	json_object_object_foreach(jobj, key, val) {
+		type = json_object_get_type(val);
+		printf("key: %s ", key);
+		switch (type) {
+		case json_type_null:
+		case json_type_boolean:
+		case json_type_double:
+		case json_type_int:
+		case json_type_string:
+			func(val, NULL);
+			break;
+		case json_type_object:
+			printf("\n");
+			next = json_object_get(val);
+			json_object_foreach(next, func, user_data);
+			json_object_put(next);
+			break;
+		case json_type_array:
+			break;
+		}
+	}
 }
 
 static int cmd_register(void)
@@ -194,6 +262,7 @@ static int cmd_schema(void)
 
 static int cmd_data(void)
 {
+	struct json_object *jobj;
 	struct stat sb;
 	int err;
 
@@ -225,6 +294,15 @@ static int cmd_data(void)
 		printf("json file: invalid argument!\n");
 		return -EINVAL;
 	}
+
+	jobj = json_object_from_file(opt_json);
+	if (!jobj) {
+		printf("json file(%s): failed to read from file!\n", opt_json);
+		return -EINVAL;
+	}
+
+	json_object_foreach(jobj, print_json_value, NULL);
+	json_object_put(jobj);
 
 	return 0;
 }

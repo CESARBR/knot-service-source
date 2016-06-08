@@ -25,9 +25,9 @@ src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
 tools_ktool_SOURCES = tools/ktool.c
-tools_ktool_LDADD = @GLIB_LIBS@
+tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
-tools_ktool_CFLAGS = $(AM_CFLAGS)
+tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@
 
 unit_ktest_SOURCES = unit/ktest.c 			\
 			src/log.h
