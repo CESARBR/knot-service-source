@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <math.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -41,12 +42,14 @@
 #include <json-c/json.h>
 
 #include <proto-net/knot_proto_net.h>
+#include <proto-app/knot_types.h>
 #include <proto-app/knot_proto_app.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
 
-typedef void (*json_object_func_t) (void *data, void *user_data);
+typedef void (*json_object_func_t) (struct json_object *jobj,
+					const char *key, void *user_data);
 
 static int sock;
 static gboolean opt_add = FALSE;
@@ -83,9 +86,9 @@ static int unix_connect(void)
 	return sock;
 }
 
-static void print_json_value(void *data, void *user_data)
+static void print_json_value(struct json_object *jobj,
+					const char *key, void *user_data)
 {
-	struct json_object *jobj = data;
 	enum json_type type;
 	const char *name;
 
@@ -115,6 +118,64 @@ static void print_json_value(void *data, void *user_data)
 	}
 }
 
+static void read_json_entry(struct json_object *jobj,
+					const char *key, void *user_data)
+{
+	knot_msg_data *msg = user_data;
+	knot_data *kdata = &(msg->payload);
+	knot_data_bool *kbool;
+	knot_data_float *kfloat;
+	knot_data_int *kint;
+	double ipart, fpart;
+	enum json_type type;
+
+	type = json_object_get_type(jobj);
+
+	if ((strcmp("id", key) == 0) && (type == json_type_int))
+		kdata->hdr.id = json_object_get_int(jobj);
+	else if ((strcmp("unit", key) == 0) && (type == json_type_int)) {
+		kdata->hdr.unit = json_object_get_int(jobj);
+	} else if (strcmp("value", key) == 0) {
+		switch (type) {
+		case json_type_boolean:
+			kbool = (knot_data_bool *) kdata;
+			kbool->hdr.value_type = KNOT_VALUE_TYPE_BOOL;
+			kbool->value = json_object_get_boolean(jobj);
+			msg->hdr.payload_len = sizeof(knot_data_bool);
+			break;
+		case json_type_double:
+			fpart = modf(json_object_get_double(jobj), &ipart);
+			kfloat = (knot_data_float *) kdata;
+			kfloat->hdr.value_type = KNOT_VALUE_TYPE_FLOAT;
+			/* FIXME: how to handle overflow? */
+			kfloat->value_int = ipart;
+			kfloat->value_dec = fpart;
+			kfloat->multiplier = 1; /* TODO: */
+			msg->hdr.payload_len = sizeof(knot_data_float);
+			break;
+		case json_type_int:
+			kint = (knot_data_int *) kdata;
+			kint->hdr.value_type = KNOT_VALUE_TYPE_INT;
+			kint->value = json_object_get_int(jobj);
+			kint->multiplier = 1;
+			msg->hdr.payload_len = sizeof(knot_data_int);
+			break;
+		case json_type_string:
+		case json_type_null:
+			/* FIXME: */
+			break;
+
+		/* FIXME: */
+		case json_type_object:
+			break;
+		case json_type_array:
+			break;
+		}
+	} else {
+		printf("Unexpected JSON entry!\n");
+	}
+}
+
 static void json_object_foreach(struct json_object *jobj,
 				json_object_func_t func, void *user_data)
 {
@@ -126,17 +187,15 @@ static void json_object_foreach(struct json_object *jobj,
 
 	json_object_object_foreach(jobj, key, val) {
 		type = json_object_get_type(val);
-		printf("key: %s ", key);
 		switch (type) {
 		case json_type_null:
 		case json_type_boolean:
 		case json_type_double:
 		case json_type_int:
 		case json_type_string:
-			func(val, NULL);
+			func(val, key, user_data);
 			break;
 		case json_type_object:
-			printf("\n");
 			next = json_object_get(val);
 			json_object_foreach(next, func, user_data);
 			json_object_put(next);
@@ -145,6 +204,53 @@ static void json_object_foreach(struct json_object *jobj,
 			break;
 		}
 	}
+}
+
+static int write_knot_data(struct json_object *jobj)
+{
+	knot_msg_data msg;
+	knot_msg_result resp;
+	ssize_t nbytes;
+	int err;
+
+	memset(&msg, 0, sizeof(msg));
+	memset(&resp, 0, sizeof(resp));
+
+	/*
+	 * The current implementation is limited to only data entry.
+	 * JSON files should not contain array elements.
+	 */
+
+	json_object_foreach(jobj, read_json_entry, &msg);
+
+	if (msg.hdr.payload_len == 0) {
+		printf("JSON parsing error: data not found!\n");
+		return -EINVAL;
+	}
+
+	msg.hdr.type = KNOT_MSG_DATA;
+	/* Payload len is set by read_json_entry() */
+
+	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
+	if (nbytes < 0) {
+		err = errno;
+		printf("write(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	nbytes = read(sock, &resp, sizeof(resp));
+	if (nbytes < 0) {
+		err = errno;
+		printf("read(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if (resp.result != KNOT_SUCCESS) {
+		printf("error(0x%02x)\n", resp.result);
+		return -EPROTO;
+	}
+
+	return 0;
 }
 
 static int cmd_register(void)
@@ -302,6 +408,7 @@ static int cmd_data(void)
 	}
 
 	json_object_foreach(jobj, print_json_value, NULL);
+	write_knot_data(jobj);
 	json_object_put(jobj);
 
 	return 0;
