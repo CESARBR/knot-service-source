@@ -34,6 +34,7 @@
 
 #include <json-c/json.h>
 
+#include <proto-app/knot_types.h>
 #include <proto-net/knot_proto_net.h>
 #include <proto-app/knot_proto_app.h>
 
@@ -186,6 +187,32 @@ done:
 	return result;
 }
 
+static int8_t msg_data(const credential_t *owner, int proto_sock,
+				    const struct proto_ops *proto_ops,
+				    const knot_msg_data *kmdata)
+{
+	/* Pointer to KNOT data containing header and a primitive KNOT type */
+	const knot_data *kdata = &(kmdata->payload);
+
+	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
+				kdata->hdr.unit, kdata->hdr.value_type);
+
+	switch (kdata->hdr.value_type) {
+	case KNOT_VALUE_TYPE_INT:
+		break;
+	case KNOT_VALUE_TYPE_FLOAT:
+		break;
+	case KNOT_VALUE_TYPE_BOOL:
+		break;
+	case KNOT_VALUE_TYPE_RAW:
+		break;
+	default:
+		return KNOT_INVALID_DATA;
+	}
+
+	return KNOT_SUCCESS;
+}
+
 ssize_t msg_process(const credential_t *owner, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
@@ -233,6 +260,9 @@ ssize_t msg_process(const credential_t *owner, int proto_sock,
 	case KNOT_MSG_UNREGISTER_REQ:
 		result = msg_unregister(owner, proto_sock, proto_ops,
 								&kreq->unreg);
+		break;
+	case KNOT_MSG_DATA:
+		result = msg_data(owner, proto_sock, proto_ops, &kreq->data);
 		break;
 	default:
 		/* TODO: reply unknown command */
