@@ -193,12 +193,22 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 {
 	/* Pointer to KNOT data containing header and a primitive KNOT type */
 	const knot_data *kdata = &(kmdata->payload);
+	struct json_object *jobj;
+	const char *jobjstr;
 
 	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
 				kdata->hdr.unit, kdata->hdr.value_type);
 
+	/* TODO: Missing SCHEMA checking */
+	jobj = json_object_new_object();
+	json_object_object_add(jobj, "id", json_object_new_int(kdata->hdr.id));
+	json_object_object_add(jobj, "unit",
+					json_object_new_int(kdata->hdr.unit));
+
 	switch (kdata->hdr.value_type) {
 	case KNOT_VALUE_TYPE_INT:
+		json_object_object_add(jobj, "value",
+			       json_object_new_int(kdata->int_k.value));
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 		break;
@@ -207,8 +217,14 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 	case KNOT_VALUE_TYPE_RAW:
 		break;
 	default:
+		json_object_put(jobj);
 		return KNOT_INVALID_DATA;
 	}
+
+	jobjstr = json_object_to_json_string(jobj);
+	printf("JSON: %s\n", jobjstr);
+
+	json_object_put(jobj);
 
 	return KNOT_SUCCESS;
 }
