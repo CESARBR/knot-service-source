@@ -241,8 +241,8 @@ ssize_t msg_process(const credential_t *owner, int proto_sock,
 		goto done;
 	}
 
-	/* Missing payload? */
-	if (kreq->hdr.payload_len == 0) {
+	/* Checking PDU length consistency */
+	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
 		LOG_ERROR("Input PDU: invalid PDU length\n");
 		goto done;
 	}
