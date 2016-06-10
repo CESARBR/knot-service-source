@@ -213,6 +213,8 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 	case KNOT_VALUE_TYPE_FLOAT:
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
+		json_object_object_add(jobj, "value",
+			       json_object_new_boolean(kdata->bool_k.value));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		break;
