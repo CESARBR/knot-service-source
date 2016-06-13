@@ -126,8 +126,9 @@ static void read_json_entry(struct json_object *jobj,
 	knot_data_bool *kbool;
 	knot_data_float *kfloat;
 	knot_data_int *kint;
-	double ipart, fpart;
+	int32_t ipart, fpart;
 	enum json_type type;
+	const char *str;
 
 	type = json_object_get_type(jobj);
 
@@ -144,10 +145,14 @@ static void read_json_entry(struct json_object *jobj,
 			msg->hdr.payload_len = sizeof(knot_data_bool);
 			break;
 		case json_type_double:
-			fpart = modf(json_object_get_double(jobj), &ipart);
+			/* Trick to get integral and fractional parts */
+			str = json_object_get_string(jobj);
+			/* FIXME: how to handle overflow? */
+			if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
+				break;
+
 			kfloat = (knot_data_float *) kdata;
 			kfloat->hdr.value_type = KNOT_VALUE_TYPE_FLOAT;
-			/* FIXME: how to handle overflow? */
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
 			kfloat->multiplier = 1; /* TODO: */
