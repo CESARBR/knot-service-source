@@ -20,7 +20,7 @@ src_knotd_SOURCES = src/main.c \
 			src/log.h \
 			$(modules_sources)
 
-src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd)
+src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 

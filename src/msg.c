@@ -29,6 +29,8 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <glib.h>
 
@@ -195,6 +197,10 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
 	const char *jobjstr;
+	/* INT_MAX 2147483647 */
+	char str[12];
+	double doubleval;
+	int len;
 
 	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
 				kdata->hdr.unit, kdata->hdr.value_type);
@@ -211,6 +217,16 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 			       json_object_new_int(kdata->int_k.value));
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
+
+		/* FIXME: precision */
+		len = sprintf(str, "%d", kdata->float_k.value_dec);
+
+		doubleval = kdata->float_k.multiplier *
+				(kdata->float_k.value_int +
+				 (kdata->float_k.value_dec / pow(10, len)));
+
+		json_object_object_add(jobj, "value",
+				       json_object_new_double(doubleval));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(jobj, "value",
