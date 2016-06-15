@@ -48,7 +48,7 @@
 
 #define MESHBLU_HOST		"meshblu.octoblu.com"
 #define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
-#define MESHBLU_DATA_URL	MESHBLU_HOST "/data/"
+#define MESHBLU_DATA_URL	MESHBLU_HOST "/data"
 
 
 /* Credential registered on meshblu service */
