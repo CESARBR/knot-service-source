@@ -344,6 +344,11 @@ int manager_start(const char *file, const char *proto, const char *tty)
 	if (tty)
 		serial_load_config(tty);
 
+	/* Starting msg layer */
+	err = msg_start();
+	if (err < 0)
+		return err;
+
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
 	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
@@ -411,6 +416,8 @@ void manager_stop(void)
 	GSList *list;
 	guint server_watch_id;
 	int i;
+
+	msg_stop();
 
 	/* Remove only previously loaded modules */
 	for (i = 0; node_ops[i]; i++)

@@ -44,6 +44,18 @@
 #include "log.h"
 #include "msg.h"
 
+/* Maps sockets to credentials */
+static GHashTable *credential_list;
+
+static void credential_destroy(gpointer user_data)
+{
+	credential_t *credential = user_data;
+
+	g_free(credential->uuid);
+	g_free(credential->token);
+	g_free(credential);
+}
+
 static credential_t *parse_device_info(const char *json_str)
 {
 	json_object *jobj,*json_uuid, *json_token;
@@ -310,4 +322,17 @@ done:
 
 	/* Return the actual amount of octets to be transmitted */
 	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
+}
+
+int msg_start(void)
+{
+	credential_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+						NULL, credential_destroy);
+
+	return 0;
+}
+
+void msg_stop(void)
+{
+	g_hash_table_destroy(credential_list);
 }
