@@ -216,21 +216,30 @@ done:
 	return result;
 }
 
-static int8_t msg_data(const credential_t *owner, int proto_sock,
+static int8_t msg_data(const credential_t *owner, int sock, int proto_sock,
 				    const struct proto_ops *proto_ops,
 				    const knot_msg_data *kmdata)
 {
 	/* Pointer to KNOT data containing header and a primitive KNOT type */
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
+	credential_t *credential;
+	json_raw_t json;
 	const char *jobjstr;
 	/* INT_MAX 2147483647 */
 	char str[12];
 	double doubleval;
-	int len;
+	int len, err;
 
 	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
 				kdata->hdr.unit, kdata->hdr.value_type);
+
+	credential = g_hash_table_lookup(credential_list,
+						GINT_TO_POINTER(sock));
+	if (!credential) {
+		LOG_INFO("Permission denied!\n");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
 
 	/* TODO: Missing SCHEMA checking */
 	jobj = json_object_new_object();
@@ -269,7 +278,18 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 	jobjstr = json_object_to_json_string(jobj);
 	printf("JSON: %s\n", jobjstr);
 
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->data(proto_sock, owner, credential->uuid,
+							jobjstr, &json);
+	if (json.data)
+		free(json.data);
+
 	json_object_put(jobj);
+
+	if (err < 0) {
+		LOG_ERROR("manager data(): %s(%d)\n", strerror(-err), -err);
+		return KNOT_CLOUD_FAILURE;
+	}
 
 	return KNOT_SUCCESS;
 }
@@ -323,7 +343,8 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 								&kreq->unreg);
 		break;
 	case KNOT_MSG_DATA:
-		result = msg_data(owner, proto_sock, proto_ops, &kreq->data);
+		result = msg_data(owner, sock, proto_sock, proto_ops,
+								&kreq->data);
 		break;
 	default:
 		/* TODO: reply unknown command */
