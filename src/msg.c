@@ -47,13 +47,21 @@
 /* Maps sockets to credentials */
 static GHashTable *credential_list;
 
-static void credential_destroy(gpointer user_data)
+static void credential_free(credential_t *credential)
 {
-	credential_t *credential = user_data;
-
 	g_free(credential->uuid);
 	g_free(credential->token);
 	g_free(credential);
+}
+
+static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	int sock = g_io_channel_unix_get_fd(io);
+
+	g_hash_table_remove(credential_list, GINT_TO_POINTER(sock));
+
+	return FALSE;
 }
 
 static credential_t *parse_device_info(const char *json_str)
@@ -91,6 +99,7 @@ static int8_t msg_register(const credential_t *owner,
 					const knot_msg_register *kreq,
 					knot_msg_credential *krsp)
 {
+	GIOChannel *io;
 	credential_t *credential;
 	json_object *jobj;
 	const char *jobjstring;
@@ -153,12 +162,15 @@ static int8_t msg_register(const credential_t *owner,
 
 	g_hash_table_replace(credential_list, GINT_TO_POINTER(sock),
 								credential);
+	/* Add a watch to remove the credential when the client disconnects */
+	io = g_io_channel_unix_new(sock);
+	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR , node_hup_cb, NULL);
+	g_io_channel_unref(io);
+
 	return KNOT_SUCCESS;
 
 done:
-	g_free(credential->uuid);
-	g_free(credential->token);
-	g_free(credential);
+	credential_free(credential);
 
 	return result;
 }
@@ -330,7 +342,7 @@ done:
 int msg_start(void)
 {
 	credential_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-						NULL, credential_destroy);
+					NULL, (GDestroyNotify) credential_free);
 
 	return 0;
 }
