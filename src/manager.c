@@ -186,7 +186,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 
-	olen = msg_process(owner, proto_sock, proto_ops[proto_index],
+	olen = msg_process(owner, sock, proto_sock, proto_ops[proto_index],
 					ipdu, recvbytes, opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {

@@ -85,10 +85,11 @@ done:
 	return credential;
 }
 
-static int8_t msg_register(const credential_t *owner, int proto_sock,
-				    const struct proto_ops *proto_ops,
-				    const knot_msg_register *kreq,
-				    knot_msg_credential *krsp)
+static int8_t msg_register(const credential_t *owner,
+					int sock, int proto_sock,
+					const struct proto_ops *proto_ops,
+					const knot_msg_register *kreq,
+					knot_msg_credential *krsp)
 {
 	credential_t *credential;
 	json_object *jobj;
@@ -150,7 +151,9 @@ static int8_t msg_register(const credential_t *owner, int proto_sock,
 	/* Payload length includes the result, and UUID */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
 
-	result = KNOT_SUCCESS;
+	g_hash_table_replace(credential_list, GINT_TO_POINTER(sock),
+								credential);
+	return KNOT_SUCCESS;
 
 done:
 	g_free(credential->uuid);
@@ -259,7 +262,7 @@ static int8_t msg_data(const credential_t *owner, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
-ssize_t msg_process(const credential_t *owner, int proto_sock,
+ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
 				void *opdu, size_t omtu)
@@ -300,7 +303,7 @@ ssize_t msg_process(const credential_t *owner, int proto_sock,
 	case KNOT_MSG_REGISTER_REQ:
 
 		/* Payload length is set by the caller */
-		result = msg_register(owner, proto_sock, proto_ops,
+		result = msg_register(owner, sock, proto_sock, proto_ops,
 						&kreq->reg, &krsp->cred);
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
