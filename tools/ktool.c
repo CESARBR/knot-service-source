@@ -56,6 +56,7 @@ static gboolean opt_add = FALSE;
 static gboolean opt_schema = FALSE;
 static gboolean opt_data = FALSE;
 static char *opt_uuid = NULL;
+static char *opt_token = NULL;
 static char *opt_json = NULL;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
@@ -209,6 +210,43 @@ static void json_object_foreach(struct json_object *jobj,
 			break;
 		}
 	}
+}
+
+static int authenticate(const char *uuid, const char *token)
+{
+	knot_msg_authentication msg;
+	knot_msg_result resp;
+	ssize_t nbytes;
+	int err;
+
+	memset(&msg, 0, sizeof(msg));
+	memset(&resp, 0, sizeof(resp));
+
+	msg.hdr.type = KNOT_MSG_AUTH_REQ;
+	msg.hdr.payload_len = sizeof(msg.uuid) + sizeof(msg.token);
+	strncpy(msg.uuid, uuid, sizeof(msg.uuid));
+	strncpy(msg.token, token, sizeof(msg.token));
+
+	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
+	if (nbytes < 0) {
+		err = errno;
+		printf("write(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	nbytes = read(sock, &resp, sizeof(resp));
+	if (nbytes < 0) {
+		err = errno;
+		printf("read(): %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	if (resp.result != KNOT_SUCCESS) {
+		printf("error(0x%02x)\n", resp.result);
+		return -EPROTO;
+	}
+
+	return 0;
 }
 
 static int write_knot_data(struct json_object *jobj)
@@ -383,6 +421,16 @@ static int cmd_data(void)
 	}
 
 	/*
+	 * When token is informed try authenticate first. Leave this
+	 * block sequential to allow testing sending data without
+	 * previous authentication.
+	 */
+	if (opt_token) {
+		printf("Authenticating ...\n");
+		err = authenticate(opt_uuid, opt_token);
+	}
+
+	/*
 	 * In order to allow a more flexible way to manage data, ktool
 	 * receives a JSON file and convert it to KNOT protocol format.
 	 * Variable length argument could be another alternative, however
@@ -465,6 +513,8 @@ static int cmd_unsubscribe(void)
 static GOptionEntry schema_options[] = {
 	{ "uuid", 0, 0, G_OPTION_ARG_STRING, &opt_uuid,
 						"Device's UUID", NULL },
+	{ "token", 0, 0, G_OPTION_ARG_STRING, &opt_token,
+						"Device's token", NULL },
 	{ "json", 0, 0, G_OPTION_ARG_FILENAME, &opt_json,
 						"Path to JSON file", NULL },
 	{ NULL },
@@ -547,10 +597,14 @@ int main(int argc, char *argv[])
 	if (opt_add) {
 		printf("Registering node ...\n");
 		err = cmd_register();
-	} else if (opt_schema) {
+	}
+
+	if (opt_schema) {
 		printf("Registering JSON schema for a device ...\n");
 		err = cmd_schema();
-	} else if (opt_data) {
+	}
+
+	if (opt_data) {
 		printf("Setting data for a device ...\n");
 		err = cmd_data();
 	} else if (opt_uuid) {
