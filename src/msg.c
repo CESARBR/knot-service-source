@@ -175,13 +175,22 @@ done:
 	return result;
 }
 
-static int8_t msg_unregister(const credential_t *owner, int proto_sock,
-				    const struct proto_ops *proto_ops,
-				    const knot_msg_unregister *kreq)
+static int8_t msg_unregister(const credential_t *owner,
+					int sock, int proto_sock,
+					const struct proto_ops *proto_ops,
+					const knot_msg_unregister *kreq)
 {
+	const credential_t *credential;
 	json_raw_t jbuf = { NULL, 0 };
 	int8_t result;
 	int err;
+
+	credential = g_hash_table_lookup(credential_list,
+						GINT_TO_POINTER(sock));
+	if (!credential) {
+		LOG_INFO("Permission denied!\n");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
 
 	/* 36 octets */
 	if (kreq->hdr.payload_len != sizeof(kreq->uuid)) {
@@ -382,7 +391,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 						&kreq->reg, &krsp->cred);
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
-		result = msg_unregister(owner, proto_sock, proto_ops,
+		result = msg_unregister(owner, sock, proto_sock, proto_ops,
 								&kreq->unreg);
 		break;
 	case KNOT_MSG_DATA:
