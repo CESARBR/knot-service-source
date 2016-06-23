@@ -216,6 +216,46 @@ done:
 	return result;
 }
 
+static int8_t msg_auth(const credential_t *owner, int sock, int proto_sock,
+				    const struct proto_ops *proto_ops,
+				    const knot_msg_authentication *kmauth)
+{
+	GIOChannel *io;
+	json_raw_t json;
+	credential_t *credential;
+	int err;
+
+	credential = g_hash_table_lookup(credential_list,
+						GINT_TO_POINTER(sock));
+	if (credential) {
+		LOG_INFO("Authenticated already\n");
+		return KNOT_SUCCESS;
+	}
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->signin(proto_sock, owner, kmauth->uuid, &json);
+
+	LOG_INFO("%s\n", json.data);
+
+	if (json.data)
+		free(json.data);
+
+	if (err < 0) {
+		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	g_hash_table_insert(credential_list, GINT_TO_POINTER(sock),
+								credential);
+
+	/* Add a watch to remove the credential when the client disconnects */
+	io = g_io_channel_unix_new(sock);
+	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR , node_hup_cb, NULL);
+	g_io_channel_unref(io);
+
+	return KNOT_SUCCESS;
+}
+
 static int8_t msg_data(const credential_t *owner, int sock, int proto_sock,
 				    const struct proto_ops *proto_ops,
 				    const knot_msg_data *kmdata)
@@ -345,6 +385,10 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 	case KNOT_MSG_DATA:
 		result = msg_data(owner, sock, proto_sock, proto_ops,
 								&kreq->data);
+		break;
+	case KNOT_MSG_AUTH_REQ:
+		result = msg_auth(owner, sock, proto_sock, proto_ops,
+								&kreq->auth);
 		break;
 	default:
 		/* TODO: reply unknown command */
