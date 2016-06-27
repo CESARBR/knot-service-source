@@ -160,52 +160,6 @@ static int parse_config(GKeyFile *config)
 	return 0;
 }
 
-static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
-			      gpointer user_data)
-{
-	struct session *session = user_data;
-	struct node_ops *ops = session->ops;
-	uint8_t ipdu[512], opdu[512]; /* FIXME: */
-	ssize_t recvbytes, sentbytes, olen;
-	int sock, proto_sock, err;
-
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		/* Mark as removed */
-		session->node_id = 0;
-		return FALSE;
-	}
-
-	sock = g_io_channel_unix_get_fd(io);
-
-	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
-	if (recvbytes < 0) {
-		err = errno;
-		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
-		return TRUE;
-	}
-
-	proto_sock = g_io_channel_unix_get_fd(session->proto_io);
-
-	olen = msg_process(owner, sock, proto_sock, proto_ops[proto_index],
-					ipdu, recvbytes, opdu, sizeof(opdu));
-	/* olen: output length or -errno */
-	if (olen < 0) {
-		/* Server didn't reply any error */
-		LOG_ERROR("KNOT IoT proto error: %s(%ld)\n",
-						strerror(-olen), -olen);
-		return TRUE;
-	}
-
-	/* Response from the gateway: error or response for the given command */
-
-	sentbytes = ops->send(sock, opdu, olen);
-	if (sentbytes < 0)
-		LOG_ERROR("node_ops: %s(%ld)\n",
-					strerror(-sentbytes), -sentbytes);
-
-	return TRUE;
-}
-
 static void node_io_destroy(gpointer user_data)
 {
 
@@ -246,26 +200,78 @@ static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 static void proto_io_destroy(gpointer user_data)
 {
 	struct session *session = user_data;
-	GIOChannel *node_io;
 
-	/*
-	 * Assign to a temporary reference: 'session' might be
-	 * freed by node destroy callback (triggered by source
-	 * remove).
-	 */
-	node_io = session->node_io;
+	LOG_INFO("proto_io_destroy(%p)\n", session->proto_io);
 
-	if (session->node_id) {
-		/* Trigger node destroy callback */
-		g_source_remove(session->node_id);
+	session->proto_io = NULL;
+	session->proto_id = 0;
+}
 
-		/* Mark for shutdown */
-		g_io_channel_shutdown(node_io, TRUE, NULL);
+static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
+			      gpointer user_data)
+{
+	struct session *session = user_data;
+	struct node_ops *ops = session->ops;
+	uint8_t ipdu[512], opdu[512]; /* FIXME: */
+	ssize_t recvbytes, sentbytes, olen;
+	int sock, proto_sock, err;
+	GIOCondition watch_cond;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+		/* Mark as removed */
+		session->node_id = 0;
+		return FALSE;
 	}
 
-	/* Release last reference and shutdown */
-	g_io_channel_unref(node_io);
-	LOG_INFO("node_io unref(%p)\n", node_io);
+	sock = g_io_channel_unix_get_fd(io);
+
+	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
+	if (recvbytes < 0) {
+		err = errno;
+		LOG_ERROR("readv(): %s(%d)\n", strerror(err), err);
+		return TRUE;
+	}
+
+	if (!session->proto_io) {
+		proto_sock = proto_ops[proto_index]->connect();
+		if (proto_sock < 0) {
+			/* TODO:  missing reply an error */
+			LOG_INFO("Can't connect to cloud service!\n");
+			session->node_id = 0;
+			return FALSE;
+		}
+
+		LOG_INFO("Connected to cloud service!\n");
+
+		session->proto_io = g_io_channel_unix_new(proto_sock);
+
+		watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
+		session->proto_id = g_io_add_watch_full(session->proto_io,
+							G_PRIORITY_DEFAULT,
+							watch_cond,
+							proto_io_watch, session,
+							proto_io_destroy);
+	} else
+		proto_sock = g_io_channel_unix_get_fd(session->proto_io);
+
+	olen = msg_process(owner, sock, proto_sock, proto_ops[proto_index],
+					ipdu, recvbytes, opdu, sizeof(opdu));
+	/* olen: output length or -errno */
+	if (olen < 0) {
+		/* Server didn't reply any error */
+		LOG_ERROR("KNOT IoT proto error: %s(%ld)\n",
+						strerror(-olen), -olen);
+		return TRUE;
+	}
+
+	/* Response from the gateway: error or response for the given command */
+
+	sentbytes = ops->send(sock, opdu, olen);
+	if (sentbytes < 0)
+		LOG_ERROR("node_ops: %s(%ld)\n",
+					strerror(-sentbytes), -sentbytes);
+
+	return TRUE;
 }
 
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
