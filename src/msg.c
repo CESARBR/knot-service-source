@@ -206,12 +206,12 @@ static int8_t msg_unregister(const credential_t *owner,
 	 * service. eg: Device doesn't belongs to the current owner.
 	 */
 
-	LOG_INFO("rmnode: %36s\n", kreq->uuid);
+	LOG_INFO("rmnode: %.36s\n", kreq->uuid);
 
 	err = proto_ops->rmnode(proto_sock, owner, kreq->uuid, &jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
-		LOG_ERROR("rmnode %s failed %s (%d)\n",
+		LOG_ERROR("rmnode %.36s failed %s (%d)\n",
 					kreq->uuid, strerror(-err), -err);
 		goto done;
 	}
