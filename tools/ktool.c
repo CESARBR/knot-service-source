@@ -53,6 +53,7 @@ typedef void (*json_object_func_t) (struct json_object *jobj,
 
 static int sock;
 static gboolean opt_add = FALSE;
+static gboolean opt_rm = FALSE;
 static gboolean opt_schema = FALSE;
 static gboolean opt_data = FALSE;
 static char *opt_uuid = NULL;
@@ -342,6 +343,17 @@ static int cmd_unregister(void)
 	ssize_t nbytes;
 	int err;
 
+	/*
+	 * When token is informed try authenticate first. Leave this
+	 * block sequential to allow testing unregistering without
+	 * previous authentication.
+	 */
+
+	if (opt_token) {
+		printf("Authenticating ...\n");
+		err = authenticate(opt_uuid, opt_token);
+	}
+
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
 	msg.hdr.payload_len = sizeof(msg.uuid);
@@ -525,7 +537,7 @@ static GOptionEntry options[] = {
 	{ "add", 'a', 0, G_OPTION_ARG_NONE, &opt_add,
 				"Register a device to Meshblu",
 				NULL },
-	{ "remove", 'r', 0, G_OPTION_ARG_STRING, &opt_uuid,
+	{ "remove", 'r', 0, G_OPTION_ARG_NONE, &opt_rm,
 				"Unregister a device from Meshblu",
 				NULL },
 	{ "schema", 'h', 0, G_OPTION_ARG_NONE, &opt_schema,
