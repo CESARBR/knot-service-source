@@ -38,8 +38,7 @@ AC_DEFUN([COMPILER_BUILD_CFLAGS], [
 	])
 	AC_ARG_ENABLE(debug, AC_HELP_STRING([--enable-debug],
 			[enable debugging information]), [
-		if (test "${enableval}" = "yes" &&
-				test "${ac_cv_prog_cc_g}" = "yes"); then
+		if (test "${enableval}" = "yes"); then
 			build_cflags="$build_cflags -g"
 		fi
 	])
