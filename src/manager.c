@@ -58,12 +58,12 @@
 struct session {
 	unsigned int node_id;	/* Radio event source */
 	unsigned int proto_id;	/* TCP/backend event source */
-	GIOChannel *node_io;	/* Radio GIOChannel reference */
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 	struct node_ops *ops;
 };
 
 static GSList *server_watch = NULL;
+static GSList *session_list = NULL;
 
 extern struct proto_ops proto_http;
 #ifdef HAVE_WEBSOCKETS
@@ -168,18 +168,20 @@ static void node_io_destroy(gpointer user_data)
 
 	proto_io = session->proto_io;
 
+	/*
+	 * Destroy callback may be called after a remote (Radio or Unix peer)
+	 * initiated disconnection. If Cloud is still connected: disconnect
+	 * release allocated resources.
+	 */
+
 	if (session->proto_id) {
-		/* Trigger proto destroy callback */
 		g_source_remove(session->proto_id);
 
-		/* Mark for shutdown */
 		g_io_channel_shutdown(proto_io, FALSE, NULL);
+		g_io_channel_unref(proto_io);
 	}
 
-	/* Release last reference and shutdown */
-	g_io_channel_unref(proto_io);
-	LOG_INFO("proto_io unref(%p)\n", proto_io);
-
+	session_list = g_slist_remove(session_list, session);
 	g_free(session);
 }
 
@@ -189,10 +191,18 @@ static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
 	struct session *session = user_data;
 
 	/*
-	 * Mark protocol watch as removed. Return
-	 * FALSE to remove GIOChannel watch.
+	 * Mark protocol watch as removed. Return FALSE to remove
+	 * GIOChannel watch. This callback gets called when the
+	 * REMOTE initiates a disconnection or if an error happens.
+	 * In this case, radio (or Unix) transport should be left
+	 * connected.
 	 */
 	session->proto_id = 0;
+
+	if (session->proto_io) {
+		g_io_channel_unref(session->proto_io);
+		session->proto_io = NULL;
+	}
 
 	return FALSE;
 }
@@ -201,8 +211,12 @@ static void proto_io_destroy(gpointer user_data)
 {
 	struct session *session = user_data;
 
-	LOG_INFO("proto_io_destroy(%p)\n", session->proto_io);
-
+	/*
+	 * Considering that Radio (Unix) transport should stay
+	 * connected for Cloud initiated disconnection, just
+	 * 'reset' protocol references to signal that Cloud
+	 * connection needs to be re-established on-demand.
+	 */
 	session->proto_io = NULL;
 	session->proto_id = 0;
 }
@@ -217,8 +231,14 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	int sock, proto_sock, err;
 	GIOCondition watch_cond;
 
+
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		/* Mark as removed */
+		/*
+		 * Mark as removed. node_io has only one
+		 * reference. Returning FALSE removes the
+		 * last reference and the destroy callback
+		 * is called.
+		 */
 		session->node_id = 0;
 		return FALSE;
 	}
@@ -296,6 +316,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	}
 
 	node_io = g_io_channel_unix_new(sockfd);
+	g_io_channel_set_close_on_unref(node_io, TRUE);
 
 	proto_sock = proto_ops[proto_index]->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
@@ -307,8 +328,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 				G_PRIORITY_DEFAULT, watch_cond,
 				node_io_watch, session,
 				node_io_destroy);
+	g_io_channel_unref(node_io);
 
-	session->node_io = node_io;
 	/* Watch for TCP socket disconnection */
 	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
 	session->proto_id = g_io_add_watch_full(proto_io,
@@ -323,6 +344,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	session->ops = ops;
 
 	LOG_INFO("node:%p proto:%p\n", node_io, proto_io);
+
+	session_list = g_slist_prepend(session_list, session);
 
 	return TRUE;
 }
@@ -420,6 +443,7 @@ int manager_start(const char *file, const char *proto, const char *tty)
 void manager_stop(void)
 {
 	GSList *list;
+	struct session *session;
 	guint server_watch_id;
 	int i;
 
@@ -439,6 +463,15 @@ void manager_stop(void)
 	}
 
 	g_slist_free(server_watch);
+
+	for (list = session_list; list; list = g_slist_next(list)) {
+		session = list->data;
+
+		/* Freed by node_io_destroy */
+		g_source_remove(session->node_id);
+	}
+
+	g_slist_free(session_list);
 
 	if (owner) {
 		g_free(owner->uuid);
