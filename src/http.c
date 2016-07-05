@@ -56,6 +56,7 @@
 /* Meshblu secret token: 40 chars */
 #define MESHBLU_TOKEN_SIZE			40
 
+#define DEFAULT_MESHBLU_SERVER_URI		"meshblu.octoblu.com"
 #define MESHBLU_AUTH_UUID			"meshblu_auth_uuid: "
 #define MESHBLU_AUTH_UUID_SIZE			sizeof(MESHBLU_AUTH_UUID)
 #define MESHBLU_AUTH_TOKEN			"meshblu_auth_token: "
@@ -358,7 +359,12 @@ static int http_probe(const char *host, unsigned int port)
 
 	/* TODO: Add timer if it fails? */
 
-	host_uri = g_strdup_printf("%s:%u", host, port);
+	if (host)
+		host_uri = g_strdup_printf("%s:%u", host, port);
+	else
+		host_uri = g_strdup_printf("%s:%u", DEFAULT_MESHBLU_SERVER_URI,
+									port);
+
 	host_port = port;
 	device_uri = g_strdup_printf("%s/devices", host_uri);
 	data_uri = g_strdup_printf("%s/data", host_uri);
