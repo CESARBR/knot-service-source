@@ -350,7 +350,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-int manager_start(const char *file, const char *proto, const char *tty)
+int manager_start(const char *file, const char *host, unsigned int port,
+					const char *proto, const char *tty)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;

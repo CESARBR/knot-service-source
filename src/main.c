@@ -39,6 +39,8 @@
 
 static GMainLoop *main_loop;
 
+static const char *opt_host = "meshblu.octoblu.com";
+static unsigned int opt_port = 80;
 /* Default is websockets */
 static const char *opt_proto = "http";
 static const char *opt_cfg;
@@ -52,7 +54,11 @@ static void sig_term(int sig)
 static GOptionEntry options[] = {
 	{ "config", 'f', 0, G_OPTION_ARG_STRING, &opt_cfg,
 					"configuration file path", NULL },
-	{ "proto", 'p', 0, G_OPTION_ARG_STRING, &opt_proto,
+	{ "host", 'h', 0, G_OPTION_ARG_STRING, &opt_host,
+					"host", "Cloud server URL" },
+	{ "port", 'p', 0, G_OPTION_ARG_INT, &opt_port,
+					"port", "Cloud server port" },
+	{ "proto", 'P', 0, G_OPTION_ARG_STRING, &opt_proto,
 					"protocol", "eg: http or ws" },
 	{ "tty", 't', 0, G_OPTION_ARG_STRING, &opt_tty,
 					"TTY", "eg: /dev/ttyUSB0" },
@@ -84,7 +90,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	err = manager_start(opt_cfg, opt_proto, opt_tty);
+	err = manager_start(opt_cfg, opt_host, opt_port, opt_proto, opt_tty);
 	if (err < 0) {
 		LOG_ERROR("start(): %s (%d)\n", strerror(-err), -err);
 		return EXIT_FAILURE;
