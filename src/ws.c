@@ -202,7 +202,7 @@ static struct libwebsocket_protocols protocols[] = {
 	}
 };
 
-static int ws_probe(void)
+static int ws_probe(const char *host, unsigned int port)
 {
 	struct lws_context_creation_info info;
 

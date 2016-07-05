@@ -39,7 +39,7 @@ typedef struct {
 /* Node operations */
 struct proto_ops {
 	const char *name;
-	int (*probe) (void);
+	int (*probe) (const char *host, unsigned int port);
 	void (*remove) (void);
 
 	/* Abstraction for connect & close/sign-off */

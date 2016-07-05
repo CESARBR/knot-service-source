@@ -390,7 +390,7 @@ int manager_start(const char *file, const char *host, unsigned int port,
 		if (strcmp(proto, proto_ops[i]->name) != 0)
 			continue;
 
-		if (proto_ops[i]->probe() < 0)
+		if (proto_ops[i]->probe(host, port) < 0)
 			return -EIO;
 
 		LOG_INFO("proto_ops(%p): %s\n", proto_ops[i], proto_ops[i]->name);

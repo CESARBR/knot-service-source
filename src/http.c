@@ -39,17 +39,14 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
+#include <glib.h>
+
 #include "log.h"
 #include "proto.h"
 
 #define CURL_OP_TIMEOUT					30	/* 30 seconds */
 #define URL_SIZE					128
 #define REQUEST_SIZE					10
-
-#define MESHBLU_HOST		"meshblu.octoblu.com"
-#define MESHBLU_DEV_URL		MESHBLU_HOST "/devices"
-#define MESHBLU_DATA_URL	MESHBLU_HOST "/data"
-
 
 /* Credential registered on meshblu service */
 
@@ -64,8 +61,11 @@
 #define MESHBLU_AUTH_TOKEN			"meshblu_auth_token: "
 #define MESHBLU_AUTH_TOKEN_SIZE			sizeof(MESHBLU_AUTH_TOKEN)
 
-
 static struct in_addr host_addr;
+static unsigned int host_port;
+static char *host_uri;
+static char *device_uri;
+static char *data_uri;
 
 static int http2errno(long ehttp)
 {
@@ -251,7 +251,7 @@ static int http_connect(void)
 	memset(&server, 0, sizeof(server));
 	server.sin_family = AF_INET;
 	server.sin_addr.s_addr = host_addr.s_addr;
-	server.sin_port = htons(80);
+	server.sin_port = htons(host_port);
 
 	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0){
 		err = errno;
@@ -272,16 +272,17 @@ static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, MESHBLU_DEV_URL, jreq, NULL, json, "POST");
+	return fetch_url(sock, device_uri, jreq, NULL, json, "POST");
 
 }
 
 static int http_signin(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
+	/* Length: device_uri + '/' + UUID + '\0' */
+	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
 
-	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
+	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
 
 	/*
 	 * HTTP 200: OK
@@ -289,15 +290,16 @@ static int http_signin(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, data_url, NULL, auth, json, "GET");
+	return fetch_url(sock, uri, NULL, auth, json, "GET");
 }
 
 static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 							json_raw_t *jbuf)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
+	/* Length: device_uri + '/' + UUID + '\0' */
+	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
 
-	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
+	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
 
 	/*
 	 * HTTP 200: OK
@@ -305,15 +307,16 @@ static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, data_url, NULL, auth, jbuf, "DELETE");
+	return fetch_url(sock, uri, NULL, auth, jbuf, "DELETE");
 }
 
 static int http_schema(int sock, const credential_t *auth, const char *uuid,
 					const char *jreq, json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DEV_URL) + 1 + MESHBLU_UUID_SIZE];
+	/* Length: device_uri + '/' + UUID + '\0' */
+	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
 
-	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DEV_URL, uuid);
+	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
 
 	/*
 	 * HTTP 200: OK
@@ -321,15 +324,16 @@ static int http_schema(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, data_url, jreq, auth, json, "PUT");
+	return fetch_url(sock, uri, jreq, auth, json, "PUT");
 }
 
 static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
-	char data_url[sizeof(MESHBLU_DATA_URL) + 1 + MESHBLU_UUID_SIZE];
+	/* Length: data_uri + '/' + UUID + '\0' */
+	char uri[strlen(data_uri) + 1 + MESHBLU_UUID_SIZE];
 
-	snprintf(data_url, sizeof(data_url), "%s/%s", MESHBLU_DATA_URL, uuid);
+	snprintf(uri, sizeof(uri), "%s/%s", data_uri, uuid);
 
 	/*
 	 * HTTP 200: OK
@@ -337,7 +341,7 @@ static int http_data(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, data_url, jreq, auth, json, "POST");
+	return fetch_url(sock, uri, jreq, auth, json, "POST");
 }
 
 static void http_close(int sock)
@@ -345,23 +349,29 @@ static void http_close(int sock)
 
 }
 
-static int http_probe(void)
+static int http_probe(const char *host, unsigned int port)
 {
-	struct hostent *host;
+	struct hostent *hostent;
 	int err;
 
 	/* TODO: connect and track TCP socket */
 
 	/* TODO: Add timer if it fails? */
-	host = gethostbyname(MESHBLU_HOST);
-	if  (host == NULL) {
+
+	host_uri = g_strdup_printf("%s:%u", host, port);
+	host_port = port;
+	device_uri = g_strdup_printf("%s/devices", host_uri);
+	data_uri = g_strdup_printf("%s/data", host_uri);
+
+	hostent = gethostbyname(host_uri);
+	if  (hostent == NULL) {
 		err = errno;
-		LOG_ERROR("gethostbyname(%s): %s (%d)\n", MESHBLU_HOST,
+		LOG_ERROR("gethostbyname(%s): %s (%d)\n", host_uri,
 						       strerror(err), err);
 		return -err;
 	}
 
-	host_addr.s_addr = *((unsigned long *) host-> h_addr_list[0]);
+	host_addr.s_addr = *((unsigned long *) hostent-> h_addr_list[0]);
 
 	LOG_INFO("Meshblu IP: %s\n", inet_ntoa(host_addr));
 
@@ -370,6 +380,9 @@ static int http_probe(void)
 
 static void http_remove(void)
 {
+	g_free(host_uri);
+	g_free(device_uri);
+	g_free(data_uri);
 }
 
 struct proto_ops proto_http = {
