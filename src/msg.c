@@ -208,7 +208,7 @@ static int8_t msg_unregister(const credential_t *owner,
 
 	LOG_INFO("rmnode: %.36s\n", kreq->uuid);
 
-	err = proto_ops->rmnode(proto_sock, owner, kreq->uuid, &jbuf);
+	err = proto_ops->rmnode(proto_sock, credential, kreq->uuid, &jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
 		LOG_ERROR("rmnode %.36s failed %s (%d)\n",
