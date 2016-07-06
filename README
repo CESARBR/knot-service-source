@@ -30,3 +30,6 @@ Setup before running knotd:
 
 Register an account at 'https://app.octoblu.com' and get the UUID
 and token required to change 'src/knot.conf'
+
+How to run 'knotd' specifying host & port:
+$src/knotd --config=src/knot.conf --proto=http --host=localhost --port=8000
