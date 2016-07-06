@@ -192,19 +192,19 @@ static int8_t msg_unregister(int sock, int proto_sock,
 	}
 
 	/* 36 octets */
-	if (kreq->hdr.payload_len != sizeof(kreq->uuid)) {
+	if (kreq->hdr.payload_len != 0) {
 		LOG_ERROR("Wrong payload length!\n");
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
 
-	LOG_INFO("rmnode: %.36s\n", kreq->uuid);
+	LOG_INFO("rmnode: %.36s\n", credential->uuid);
 
-	err = proto_ops->rmnode(proto_sock, credential, kreq->uuid, &jbuf);
+	err = proto_ops->rmnode(proto_sock, credential, credential->uuid,
+								&jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
-		LOG_ERROR("rmnode %.36s failed %s (%d)\n",
-					kreq->uuid, strerror(-err), -err);
+		LOG_ERROR("rmnode() failed %s (%d)\n", strerror(-err), -err);
 		goto done;
 	}
 

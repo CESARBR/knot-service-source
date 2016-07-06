@@ -356,8 +356,7 @@ static int cmd_unregister(void)
 
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
-	msg.hdr.payload_len = sizeof(msg.uuid);
-	strncpy(msg.uuid, opt_uuid, sizeof(msg.uuid));
+	msg.hdr.payload_len = 0;
 
 	nbytes = write(sock, &msg, sizeof(msg));
 	if (nbytes < 0) {

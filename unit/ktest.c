@@ -248,8 +248,7 @@ static void unregister_test_valid_device(void)
 	memset(&kresp, 0, sizeof(kresp));
 	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
 
-	kmsg.hdr.payload_len = sizeof(kmsg.unreg.uuid);
-	memcpy(kmsg.unreg.uuid, uuid128, sizeof(kmsg.unreg.uuid));
+	kmsg.hdr.payload_len = 0;
 	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
 							sizeof(kresp.action));
 	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
