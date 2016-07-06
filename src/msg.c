@@ -175,8 +175,7 @@ done:
 	return result;
 }
 
-static int8_t msg_unregister(const credential_t *owner,
-					int sock, int proto_sock,
+static int8_t msg_unregister(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_unregister *kreq)
 {
@@ -198,13 +197,6 @@ static int8_t msg_unregister(const credential_t *owner,
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
-
-	/*
-	 * Owner UUID and Token are always valid. These parameters
-	 * are verified when they are loaded from storage. Permission
-	 * related to owner & devices needs to be checked by the backend
-	 * service. eg: Device doesn't belongs to the current owner.
-	 */
 
 	LOG_INFO("rmnode: %.36s\n", kreq->uuid);
 
@@ -391,7 +383,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 						&kreq->reg, &krsp->cred);
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
-		result = msg_unregister(owner, sock, proto_sock, proto_ops,
+		result = msg_unregister(sock, proto_sock, proto_ops,
 								&kreq->unreg);
 		break;
 	case KNOT_MSG_DATA:
