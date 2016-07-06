@@ -268,9 +268,9 @@ static int8_t msg_auth(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
-static int8_t msg_data(const credential_t *owner, int sock, int proto_sock,
-				    const struct proto_ops *proto_ops,
-				    const knot_msg_data *kmdata)
+static int8_t msg_data(int sock, int proto_sock,
+					const struct proto_ops *proto_ops,
+					const knot_msg_data *kmdata)
 {
 	/* Pointer to KNOT data containing header and a primitive KNOT type */
 	const knot_data *kdata = &(kmdata->payload);
@@ -331,7 +331,7 @@ static int8_t msg_data(const credential_t *owner, int sock, int proto_sock,
 	printf("JSON: %s\n", jobjstr);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->data(proto_sock, owner, credential->uuid,
+	err = proto_ops->data(proto_sock, credential, credential->uuid,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -395,8 +395,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 								&kreq->unreg);
 		break;
 	case KNOT_MSG_DATA:
-		result = msg_data(owner, sock, proto_sock, proto_ops,
-								&kreq->data);
+		result = msg_data(sock, proto_sock, proto_ops, &kreq->data);
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(sock, proto_sock, proto_ops, &kreq->auth);
