@@ -332,7 +332,7 @@ static int http_data(int sock, const credential_t *auth, const char *uuid,
 					     const char *jreq, json_raw_t *json)
 {
 	/* Length: data_uri + '/' + UUID + '\0' */
-	char uri[strlen(data_uri) + 1 + MESHBLU_UUID_SIZE];
+	char uri[strlen(data_uri) + 2 + MESHBLU_UUID_SIZE];
 
 	snprintf(uri, sizeof(uri), "%s/%s", data_uri, uuid);
 
