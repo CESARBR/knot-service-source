@@ -356,6 +356,40 @@ static int write_knot_data(struct json_object *jobj)
 	return 0;
 }
 
+static int send_schema(GSList *list)
+{
+	knot_msg_config msg;
+	knot_schema *entry;
+	GSList *l;
+	ssize_t nbytes;
+	int err;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.type = KNOT_MSG_SCHEMA;
+
+	for (l = list; l;) {
+		entry = l->data;
+
+		msg.hdr.payload_len = sizeof(*entry);
+		memcpy(&msg.schema, entry, msg.hdr.payload_len);
+
+		l = g_slist_next(l);
+		if (!l)
+			msg.hdr.type = KNOT_MSG_SCHEMA |
+					KNOT_MSG_SCHEMA_FLAG_END;
+
+		nbytes = write(sock, &msg, sizeof(msg.hdr) +
+						msg.hdr.payload_len);
+		if (nbytes < 0) {
+			err = errno;
+			printf("write(): %s(%d)\n", strerror(err), err);
+			return -err;
+		}
+	}
+
+	return 0;
+}
+
 static int cmd_register(void)
 {
 	knot_msg_register msg;
@@ -496,6 +530,8 @@ static int cmd_schema(void)
 
 	memset(&schema, 0, sizeof(schema));
 	json_object_foreach(jobj, load_schema, &schema);
+	if (!schema.err)
+		send_schema(schema.list);
 	g_slist_free_full(schema.list, g_free);
 	json_object_put(jobj);
 
