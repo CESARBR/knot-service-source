@@ -260,6 +260,67 @@ static int8_t msg_auth(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
+static int8_t msg_schema(int sock, int proto_sock,
+				const struct proto_ops *proto_ops,
+				const knot_msg_config *kmcfg, gboolean eof)
+{
+	const knot_schema *schema = &(kmcfg->schema);
+	struct json_object *jobj, *ajobj, *schemajobj;
+	credential_t *credential;
+	json_raw_t json;
+	const char *jobjstr;
+	int err;
+
+	credential = g_hash_table_lookup(credential_list,
+						GINT_TO_POINTER(sock));
+	if (!credential) {
+		LOG_INFO("Permission denied!\n");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	/*
+	 * "SCHEMA":[
+	 *		{"data_id":<integer>, "data_type":<integer>, "name":"<name>"},
+	 *		...
+	 *	]
+	 */
+
+	/* TODO: Missing to handle eof */
+
+	/* One SCHEMA entry */
+	jobj = json_object_new_object();
+	json_object_object_add(jobj, "data_id",
+			       json_object_new_int(schema->data_id));
+	json_object_object_add(jobj, "data_type",
+			       json_object_new_int(schema->data_type));
+	json_object_object_add(jobj, "name",
+			       json_object_new_string(schema->name));
+
+	/* SCHEMA is an array of entries */
+	ajobj = json_object_new_array();
+	json_object_array_add(ajobj, jobj);
+
+	schemajobj = json_object_new_object();
+	json_object_object_add(schemajobj, "SCHEMA", ajobj);
+
+	jobjstr = json_object_to_json_string(schemajobj);
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->schema(proto_sock, credential, credential->uuid,
+							jobjstr, &json);
+	if (json.data)
+		free(json.data);
+
+	json_object_put(schemajobj);
+
+	if (err < 0) {
+		LOG_ERROR("manager schema(): %s(%d)\n", strerror(-err), -err);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	return KNOT_SUCCESS;
+}
+
 static int8_t msg_data(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_data *kmdata)
@@ -347,6 +408,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 	knot_msg *krsp = opdu;
 	uint8_t rtype;
 	int8_t result = KNOT_INVALID_DATA;
+	gboolean eof;
 
 	/* Verify if output PDU has a min length */
 	if (omtu < sizeof(knot_msg)) {
@@ -391,6 +453,12 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(sock, proto_sock, proto_ops, &kreq->auth);
+		break;
+	case KNOT_MSG_SCHEMA:
+	case KNOT_MSG_SCHEMA | KNOT_MSG_SCHEMA_FLAG_END:
+		eof = kreq->hdr.type & KNOT_MSG_SCHEMA_FLAG_END ? TRUE : FALSE;
+		result = msg_schema(sock, proto_sock, proto_ops, &kreq->config,
+									eof);
 		break;
 	default:
 		/* TODO: reply unknown command */
