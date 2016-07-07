@@ -48,6 +48,11 @@
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
 
+struct schema {
+	GSList *list;
+	int err;
+};
+
 typedef void (*json_object_func_t) (struct json_object *jobj,
 					const char *key, void *user_data);
 
@@ -118,6 +123,60 @@ static void print_json_value(struct json_object *jobj,
 	case json_type_array:
 		break;
 	}
+}
+
+static void load_schema(struct json_object *jobj,
+					const char *key, void *user_data)
+{
+	struct schema *schema = user_data;
+	knot_schema *entry;
+	GSList *ltmp;
+	enum json_type type;
+	const char *data_name = NULL;
+	int intval;
+
+	type = json_object_get_type(jobj);
+
+	switch (type) {
+	case json_type_null:
+	case json_type_boolean:
+	case json_type_double:
+	case json_type_object:
+	case json_type_array:
+		/* Not available */
+		schema->err = EINVAL;
+		break;
+	case json_type_int:
+		intval = json_object_get_int(jobj);
+		break;
+	case json_type_string:
+		data_name= json_object_get_string(jobj);
+		break;
+	}
+
+	if (strcmp("data_id", key) == 0) {
+		entry = g_new0(knot_schema, 1);
+		entry->data_id = intval;
+		schema->list = g_slist_append(schema->list, entry);
+		printf("data_id: %02x\n", intval);
+	} else if (strcmp("data_type", key) == 0) {
+		ltmp = g_slist_last(schema->list);
+		if (!ltmp)
+			return;
+
+		entry = ltmp->data;
+		entry->data_type = intval;
+		printf("data_type: %02x\n", intval);
+	} else if (strcmp("name", key) == 0 && data_name) {
+		ltmp = g_slist_last(schema->list);
+		if (!ltmp)
+			return;
+
+		entry = ltmp->data;
+		strcpy(entry->name, data_name);
+		printf("name: %s\n", data_name);
+	} else
+		schema->err = EINVAL;
 }
 
 static void read_json_entry(struct json_object *jobj,
@@ -385,12 +444,24 @@ static int cmd_unregister(void)
 
 static int cmd_schema(void)
 {
+	struct json_object *jobj;
+	struct schema schema;
 	struct stat sb;
 	int err;
 
 	if (!opt_uuid) {
 		printf("Device's UUID missing!\n");
 		return -EINVAL;
+	}
+
+	/*
+	 * When token is informed try authenticate first. Leave this
+	 * block sequential to allow testing sending schema without
+	 * previous authentication.
+	 */
+	if (opt_token) {
+		printf("Authenticating ...\n");
+		err = authenticate(opt_uuid, opt_token);
 	}
 
 	/*
@@ -416,6 +487,17 @@ static int cmd_schema(void)
 		printf("json file: invalid argument!\n");
 		return -EINVAL;
 	}
+
+	jobj = json_object_from_file(opt_json);
+	if (!jobj) {
+		printf("json file(%s): failed to read from file!\n", opt_json);
+		return -EINVAL;
+	}
+
+	memset(&schema, 0, sizeof(schema));
+	json_object_foreach(jobj, load_schema, &schema);
+	g_slist_free_full(schema.list, g_free);
+	json_object_put(jobj);
 
 	return 0;
 }
@@ -613,9 +695,7 @@ int main(int argc, char *argv[])
 	if (opt_schema) {
 		printf("Registering JSON schema for a device ...\n");
 		err = cmd_schema();
-	}
-
-	if (opt_data) {
+	} else if (opt_data) {
 		printf("Setting data for a device ...\n");
 		err = cmd_data();
 	} else if (opt_uuid) {
