@@ -44,8 +44,13 @@
 #include "log.h"
 #include "msg.h"
 
-/* Maps sockets to credentials */
-static GHashTable *credential_list;
+struct trust {
+	credential_t *credential;
+	GSList *schema;			/* List of knot_schema */
+};
+
+/* Maps sockets to sessions  */
+static GHashTable *trust_list;
 
 static void credential_free(credential_t *credential)
 {
@@ -54,12 +59,19 @@ static void credential_free(credential_t *credential)
 	g_free(credential);
 }
 
+static void trust_free(struct trust *trust)
+{
+	credential_free(trust->credential);
+	g_slist_free_full(trust->schema, g_free);
+	g_free(trust);
+}
+
 static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
 	int sock = g_io_channel_unix_get_fd(io);
 
-	g_hash_table_remove(credential_list, GINT_TO_POINTER(sock));
+	g_hash_table_remove(trust_list, GINT_TO_POINTER(sock));
 
 	return FALSE;
 }
@@ -100,6 +112,7 @@ static int8_t msg_register(const credential_t *owner,
 					knot_msg_credential *krsp)
 {
 	GIOChannel *io;
+	struct trust *trust;
 	credential_t *credential;
 	json_object *jobj;
 	const char *jobjstring;
@@ -160,8 +173,10 @@ static int8_t msg_register(const credential_t *owner,
 	/* Payload length includes the result, and UUID */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
 
-	g_hash_table_replace(credential_list, GINT_TO_POINTER(sock),
-								credential);
+	trust = g_new0(struct trust, 1);
+	trust->credential = credential;
+
+	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
 	/* Add a watch to remove the credential when the client disconnects */
 	io = g_io_channel_unix_new(sock);
 	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR , node_hup_cb, NULL);
@@ -179,14 +194,14 @@ static int8_t msg_unregister(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_unregister *kreq)
 {
+	const struct trust *trust;
 	const credential_t *credential;
 	json_raw_t jbuf = { NULL, 0 };
 	int8_t result;
 	int err;
 
-	credential = g_hash_table_lookup(credential_list,
-						GINT_TO_POINTER(sock));
-	if (!credential) {
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
 		LOG_INFO("Permission denied!\n");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
@@ -197,6 +212,8 @@ static int8_t msg_unregister(int sock, int proto_sock,
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
+
+	credential = trust->credential;
 
 	LOG_INFO("rmnode: %.36s\n", credential->uuid);
 
@@ -223,10 +240,11 @@ static int8_t msg_auth(int sock, int proto_sock,
 {
 	GIOChannel *io;
 	json_raw_t json;
+	struct trust *trust;
 	credential_t *credential;
 	int err;
 
-	if (g_hash_table_lookup(credential_list, GINT_TO_POINTER(sock))) {
+	if (g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock))) {
 		LOG_INFO("Authenticated already\n");
 		return KNOT_SUCCESS;
 	}
@@ -249,8 +267,9 @@ static int8_t msg_auth(int sock, int proto_sock,
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	g_hash_table_insert(credential_list, GINT_TO_POINTER(sock),
-								credential);
+	trust = g_new0(struct trust, 1);
+	trust->credential = credential;
+	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock), trust);
 
 	/* Add a watch to remove the credential when the client disconnects */
 	io = g_io_channel_unix_new(sock);
@@ -265,15 +284,17 @@ static int8_t msg_schema(int sock, int proto_sock,
 				const knot_msg_config *kmcfg, gboolean eof)
 {
 	const knot_schema *schema = &(kmcfg->schema);
+	knot_schema *kschema;
 	struct json_object *jobj, *ajobj, *schemajobj;
-	credential_t *credential;
+	struct trust *trust;
+	const credential_t *credential;
+	GSList *list;
 	json_raw_t json;
 	const char *jobjstr;
 	int err;
 
-	credential = g_hash_table_lookup(credential_list,
-						GINT_TO_POINTER(sock));
-	if (!credential) {
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
 		LOG_INFO("Permission denied!\n");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
@@ -285,26 +306,32 @@ static int8_t msg_schema(int sock, int proto_sock,
 	 *	]
 	 */
 
-	/* TODO: Missing to handle eof */
-
-	/* One SCHEMA entry */
-	jobj = json_object_new_object();
-	json_object_object_add(jobj, "data_id",
-			       json_object_new_int(schema->data_id));
-	json_object_object_add(jobj, "data_type",
-			       json_object_new_int(schema->data_type));
-	json_object_object_add(jobj, "name",
-			       json_object_new_string(schema->name));
+	kschema = g_memdup(schema, sizeof(*schema));
+	trust->schema = g_slist_append(trust->schema, kschema);
+	if (!eof)
+		return KNOT_SUCCESS;
 
 	/* SCHEMA is an array of entries */
 	ajobj = json_object_new_array();
-	json_object_array_add(ajobj, jobj);
-
 	schemajobj = json_object_new_object();
-	json_object_object_add(schemajobj, "SCHEMA", ajobj);
 
+	/* For each entry */
+	for (list = trust->schema; list; list = g_slist_next(list)) {
+		jobj = json_object_new_object();
+		json_object_object_add(jobj, "data_id",
+				       json_object_new_int(schema->data_id));
+		json_object_object_add(jobj, "data_type",
+				       json_object_new_int(schema->data_type));
+		json_object_object_add(jobj, "name",
+				       json_object_new_string(schema->name));
+
+		json_object_array_add(ajobj, jobj);
+	}
+
+	json_object_object_add(schemajobj, "SCHEMA", ajobj);
 	jobjstr = json_object_to_json_string(schemajobj);
 
+	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
 	err = proto_ops->schema(proto_sock, credential, credential->uuid,
 							jobjstr, &json);
@@ -328,7 +355,8 @@ static int8_t msg_data(int sock, int proto_sock,
 	/* Pointer to KNOT data containing header and a primitive KNOT type */
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
-	credential_t *credential;
+	const struct trust *trust;
+	const credential_t *credential;
 	json_raw_t json;
 	const char *jobjstr;
 	/* INT_MAX 2147483647 */
@@ -339,9 +367,8 @@ static int8_t msg_data(int sock, int proto_sock,
 	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
 				kdata->hdr.unit, kdata->hdr.value_type);
 
-	credential = g_hash_table_lookup(credential_list,
-						GINT_TO_POINTER(sock));
-	if (!credential) {
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
 		LOG_INFO("Permission denied!\n");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
@@ -383,6 +410,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	jobjstr = json_object_to_json_string(jobj);
 	printf("JSON: %s\n", jobjstr);
 
+	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
 	err = proto_ops->data(proto_sock, credential, credential->uuid,
 							jobjstr, &json);
@@ -476,13 +504,13 @@ done:
 
 int msg_start(void)
 {
-	credential_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-					NULL, (GDestroyNotify) credential_free);
+	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					NULL, (GDestroyNotify) trust_free);
 
 	return 0;
 }
 
 void msg_stop(void)
 {
-	g_hash_table_destroy(credential_list);
+	g_hash_table_destroy(trust_list);
 }
