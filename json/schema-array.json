@@ -1,0 +1,7 @@
+{
+"schema": [
+	{ "data_id": 1, "data_type": 19, "name": "Wind speed" },
+	{ "data_id": 2, "data_type": 5, "name": "Outdoor Temperature" },
+	{ "data_id": 1, "data_type": 7, "name": "Luminosity" }
+]
+}
