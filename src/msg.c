@@ -300,7 +300,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	}
 
 	/*
-	 * "SCHEMA":[
+	 * "schema":[
 	 *		{"data_id":<integer>, "data_type":<integer>, "name":"<name>"},
 	 *		...
 	 *	]
@@ -328,7 +328,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 		json_object_array_add(ajobj, jobj);
 	}
 
-	json_object_object_add(schemajobj, "SCHEMA", ajobj);
+	json_object_object_add(schemajobj, "schema", ajobj);
 	jobjstr = json_object_to_json_string(schemajobj);
 
 	credential = trust->credential;
