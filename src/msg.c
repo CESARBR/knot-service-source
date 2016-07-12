@@ -241,8 +241,14 @@ static int8_t msg_auth(int sock, int proto_sock,
 	}
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->signin(proto_sock, kmauth->uuid,
-						kmauth->token, &json);
+	trust = g_new0(struct trust, 1);
+	/*
+	 * g_strndup returns a newly-allocated buffer n + 1 bytes
+	 * long which will always be nul-terminated.
+	 */
+	trust->uuid = g_strndup(kmauth->uuid, sizeof(kmauth->uuid));
+	trust->token = g_strndup(kmauth->token, sizeof(kmauth->token));
+	err = proto_ops->signin(proto_sock, trust->uuid, trust->token, &json);
 
 	LOG_INFO("%s\n", json.data);
 
@@ -251,12 +257,10 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 	if (err < 0) {
 		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
+		trust_free(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	trust = g_new0(struct trust, 1);
-	trust->uuid = g_memdup(kmauth->uuid, sizeof(kmauth->uuid));
-	trust->token = g_memdup(kmauth->token, sizeof(kmauth->token));
 	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock), trust);
 
 	/* Add a watch to remove the credential when the client disconnects */
