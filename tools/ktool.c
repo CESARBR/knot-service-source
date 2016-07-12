@@ -158,7 +158,6 @@ static void load_schema(struct json_object *jobj,
 		entry = g_new0(knot_schema, 1);
 		entry->data_id = intval;
 		schema->list = g_slist_append(schema->list, entry);
-		printf("data_id: %02x\n", intval);
 	} else if (strcmp("data_type", key) == 0) {
 		ltmp = g_slist_last(schema->list);
 		if (!ltmp)
@@ -166,7 +165,6 @@ static void load_schema(struct json_object *jobj,
 
 		entry = ltmp->data;
 		entry->data_type = intval;
-		printf("data_type: %02x\n", intval);
 	} else if (strcmp("name", key) == 0 && data_name) {
 		ltmp = g_slist_last(schema->list);
 		if (!ltmp)
@@ -174,7 +172,6 @@ static void load_schema(struct json_object *jobj,
 
 		entry = ltmp->data;
 		strcpy(entry->name, data_name);
-		printf("name: %s\n", data_name);
 	} else
 		schema->err = EINVAL;
 }
@@ -247,6 +244,7 @@ static void json_object_foreach(struct json_object *jobj,
 {
 	struct json_object *next;
 	enum json_type type;
+	int len, i;
 
 	if (!jobj)
 		return;
@@ -267,6 +265,11 @@ static void json_object_foreach(struct json_object *jobj,
 			json_object_put(next);
 			break;
 		case json_type_array:
+			len = json_object_array_length(val);
+			for (i = 0; i < len; i++) {
+				next = json_object_array_get_idx(val, i);
+				json_object_foreach(next, func, user_data);
+			}
 			break;
 		}
 	}
@@ -497,7 +500,6 @@ static int cmd_schema(void)
 		printf("Authenticating ...\n");
 		err = authenticate(opt_uuid, opt_token);
 	}
-
 	/*
 	 * In order to allow a more flexible way to manage schemas, ktool
 	 * receives a JSON file and convert it to KNOT protocol format.
@@ -532,6 +534,7 @@ static int cmd_schema(void)
 	json_object_foreach(jobj, load_schema, &schema);
 	if (!schema.err)
 		send_schema(schema.list);
+
 	g_slist_free_full(schema.list, g_free);
 	json_object_put(jobj);
 
