@@ -121,11 +121,11 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 
 /* Fetch and return url body via curl */
 static int fetch_url(int sockfd, const char *action, const char *json,
-				const credential_t *auth, json_raw_t *fetch,
-				const char *request)
+			const char *uuid, const char *token,
+			json_raw_t *fetch, const char *request)
 {
-	char token[MESHBLU_AUTH_TOKEN_SIZE + MESHBLU_TOKEN_SIZE];
-	char uuid[MESHBLU_AUTH_UUID_SIZE + MESHBLU_UUID_SIZE];
+	char token_hdr[MESHBLU_AUTH_TOKEN_SIZE + MESHBLU_TOKEN_SIZE];
+	char uuid_hdr[MESHBLU_AUTH_UUID_SIZE + MESHBLU_UUID_SIZE];
 	char upcase_request[REQUEST_SIZE + 1];
 	struct curl_slist *headers = NULL;
 	CURL *ch;
@@ -162,14 +162,14 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	LOG_INFO("HTTP(%s): %s\n", upcase_request, action);
 
-	if (auth && auth->uuid && auth->token) {
+	if (uuid && token) {
 
-		snprintf(uuid, sizeof(uuid), "%s%s", MESHBLU_AUTH_UUID,
-							auth->uuid);
-		headers = curl_slist_append(headers, uuid);
-		snprintf(token, sizeof(token), "%s%s", MESHBLU_AUTH_TOKEN,
-							auth->token);
-		headers = curl_slist_append(headers, token);
+		snprintf(uuid_hdr, sizeof(uuid_hdr), "%s%s",
+						MESHBLU_AUTH_UUID, uuid);
+		headers = curl_slist_append(headers, uuid_hdr);
+		snprintf(token_hdr, sizeof(token_hdr), "%s%s",
+					MESHBLU_AUTH_TOKEN, token);
+		headers = curl_slist_append(headers, token_hdr);
 		LOG_INFO(" AUTH: %s\n       %s\n", uuid, token);
 	}
 
@@ -273,11 +273,11 @@ static int http_mknode(int sock, const char *jreq, json_raw_t *json)
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, device_uri, jreq, NULL, json, "POST");
+	return fetch_url(sock, device_uri, jreq, NULL, NULL, json, "POST");
 
 }
 
-static int http_signin(int sock, const credential_t *auth, const char *uuid,
+static int http_signin(int sock, const char *uuid, const char *token,
 							json_raw_t *json)
 {
 	/* Length: device_uri + '/' + UUID + '\0' */
@@ -291,10 +291,10 @@ static int http_signin(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, NULL, auth, json, "GET");
+	return fetch_url(sock, uri, NULL, uuid, token, json, "GET");
 }
 
-static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
+static int http_rmnode(int sock, const char *uuid, const char *token,
 							json_raw_t *jbuf)
 {
 	/* Length: device_uri + '/' + UUID + '\0' */
@@ -308,10 +308,10 @@ static int http_rmnode(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, NULL, auth, jbuf, "DELETE");
+	return fetch_url(sock, uri, NULL, uuid, token, jbuf, "DELETE");
 }
 
-static int http_schema(int sock, const credential_t *auth, const char *uuid,
+static int http_schema(int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json)
 {
 	/* Length: device_uri + '/' + UUID + '\0' */
@@ -325,10 +325,10 @@ static int http_schema(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, jreq, auth, json, "PUT");
+	return fetch_url(sock, uri, jreq, uuid, token, json, "PUT");
 }
 
-static int http_data(int sock, const credential_t *auth, const char *uuid,
+static int http_data(int sock, const char *uuid, const char *token,
 					     const char *jreq, json_raw_t *json)
 {
 	/* Length: data_uri + '/' + UUID + '\0' */
@@ -342,7 +342,7 @@ static int http_data(int sock, const credential_t *auth, const char *uuid,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, jreq, auth, json, "POST");
+	return fetch_url(sock, uri, jreq, uuid, token, json, "POST");
 }
 
 static void http_close(int sock)

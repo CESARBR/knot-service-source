@@ -217,7 +217,7 @@ static int8_t msg_unregister(int sock, int proto_sock,
 
 	LOG_INFO("rmnode: %.36s\n", credential->uuid);
 
-	err = proto_ops->rmnode(proto_sock, credential, credential->uuid,
+	err = proto_ops->rmnode(proto_sock, credential->uuid, credential->token,
 								&jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
@@ -254,7 +254,8 @@ static int8_t msg_auth(int sock, int proto_sock,
 	credential->token = g_strdup(kmauth->token);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->signin(proto_sock, credential, kmauth->uuid, &json);
+	err = proto_ops->signin(proto_sock, credential->uuid,
+						credential->token, &json);
 
 	LOG_INFO("%s\n", json.data);
 
@@ -333,7 +334,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 
 	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->schema(proto_sock, credential, credential->uuid,
+	err = proto_ops->schema(proto_sock, credential->uuid, credential->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -412,7 +413,7 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->data(proto_sock, credential, credential->uuid,
+	err = proto_ops->data(proto_sock, credential->uuid, credential->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
