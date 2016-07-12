@@ -299,6 +299,9 @@ static int8_t msg_schema(int sock, int proto_sock,
 
 	kschema = g_memdup(schema, sizeof(*schema));
 	trust->schema = g_slist_append(trust->schema, kschema);
+
+	 /* TODO: missing timer to wait for end of schema transfer */
+
 	if (!eof)
 		return KNOT_SUCCESS;
 
@@ -306,8 +309,9 @@ static int8_t msg_schema(int sock, int proto_sock,
 	ajobj = json_object_new_array();
 	schemajobj = json_object_new_object();
 
-	/* For each entry */
+	/* Creating an array if the sensor supports multiple data types */
 	for (list = trust->schema; list; list = g_slist_next(list)) {
+		schema = list->data;
 		jobj = json_object_new_object();
 		json_object_object_add(jobj, "data_id",
 				       json_object_new_int(schema->data_id));
@@ -440,13 +444,13 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 
 	/* At least header should be received */
 	if (ilen < sizeof(knot_msg_header)) {
-		LOG_ERROR("Input PDU: invalid PDU length\n");
+		LOG_ERROR("KNOT PDU: invalid minimum length\n");
 		goto done;
 	}
 
 	/* Checking PDU length consistency */
 	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
-		LOG_ERROR("Input PDU: invalid PDU length\n");
+		LOG_ERROR("KNOT PDU: length mismatch\n");
 		goto done;
 	}
 
