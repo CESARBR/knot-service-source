@@ -45,23 +45,18 @@
 #include "msg.h"
 
 struct trust {
-	credential_t *credential;
+	char *uuid;			/* Device UUID */
+	char *token;			/* Device token */
 	GSList *schema;			/* List of knot_schema */
 };
 
 /* Maps sockets to sessions  */
 static GHashTable *trust_list;
 
-static void credential_free(credential_t *credential)
-{
-	g_free(credential->uuid);
-	g_free(credential->token);
-	g_free(credential);
-}
-
 static void trust_free(struct trust *trust)
 {
-	credential_free(trust->credential);
+	g_free(trust->uuid);
+	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
 	g_free(trust);
 }
@@ -76,15 +71,16 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 	return FALSE;
 }
 
-static credential_t *parse_device_info(const char *json_str)
+static int parse_device_info(const char *json_str,
+				       char **puuid, char **ptoken)
 {
 	json_object *jobj,*json_uuid, *json_token;
 	const char *uuid, *token;
-	credential_t *credential = NULL;
+	int err = -EINVAL;
 
 	jobj = json_tokener_parse(json_str);
 	if (jobj == NULL)
-		return NULL;
+		return -EINVAL;
 
 	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
 		goto done;
@@ -95,14 +91,14 @@ static credential_t *parse_device_info(const char *json_str)
 	uuid = json_object_get_string(json_uuid);
 	token = json_object_get_string(json_token);
 
-	credential = g_new0(credential_t, 1);
-	credential->uuid = g_strdup(uuid);
-	credential->token = g_strdup(token);
+	*puuid = g_strdup(uuid);
+	*ptoken = g_strdup(token);
 
+	err = 0; /* Success */
 done:
 	json_object_put(jobj);
 
-	return credential;
+	return err;
 }
 
 static int8_t msg_register(const credential_t *owner,
@@ -113,9 +109,9 @@ static int8_t msg_register(const credential_t *owner,
 {
 	GIOChannel *io;
 	struct trust *trust;
-	credential_t *credential;
 	json_object *jobj;
 	const char *jobjstring;
+	char *uuid, *token;
 	json_raw_t json;
 	int err;
 	int8_t result;
@@ -150,31 +146,30 @@ static int8_t msg_register(const credential_t *owner,
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	credential = parse_device_info(json.data);
-
-	free(json.data);
-
-	if (!credential) {
+	if (parse_device_info(json.data, &uuid, &token) < 0) {
 		LOG_ERROR("Unexpected response!\n");
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	LOG_INFO("UUID: %s, TOKEN: %s\n", credential->uuid, credential->token);
+	free(json.data);
+
+	LOG_INFO("UUID: %s, TOKEN: %s\n", uuid, token);
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (strlen(credential->uuid) != 36 || strlen(credential->token) != 40) {
+	if (strlen(uuid) != 36 || strlen(token) != 40) {
 		LOG_ERROR("Invalid UUID or token!\n");
 		result = KNOT_CLOUD_FAILURE;
 		goto done;
 	}
 
-	strcpy(krsp->uuid, credential->uuid);
+	strcpy(krsp->uuid, uuid);
 
 	/* Payload length includes the result, and UUID */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
 
 	trust = g_new0(struct trust, 1);
-	trust->credential = credential;
+	trust->uuid = uuid;
+	trust->token = token;
 
 	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
 	/* Add a watch to remove the credential when the client disconnects */
@@ -185,7 +180,8 @@ static int8_t msg_register(const credential_t *owner,
 	return KNOT_SUCCESS;
 
 done:
-	credential_free(credential);
+	g_free(uuid);
+	g_free(token);
 
 	return result;
 }
@@ -195,7 +191,6 @@ static int8_t msg_unregister(int sock, int proto_sock,
 					const knot_msg_unregister *kreq)
 {
 	const struct trust *trust;
-	const credential_t *credential;
 	json_raw_t jbuf = { NULL, 0 };
 	int8_t result;
 	int err;
@@ -213,12 +208,9 @@ static int8_t msg_unregister(int sock, int proto_sock,
 		goto done;
 	}
 
-	credential = trust->credential;
+	LOG_INFO("rmnode: %.36s\n", trust->uuid);
 
-	LOG_INFO("rmnode: %.36s\n", credential->uuid);
-
-	err = proto_ops->rmnode(proto_sock, credential->uuid, credential->token,
-								&jbuf);
+	err = proto_ops->rmnode(proto_sock, trust->uuid, trust->token, &jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
 		LOG_ERROR("rmnode() failed %s (%d)\n", strerror(-err), -err);
@@ -241,7 +233,6 @@ static int8_t msg_auth(int sock, int proto_sock,
 	GIOChannel *io;
 	json_raw_t json;
 	struct trust *trust;
-	credential_t *credential;
 	int err;
 
 	if (g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock))) {
@@ -249,13 +240,9 @@ static int8_t msg_auth(int sock, int proto_sock,
 		return KNOT_SUCCESS;
 	}
 
-	credential = g_new0(credential_t, 1);
-	credential->uuid = g_strdup(kmauth->uuid);
-	credential->token = g_strdup(kmauth->token);
-
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->signin(proto_sock, credential->uuid,
-						credential->token, &json);
+	err = proto_ops->signin(proto_sock, kmauth->uuid,
+						kmauth->token, &json);
 
 	LOG_INFO("%s\n", json.data);
 
@@ -264,12 +251,12 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 	if (err < 0) {
 		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
-		credential_free(credential);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	trust = g_new0(struct trust, 1);
-	trust->credential = credential;
+	trust->uuid = g_memdup(kmauth->uuid, sizeof(kmauth->uuid));
+	trust->token = g_memdup(kmauth->token, sizeof(kmauth->token));
 	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock), trust);
 
 	/* Add a watch to remove the credential when the client disconnects */
@@ -288,7 +275,6 @@ static int8_t msg_schema(int sock, int proto_sock,
 	knot_schema *kschema;
 	struct json_object *jobj, *ajobj, *schemajobj;
 	struct trust *trust;
-	const credential_t *credential;
 	GSList *list;
 	json_raw_t json;
 	const char *jobjstr;
@@ -332,9 +318,8 @@ static int8_t msg_schema(int sock, int proto_sock,
 	json_object_object_add(schemajobj, "schema", ajobj);
 	jobjstr = json_object_to_json_string(schemajobj);
 
-	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->schema(proto_sock, credential->uuid, credential->token,
+	err = proto_ops->schema(proto_sock, trust->uuid, trust->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -357,7 +342,6 @@ static int8_t msg_data(int sock, int proto_sock,
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
 	const struct trust *trust;
-	const credential_t *credential;
 	json_raw_t json;
 	const char *jobjstr;
 	/* INT_MAX 2147483647 */
@@ -411,9 +395,8 @@ static int8_t msg_data(int sock, int proto_sock,
 	jobjstr = json_object_to_json_string(jobj);
 	printf("JSON: %s\n", jobjstr);
 
-	credential = trust->credential;
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->data(proto_sock, credential->uuid, credential->token,
+	err = proto_ops->data(proto_sock, trust->uuid, trust->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
