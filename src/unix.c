@@ -54,7 +54,7 @@ static int unix_listen(void)
 	int err, sock;
 	struct sockaddr_un addr;
 
-	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (sock < 0)
 		return -errno;
 
