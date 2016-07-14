@@ -154,17 +154,17 @@ static void load_schema(struct json_object *jobj,
 		break;
 	}
 
-	if (strcmp("data_id", key) == 0) {
+	if (strcmp("sensor_id", key) == 0) {
 		entry = g_new0(knot_schema, 1);
-		entry->data_id = intval;
+		entry->sensor_id = intval;
 		schema->list = g_slist_append(schema->list, entry);
-	} else if (strcmp("data_type", key) == 0) {
+	} else if (strcmp("type_id", key) == 0) {
 		ltmp = g_slist_last(schema->list);
 		if (!ltmp)
 			return;
 
 		entry = ltmp->data;
-		entry->data_type = intval;
+		entry->type_id = intval;
 	} else if (strcmp("name", key) == 0 && data_name) {
 		ltmp = g_slist_last(schema->list);
 		if (!ltmp)
@@ -190,8 +190,8 @@ static void read_json_entry(struct json_object *jobj,
 
 	type = json_object_get_type(jobj);
 
-	if ((strcmp("id", key) == 0) && (type == json_type_int))
-		kdata->hdr.id = json_object_get_int(jobj);
+	if ((strcmp("sensor_id", key) == 0) && (type == json_type_int))
+		kdata->hdr.sensor_id = json_object_get_int(jobj);
 	else if ((strcmp("unit", key) == 0) && (type == json_type_int)) {
 		kdata->hdr.unit = json_object_get_int(jobj);
 	} else if (strcmp("value", key) == 0) {
