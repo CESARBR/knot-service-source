@@ -1,7 +1,7 @@
 {
 "schema": [
-	{ "data_id": 1, "data_type": 19, "name": "Wind speed" },
-	{ "data_id": 2, "data_type": 5, "name": "Outdoor Temperature" },
-	{ "data_id": 1, "data_type": 7, "name": "Luminosity" }
+	{ "sensor_id": 251, "type_id": 19, "name": "Wind speed" },
+	{ "sensor_id": 252, "type_id": 5, "name": "Outdoor Temperature" },
+	{ "sensor_id": 253, "type_id": 7, "name": "Luminosity" }
 ]
 }

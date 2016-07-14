@@ -1,6 +1,6 @@
 {
 	"temperature": {
-		"id": 5,
+		"sensor_id": 255,
 		"unit": 1,
 		"value": 40
 	}
