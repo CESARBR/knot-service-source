@@ -292,7 +292,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 
 	/*
 	 * "schema":[
-	 *		{"data_id":<integer>, "data_type":<integer>, "name":"<name>"},
+	 *		{"sensor_id":<integer>, "type_id":<integer>, "name":"<name>"},
 	 *		...
 	 *	]
 	 */
@@ -313,10 +313,10 @@ static int8_t msg_schema(int sock, int proto_sock,
 	for (list = trust->schema; list; list = g_slist_next(list)) {
 		schema = list->data;
 		jobj = json_object_new_object();
-		json_object_object_add(jobj, "data_id",
-				       json_object_new_int(schema->data_id));
-		json_object_object_add(jobj, "data_type",
-				       json_object_new_int(schema->data_type));
+		json_object_object_add(jobj, "sensor_id",
+				       json_object_new_int(schema->sensor_id));
+		json_object_object_add(jobj, "type_id",
+				       json_object_new_int(schema->type_id));
 		json_object_object_add(jobj, "name",
 				       json_object_new_string(schema->name));
 
@@ -357,7 +357,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	double doubleval;
 	int len, err;
 
-	LOG_INFO("id:%d, unit:%d, value_type:%d\n", kdata->hdr.id,
+	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", kdata->hdr.sensor_id,
 				kdata->hdr.unit, kdata->hdr.value_type);
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
@@ -368,7 +368,8 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	/* TODO: Missing SCHEMA checking */
 	jobj = json_object_new_object();
-	json_object_object_add(jobj, "id", json_object_new_int(kdata->hdr.id));
+	json_object_object_add(jobj, "sensor_id",
+			       json_object_new_int(kdata->hdr.sensor_id));
 	json_object_object_add(jobj, "unit",
 					json_object_new_int(kdata->hdr.unit));
 
