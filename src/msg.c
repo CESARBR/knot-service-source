@@ -37,6 +37,7 @@
 #include <json-c/json.h>
 
 #include <proto-app/knot_types.h>
+#include <proto-app/knot_lib.h>
 #include <proto-net/knot_proto_net.h>
 #include <proto-app/knot_proto_app.h>
 
@@ -69,6 +70,14 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 	g_hash_table_remove(trust_list, GINT_TO_POINTER(sock));
 
 	return FALSE;
+}
+
+static int sensor_id_cmp(gconstpointer a, gconstpointer b)
+{
+	const knot_schema *schema = a;
+	unsigned int sensor_id = GPOINTER_TO_UINT(b);
+
+	return sensor_id - schema->sensor_id;
 }
 
 static int parse_device_info(const char *json_str,
@@ -350,11 +359,14 @@ static int8_t msg_data(int sock, int proto_sock,
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
 	const struct trust *trust;
+	const knot_schema *schema;
+	GSList *list;
 	json_raw_t json;
 	const char *jobjstr;
 	/* INT_MAX 2147483647 */
 	char str[12];
 	double doubleval;
+	uint8_t sensor_id, unit;
 	int len, err;
 
 	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", kdata->hdr.sensor_id,
@@ -366,12 +378,30 @@ static int8_t msg_data(int sock, int proto_sock,
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	/* TODO: Missing SCHEMA checking */
+	sensor_id = kdata->hdr.sensor_id;
+	unit = kdata->hdr.unit;
+
+	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
+								sensor_id_cmp);
+	if (!list) {
+		LOG_INFO("sensor_id(0x%02x): data type mismatch!\n", sensor_id);
+		return KNOT_INVALID_DATA;
+	}
+
+	schema = list->data;
+
+	err = knot_schema_is_valid(schema->type_id, kdata->hdr.value_type,
+							kdata->hdr.unit);
+	if (!err) {
+		LOG_INFO("sensor_id(0x%02x), type_id(0x%04x): unit mismatch!\n",
+						sensor_id, schema->type_id);
+		return KNOT_INVALID_DATA;
+	}
+
 	jobj = json_object_new_object();
 	json_object_object_add(jobj, "sensor_id",
-			       json_object_new_int(kdata->hdr.sensor_id));
-	json_object_object_add(jobj, "unit",
-					json_object_new_int(kdata->hdr.unit));
+						json_object_new_int(sensor_id));
+	json_object_object_add(jobj, "unit", json_object_new_int(unit));
 
 	switch (kdata->hdr.value_type) {
 	case KNOT_VALUE_TYPE_INT:
