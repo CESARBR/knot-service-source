@@ -37,17 +37,17 @@
 #include "log.h"
 #include "proto.h"
 
-struct libwebsocket_context *context;
+struct lws_context *context;
 static GHashTable *wstable;
 
 static gboolean timeout_ws(gpointer user_data)
 {
-	libwebsocket_service(context, 0);
+	lws_service(context, 0);
 
 	return TRUE;
 }
 
-static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
+static const char *lws_reason2str(enum lws_callback_reasons reason)
 {
 	switch (reason) {
 	case LWS_CALLBACK_ESTABLISHED:
@@ -129,37 +129,37 @@ static const char *lws_reason2str(enum libwebsocket_callback_reasons reason)
 		return "OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY";
 	case LWS_CALLBACK_USER: /* user code can use any including / above */
 		return "USER";
+
+
+	case LWS_CALLBACK_RECEIVE_PONG:
+		return "RECEIVE PONG";
+	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
+		return "PEER INITIATED CLOSE";
+	case LWS_CALLBACK_WS_EXT_DEFAULTS:
+		return "EXT DEFAULTS";
+	case LWS_CALLBACK_CGI:
+		return "CGI";
+	case LWS_CALLBACK_CGI_TERMINATED:
+		return "CGI TERMINATED";
+	case LWS_CALLBACK_CGI_STDIN_DATA:
+		return "CGI STDIN DATA";
+	case LWS_CALLBACK_CGI_STDIN_COMPLETED:
+		return "CGI STDIN COMPLETED";
+	case LWS_CALLBACK_ESTABLISHED_CLIENT_HTTP:
+		return "ESTABLISHED CLIENT HTTP";
+	case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
+		return "CLOSED CLIENT HTTP";
+	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP:
+		return "RECEIVE CLIENT HTTP";
+	case LWS_CALLBACK_COMPLETED_CLIENT_HTTP:
+		return "COMPLETED CLIENT HTTP";
+	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
+		return "RECEIVE CLIENT HTTP READ";
+
 	default:
 		return "UNKNOWN";
+
 	}
-}
-
-static int ws_connect(void)
-{
-	struct libwebsocket *ws;
-	gboolean use_ssl = FALSE; /* wss */
-	const char *address = "meshblu.octoblu.com";
-	int sock, port = 80;
-
-	ws = libwebsocket_client_connect(context, address, port,
-					 use_ssl, "/ws/v2", address,
-					 NULL, NULL, -1);
-
-	if (ws == NULL) {
-		int err = errno;
-		LOG_ERROR("libwebsocket_client_connect(): %s(%d)\n",
-							strerror(err), err);
-		return -err;
-	}
-
-	sock = libwebsocket_get_socket_fd(ws);
-
-	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
-
-	/* FIXME: Investigate alternatives for libwebsocket_service() */
-	g_timeout_add_seconds(1, timeout_ws, NULL);
-
-	return sock;
 }
 
 static void ws_close(int sock)
@@ -174,14 +174,15 @@ static int ws_mknode(int sock, const char *owner_uuid,
 	return -ENOSYS;
 }
 
-static int ws_signin(int sock, const char *token)
+static int ws_signin(int sock,const char *uuid, const char *token,
+						json_raw_t *json)
 {
 	return -ENOSYS;
 }
 
-static int callback_lws_http(struct libwebsocket_context *this,
-			       struct libwebsocket *wsi,
-			       enum libwebsocket_callback_reasons reason,
+
+static int callback_lws_http(struct lws *wsi,
+			       enum lws_callback_reasons reason,
 			       void *user, void *in, size_t len)
 {
 
@@ -190,17 +191,63 @@ static int callback_lws_http(struct libwebsocket_context *this,
 	return 0;
 }
 
-static struct libwebsocket_protocols protocols[] = {
+static struct lws_protocols protocols[] = {
 
 	{
 		"http-only",
 		callback_lws_http,
-		0, 0, 0, NULL, NULL, 0
+		0, 65536, 0, NULL
 	},
 	{
-		NULL, NULL, 0, 0, 0, NULL, NULL, 0 /* end of list */
+		NULL, NULL, 0, 0, 0, NULL /* end of list */
 	}
 };
+
+static int ws_connect(void)
+{
+	struct lws *ws;
+	struct lws_client_connect_info info;
+	static char ads_port[300];
+
+	gboolean use_ssl = FALSE; /* wss */
+	// const char *address = "meshblu.octoblu.com";
+	const char *address = "localhost";
+	// int sock, port = 80;
+	int sock, port = 8000;
+
+	memset(&info, 0, sizeof(info));
+
+	snprintf(ads_port, sizeof(ads_port), "%s:%u",
+		 address, port);
+
+	LOG_INFO("Connecting to %s...\n", ads_port);
+
+	info.context = context;
+	info.address = address;
+	info.port = port;
+	info.ssl_connection = use_ssl;
+	info.path = "/ws/v2";
+	info.host = address;
+	info.ietf_version_or_minus_one = -1;
+
+	ws = lws_client_connect_via_info(&info);
+
+	if (ws == NULL) {
+		int err = errno;
+		LOG_ERROR("libwebsocket_client_connect(): %s(%d)\n",
+							strerror(err), err);
+		return -err;
+	}
+
+	sock = lws_get_socket_fd(ws);
+
+	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
+
+	/* FIXME: Investigate alternatives for libwebsocket_service() */
+	g_timeout_add_seconds(1, timeout_ws, NULL);
+
+	return sock;
+}
 
 static int ws_probe(const char *host, unsigned int port)
 {
@@ -212,9 +259,8 @@ static int ws_probe(const char *host, unsigned int port)
 	info.gid = -1;
 	info.uid = -1;
 	info.protocols = protocols;
-	info.extensions = libwebsocket_get_internal_extensions();
 
-	context = libwebsocket_create_context(&info);
+	context = lws_create_context(&info);
 
 	wstable = g_hash_table_new(g_direct_hash, g_direct_equal);
 
@@ -224,8 +270,7 @@ static int ws_probe(const char *host, unsigned int port)
 static void ws_remove(void)
 {
 	g_hash_table_destroy(wstable);
-
-	libwebsocket_context_destroy(context);
+	lws_context_destroy(context);
 }
 
 struct proto_ops proto_ws = {
