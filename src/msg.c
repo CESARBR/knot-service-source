@@ -110,6 +110,91 @@ done:
 	return err;
 }
 
+static GSList *parse_device_schema(const char *json_str)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	GSList *list = NULL;
+	knot_schema *entry;
+	int sensor_id, type_id, i;
+	const char *name;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj)
+		return NULL;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid": ...
+	 *		"schema" : [
+	 *			{"sensor_id": x, "type_id": y, "name": "foo"}]
+	 *		}]
+	 * }
+	 */
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'schema' is an array */
+	if (!json_object_object_get_ex(jobjentry, "schema", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id", &jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		sensor_id = json_object_get_int(jobjkey);
+
+		/* Getting 'type_id' */
+		if (!json_object_object_get_ex(jobjentry, "type_id", &jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		type_id = json_object_get_int(jobjkey);
+
+		/* Getting 'name' */
+		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_string)
+			goto done;
+
+		name = json_object_get_string(jobjkey);
+		/*
+		 * Validation not required: validation has been performed
+		 * previously when schema has been submitted to the cloud.
+		 */
+		entry = g_new0(knot_schema, 1);
+		entry->sensor_id = sensor_id;
+		entry->type_id = type_id;
+		strncpy(entry->name, name, sizeof(entry->name) -1);
+
+		list = g_slist_append(list, entry);
+	}
+done:
+	json_object_put(jobj);
+
+	return list;
+}
+
 static int8_t msg_register(const credential_t *owner,
 					int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
@@ -259,10 +344,14 @@ static int8_t msg_auth(int sock, int proto_sock,
 	trust->token = g_strndup(kmauth->token, sizeof(kmauth->token));
 	err = proto_ops->signin(proto_sock, trust->uuid, trust->token, &json);
 
-	LOG_INFO("%s\n", json.data);
+	if (!json.data) {
+		trust_free(trust);
+		return KNOT_SCHEMA_EMPTY;
+	}
 
-	if (json.data)
-		free(json.data);
+	trust->schema = parse_device_schema(json.data);
+
+	free(json.data);
 
 	if (err < 0) {
 		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
