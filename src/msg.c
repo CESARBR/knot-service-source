@@ -48,7 +48,8 @@
 struct trust {
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	GSList *schema;			/* List of knot_schema */
+	GSList *schema;			/* knot_schema accepted by cloud */
+	GSList *schema_tmp;		/* knot_schema to be submitted to cloud */
 };
 
 /* Maps sockets to sessions  */
@@ -59,6 +60,7 @@ static void trust_free(struct trust *trust)
 	g_free(trust->uuid);
 	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
+	g_slist_free_full(trust->schema_tmp, g_free);
 	g_free(trust);
 }
 
@@ -395,8 +397,9 @@ static int8_t msg_schema(int sock, int proto_sock,
 	 *	]
 	 */
 
+	/* Add to a temporary list until receiving complete schema */
 	kschema = g_memdup(schema, sizeof(*schema));
-	trust->schema = g_slist_append(trust->schema, kschema);
+	trust->schema_tmp = g_slist_append(trust->schema_tmp, kschema);
 
 	 /* TODO: missing timer to wait for end of schema transfer */
 
@@ -408,7 +411,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	schemajobj = json_object_new_object();
 
 	/* Creating an array if the sensor supports multiple data types */
-	for (list = trust->schema; list; list = g_slist_next(list)) {
+	for (list = trust->schema_tmp; list; list = g_slist_next(list)) {
 		schema = list->data;
 		jobj = json_object_new_object();
 		json_object_object_add(jobj, "sensor_id",
@@ -433,9 +436,16 @@ static int8_t msg_schema(int sock, int proto_sock,
 	json_object_put(schemajobj);
 
 	if (err < 0) {
+		g_slist_free_full(trust->schema_tmp, g_free);
+		trust->schema_tmp = NULL;;
 		LOG_ERROR("manager schema(): %s(%d)\n", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
+
+	/* If POST succeed: free old schema and use the new one */
+	g_slist_free_full(trust->schema, g_free);
+	trust->schema = trust->schema_tmp;
+	trust->schema_tmp = NULL;;
 
 	return KNOT_SUCCESS;
 }
