@@ -491,8 +491,8 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	err = knot_schema_is_valid(schema->type_id, kdata->hdr.value_type,
 							kdata->hdr.unit);
-	if (!err) {
-		LOG_INFO("sensor_id(0x%02x), type_id(0x%04x): unit mismatch!\n",
+	if (err) {
+		LOG_INFO("sensor_id(0x%d), type_id(0x%04x): unit mismatch!\n",
 						sensor_id, schema->type_id);
 		return KNOT_INVALID_DATA;
 	}
