@@ -91,18 +91,10 @@ static int proto_index = 0;
  */
 extern struct node_ops unix_ops;
 extern struct node_ops serial_ops;
-#ifdef HAVE_RADIOHEAD
-extern struct node_ops nrf24_ops;
-extern struct node_ops tcp_ops;
-#endif
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
 	&serial_ops,
-#ifdef HAVE_RADIOHEAD
-	&nrf24_ops,
-	&tcp_ops,
-#endif
 	NULL
 };
 
