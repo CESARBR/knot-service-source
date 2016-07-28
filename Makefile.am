@@ -9,7 +9,7 @@ INCLUDES =
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
-libexec_PROGRAMS = src/knotd tools/ktool unit/ktest
+libexec_PROGRAMS = src/knotd tools/ktool unit/ktest src/nrfd
 
 include Makefile.modules
 
@@ -36,6 +36,10 @@ unit_ktest_LDADD = @GLIB_LIBS@
 unit_ktest_LDFLAGS = $(AM_LDFLAGS)
 unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
 
+src_nrfd_SOURCES = src/nrfd.c
+src_nrfd_LDFLAGS = $(AM_LDFLAGS)
+src_nrfd_CFLAGS = $(AM_CFLAGS)
+
 DISTCLEANFILES =
 
 MAINTAINERCLEANFILES = Makefile.in \
@@ -43,4 +47,4 @@ MAINTAINERCLEANFILES = Makefile.in \
 	ltmain.sh depcomp compile missing install-sh
 
 clean-local:
-	$(RM) -r src/knotd tools/ktool unit/ktest
+	$(RM) -r src/knotd tools/ktool unit/ktest src/nrfd
