@@ -37,8 +37,9 @@ unit_ktest_LDFLAGS = $(AM_LDFLAGS)
 unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
 
 src_nrfd_SOURCES = src/nrfd.c
+src_nrfd_LDADD = @GLIB_LIBS@
 src_nrfd_LDFLAGS = $(AM_LDFLAGS)
-src_nrfd_CFLAGS = $(AM_CFLAGS)
+src_nrfd_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
 
 DISTCLEANFILES =
 
