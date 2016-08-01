@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <glib.h>
 
+#include <hal.h>
 #include "log.h"
 
 static GMainLoop *main_loop;
@@ -73,11 +74,18 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sig_term);
 	signal(SIGPIPE, SIG_IGN);
 
+	if (hal_init() < 0) {
+		LOG_ERROR("error: hal_init()!\n");
+		return EXIT_FAILURE;
+	}
+
 	main_loop = g_main_loop_new(NULL, FALSE);
 
 	g_main_loop_run(main_loop);
 
 	g_main_loop_unref(main_loop);
+
+	hal_exit();
 
 	return 0;
 }
