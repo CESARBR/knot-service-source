@@ -133,7 +133,14 @@ static void load_schema(struct json_object *jobj,
 	GSList *ltmp;
 	enum json_type type;
 	const char *data_name = NULL;
-	int intval;
+	int intval, err = EINVAL;
+
+	/*
+	 * This callback is called for all entries: skip
+	 * parsing if one error has been detected previously.
+	 */
+	if (schema->err)
+		return;
 
 	type = json_object_get_type(jobj);
 
@@ -144,36 +151,46 @@ static void load_schema(struct json_object *jobj,
 	case json_type_object:
 	case json_type_array:
 		/* Not available */
-		schema->err = EINVAL;
 		break;
 	case json_type_int:
 		intval = json_object_get_int(jobj);
+
+		if (strcmp("sensor_id", key) == 0) {
+			entry = g_new0(knot_schema, 1);
+			entry->sensor_id = intval;
+			schema->list = g_slist_append(schema->list, entry);
+			err = 0;
+		} else if (strcmp("type_id", key) == 0) {
+			ltmp = g_slist_last(schema->list);
+			if (!ltmp)
+				goto done;
+
+			/* FIXME: if type_id appers before sensor_id? */
+			entry = ltmp->data;
+			entry->type_id = intval;
+			err = 0;
+		}
+
 		break;
 	case json_type_string:
-		data_name= json_object_get_string(jobj);
+		data_name = json_object_get_string(jobj);
+
+		if (strcmp("name", key) != 0 || data_name == NULL)
+			goto done;
+
+		ltmp = g_slist_last(schema->list);
+		if (!ltmp)
+			goto done;
+
+		/* FIXME: if name comes before sensor_id or type_id  */
+		entry = ltmp->data;
+		strcpy(entry->name, data_name);
+		err = 0;
 		break;
 	}
 
-	if (strcmp("sensor_id", key) == 0) {
-		entry = g_new0(knot_schema, 1);
-		entry->sensor_id = intval;
-		schema->list = g_slist_append(schema->list, entry);
-	} else if (strcmp("type_id", key) == 0) {
-		ltmp = g_slist_last(schema->list);
-		if (!ltmp)
-			return;
-
-		entry = ltmp->data;
-		entry->type_id = intval;
-	} else if (strcmp("name", key) == 0 && data_name) {
-		ltmp = g_slist_last(schema->list);
-		if (!ltmp)
-			return;
-
-		entry = ltmp->data;
-		strcpy(entry->name, data_name);
-	} else
-		schema->err = EINVAL;
+done:
+	schema->err = err;
 }
 
 static void read_json_entry(struct json_object *jobj,
