@@ -27,8 +27,6 @@ tools/ktool
 
 unit/ktest
 
-src/nrfd
-
 cscope.in.out
 cscope.out
 cscope.po.out
