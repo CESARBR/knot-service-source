@@ -445,6 +445,7 @@ static int cmd_register(void)
 	}
 
 	printf("UUID: %*s\n", (int) sizeof(crdntl.uuid), crdntl.uuid);
+	printf("TOKEN: %.*s\n", (int) sizeof(crdntl.token), crdntl.token);
 
 	return 0;
 }

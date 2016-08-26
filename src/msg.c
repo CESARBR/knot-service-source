@@ -259,8 +259,9 @@ static int8_t msg_register(const credential_t *owner,
 	}
 
 	strcpy(krsp->uuid, uuid);
+	strcpy(krsp->token, token);
 
-	/* Payload length includes the result, and UUID */
+	/* Payload length includes the result, UUID and TOKEN */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
 
 	trust = g_new0(struct trust, 1);
