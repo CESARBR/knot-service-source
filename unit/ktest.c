@@ -35,8 +35,9 @@
 
 #include <glib.h>
 
-#include <proto-net/knot_proto_net.h>
-#include <proto-app/knot_proto_app.h>
+
+#include <knot_protocol.h>
+#include <knot_types.h>
 
 #include "src/log.h"
 

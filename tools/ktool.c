@@ -41,9 +41,8 @@
 
 #include <json-c/json.h>
 
-#include <proto-net/knot_proto_net.h>
-#include <proto-app/knot_types.h>
-#include <proto-app/knot_proto_app.h>
+#include <knot_protocol.h>
+#include <knot_types.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET	"knot"
@@ -201,21 +200,23 @@ static void read_json_entry(struct json_object *jobj,
 	knot_data_bool *kbool;
 	knot_data_float *kfloat;
 	knot_data_int *kint;
+	knot_schema *kschema;
 	int32_t ipart, fpart;
 	enum json_type type;
 	const char *str;
 
 	type = json_object_get_type(jobj);
+	kschema = (knot_schema *) malloc(sizeof(knot_schema));
 
 	if ((strcmp("sensor_id", key) == 0) && (type == json_type_int))
-		kdata->hdr.sensor_id = json_object_get_int(jobj);
+		kdata->sensor_id = json_object_get_int(jobj);
 	else if ((strcmp("unit", key) == 0) && (type == json_type_int)) {
-		kdata->hdr.unit = json_object_get_int(jobj);
+		kschema->unit = json_object_get_int(jobj);
 	} else if (strcmp("value", key) == 0) {
 		switch (type) {
 		case json_type_boolean:
 			kbool = (knot_data_bool *) kdata;
-			kbool->hdr.value_type = KNOT_VALUE_TYPE_BOOL;
+			kschema->value_type = KNOT_VALUE_TYPE_BOOL;
 			kbool->value = json_object_get_boolean(jobj);
 			msg->hdr.payload_len = sizeof(knot_data_bool);
 			break;
@@ -227,7 +228,7 @@ static void read_json_entry(struct json_object *jobj,
 				break;
 
 			kfloat = (knot_data_float *) kdata;
-			kfloat->hdr.value_type = KNOT_VALUE_TYPE_FLOAT;
+			kschema->value_type = KNOT_VALUE_TYPE_FLOAT;
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
 			kfloat->multiplier = 1; /* TODO: */
@@ -235,7 +236,7 @@ static void read_json_entry(struct json_object *jobj,
 			break;
 		case json_type_int:
 			kint = (knot_data_int *) kdata;
-			kint->hdr.value_type = KNOT_VALUE_TYPE_INT;
+			kschema->value_type = KNOT_VALUE_TYPE_INT;
 			kint->value = json_object_get_int(jobj);
 			kint->multiplier = 1;
 			msg->hdr.payload_len = sizeof(knot_data_int);
@@ -378,7 +379,7 @@ static int write_knot_data(struct json_object *jobj)
 
 static int send_schema(GSList *list)
 {
-	knot_msg_config msg;
+	knot_msg_schema msg;
 	knot_schema *entry;
 	GSList *l;
 	ssize_t nbytes;

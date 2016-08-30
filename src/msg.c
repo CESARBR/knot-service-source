@@ -36,10 +36,8 @@
 
 #include <json-c/json.h>
 
-#include <proto-app/knot_types.h>
-#include <proto-app/knot_lib.h>
-#include <proto-net/knot_proto_net.h>
-#include <proto-app/knot_proto_app.h>
+#include <knot_types.h>
+#include <knot_protocol.h>
 
 #include "proto.h"
 #include "log.h"
@@ -117,7 +115,7 @@ static GSList *parse_device_schema(const char *json_str)
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
 	GSList *list = NULL;
 	knot_schema *entry;
-	int sensor_id, type_id, i;
+	int sensor_id, value_type, unit, type_id, i;
 	const char *name;
 
 	jobj = json_tokener_parse(json_str);
@@ -135,7 +133,8 @@ static GSList *parse_device_schema(const char *json_str)
 	 *
 	 * {"devices":[{"uuid": ...
 	 *		"schema" : [
-	 *			{"sensor_id": x, "type_id": y, "name": "foo"}]
+	 *			{"sensor_id": x, "value_type": w,
+	 *				"unit": z "type_id": y, "name": "foo"}]
 	 *		}]
 	 * }
 	 */
@@ -163,6 +162,24 @@ static GSList *parse_device_schema(const char *json_str)
 
 		sensor_id = json_object_get_int(jobjkey);
 
+		/* Getting 'value_type' */
+		if (!json_object_object_get_ex(jobjentry, "value_type", &jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		value_type = json_object_get_int(jobjkey);
+
+		/* Getting 'unit' */
+		if (!json_object_object_get_ex(jobjentry, "unit", &jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		unit = json_object_get_int(jobjkey);
+
 		/* Getting 'type_id' */
 		if (!json_object_object_get_ex(jobjentry, "type_id", &jobjkey))
 			goto done;
@@ -186,8 +203,10 @@ static GSList *parse_device_schema(const char *json_str)
 		 */
 		entry = g_new0(knot_schema, 1);
 		entry->sensor_id = sensor_id;
+		entry->value_type = value_type;
+		entry->unit = unit;
 		entry->type_id = type_id;
-		strncpy(entry->name, name, sizeof(entry->name) -1);
+		strncpy(entry->name, name, sizeof(entry->name) - 1);
 
 		list = g_slist_append(list, entry);
 	}
@@ -374,9 +393,9 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 static int8_t msg_schema(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
-				const knot_msg_config *kmcfg, gboolean eof)
+				const knot_msg_schema *kmsch, gboolean eof)
 {
-	const knot_schema *schema = &(kmcfg->schema);
+	const knot_schema *schema = &(kmsch->schema);
 	knot_schema *kschema;
 	struct json_object *jobj, *ajobj, *schemajobj;
 	struct trust *trust;
@@ -417,6 +436,10 @@ static int8_t msg_schema(int sock, int proto_sock,
 		jobj = json_object_new_object();
 		json_object_object_add(jobj, "sensor_id",
 				       json_object_new_int(schema->sensor_id));
+		json_object_object_add(jobj, "value_type",
+				       json_object_new_int(schema->value_type));
+		json_object_object_add(jobj, "unit",
+				       json_object_new_int(schema->unit));
 		json_object_object_add(jobj, "type_id",
 				       json_object_new_int(schema->type_id));
 		json_object_object_add(jobj, "name",
@@ -438,7 +461,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 
 	if (err < 0) {
 		g_slist_free_full(trust->schema_tmp, g_free);
-		trust->schema_tmp = NULL;;
+		trust->schema_tmp = NULL;
 		LOG_ERROR("manager schema(): %s(%d)\n", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
@@ -446,7 +469,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	/* If POST succeed: free old schema and use the new one */
 	g_slist_free_full(trust->schema, g_free);
 	trust->schema = trust->schema_tmp;
-	trust->schema_tmp = NULL;;
+	trust->schema_tmp = NULL;
 
 	return KNOT_SUCCESS;
 }
@@ -469,17 +492,14 @@ static int8_t msg_data(int sock, int proto_sock,
 	uint8_t sensor_id, unit;
 	int len, err;
 
-	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", kdata->hdr.sensor_id,
-				kdata->hdr.unit, kdata->hdr.value_type);
-
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
 		LOG_INFO("Permission denied!\n");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	sensor_id = kdata->hdr.sensor_id;
-	unit = kdata->hdr.unit;
+	sensor_id = kdata->sensor_id;
+
 
 	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
 								sensor_id_cmp);
@@ -489,21 +509,24 @@ static int8_t msg_data(int sock, int proto_sock,
 	}
 
 	schema = list->data;
-
-	err = knot_schema_is_valid(schema->type_id, kdata->hdr.value_type,
-							kdata->hdr.unit);
+	unit = schema->unit;
+	err = knot_schema_is_valid(schema->type_id, schema->value_type,
+							schema->unit);
 	if (err) {
 		LOG_INFO("sensor_id(0x%d), type_id(0x%04x): unit mismatch!\n",
 						sensor_id, schema->type_id);
 		return KNOT_INVALID_DATA;
 	}
 
+	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", kdata->sensor_id,
+				schema->unit, schema->value_type);
+
 	jobj = json_object_new_object();
 	json_object_object_add(jobj, "sensor_id",
 						json_object_new_int(sensor_id));
 	json_object_object_add(jobj, "unit", json_object_new_int(unit));
 
-	switch (kdata->hdr.value_type) {
+	switch (schema->value_type) {
 	case KNOT_VALUE_TYPE_INT:
 		json_object_object_add(jobj, "value",
 			       json_object_new_int(kdata->int_k.value));
@@ -608,7 +631,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 	case KNOT_MSG_SCHEMA:
 	case KNOT_MSG_SCHEMA | KNOT_MSG_SCHEMA_FLAG_END:
 		eof = kreq->hdr.type & KNOT_MSG_SCHEMA_FLAG_END ? TRUE : FALSE;
-		result = msg_schema(sock, proto_sock, proto_ops, &kreq->config,
+		result = msg_schema(sock, proto_sock, proto_ops, &kreq->schema,
 									eof);
 		break;
 	default:
