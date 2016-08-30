@@ -98,6 +98,11 @@ static int sockopt_callback(void *clientp, curl_socket_t curlfd,
 	return CURL_SOCKOPT_ALREADY_CONNECTED;
 }
 
+static int closesock_cb(void *clientp, curl_socket_t item)
+{
+	return CURLE_OK;
+}
+
 static size_t write_cb(void *contents, size_t size, size_t nmemb,
 							void *user_data)
 {
@@ -200,6 +205,8 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 		curl_easy_setopt(ch, CURLOPT_OPENSOCKETFUNCTION, opensocket);
 		curl_easy_setopt(ch, CURLOPT_OPENSOCKETDATA, &sockfd);
 		curl_easy_setopt(ch, CURLOPT_SOCKOPTFUNCTION, sockopt_callback);
+		curl_easy_setopt(ch, CURLOPT_CLOSESOCKETFUNCTION, closesock_cb);
+		curl_easy_setopt(ch, CURLOPT_CLOSESOCKETDATA, &sockfd);
 	}
 
 	rcode = curl_easy_perform(ch);
