@@ -9,7 +9,7 @@ INCLUDES =
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
-libexec_PROGRAMS = src/knotd
+bin_PROGRAMS = src/knotd
 noinst_PROGRAMS = tools/ktool unit/ktest
 
 include Makefile.modules
