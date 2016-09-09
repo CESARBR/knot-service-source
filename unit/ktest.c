@@ -54,7 +54,7 @@ static int unix_connect(void)
 	struct sockaddr_un addr;
 	int err, sock;
 
-	sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
 		err = errno;
 		LOG_ERROR(" >socket failure: %s (%d)\n", strerror(err), err);
