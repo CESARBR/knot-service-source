@@ -1,6 +1,8 @@
 {
 	"schema": {
 		"sensor_id": 255,
+		"value_type": 01,
+		"unit": 01,
 		"type_id": 0005,
 		"name": "Indoor Temperature"
 	}

@@ -1,7 +1,10 @@
 {
 "schema": [
-	{ "sensor_id": 251, "type_id": 19, "name": "Wind speed" },
-	{ "sensor_id": 252, "type_id": 5, "name": "Outdoor Temperature" },
-	{ "sensor_id": 253, "type_id": 7, "name": "Luminosity" }
+	{ "sensor_id": 251, "value_type": 01,
+		"unit": 03, "type_id": 0013, "name": "Wind speed" },
+	{ "sensor_id": 252, "value_type":01,
+		"unit":01 ,"type_id": 0005, "name": "Outdoor Temperature" },
+	{ "sensor_id": 253, "value_type":01,
+		"unit":01, "type_id": 0007, "name": "Luminosity" }
 ]
 }
