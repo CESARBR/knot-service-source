@@ -437,7 +437,7 @@ static int cmd_register(void)
 {
 	knot_msg_register msg;
 	knot_msg_credential crdntl;
-	const char *devname = "dummy0";
+	const char *devname = "dummy0\0";
 	int len = strlen(devname);
 	ssize_t nbytes;
 	int err;
@@ -722,6 +722,24 @@ static void sig_term(int sig)
 	g_main_loop_quit(main_loop);
 }
 
+/*
+* HOWTO:
+*Add device:
+*./ktool --add
+*Returns UUID and TOKEN
+*
+*Remove device:
+*./ktool --remove --uuid=UUID --token=TOKEN
+*
+*Send device schema
+*./ktool --schema --uuid=UUID --token=TOKEN --json=<path_to_json_file>
+*
+*Send data
+*./ktool --data --uuid=UUID --token=TOKEN --json=<path_to_json_file>
+*
+*JSON file examples in $(pwd)/../json/
+*/
+
 int main(int argc, char *argv[])
 {
 	GOptionContext *context;
@@ -739,7 +757,7 @@ int main(int argc, char *argv[])
 	    read:
 		ktool --schema --uuid=value
 	    write:
-		ktool --schema --uuid=value --json=filename
+		ktool --schema --uuid=value --token=value --json=filename
 	 */
 	schema_group = g_option_group_new("schema", "Schema options",
 					"Show all schema options", NULL, NULL);
@@ -778,7 +796,7 @@ int main(int argc, char *argv[])
 	} else if (opt_data) {
 		printf("Setting data for a device ...\n");
 		err = cmd_data();
-	} else if (opt_uuid) {
+	} else if (opt_rm) {
 		printf("Unregistering node: %s\n", opt_uuid);
 		err = cmd_unregister();
 	} else if (opt_id) {
