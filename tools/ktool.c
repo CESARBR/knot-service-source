@@ -159,12 +159,39 @@ static void load_schema(struct json_object *jobj,
 			entry->sensor_id = intval;
 			schema->list = g_slist_append(schema->list, entry);
 			err = 0;
+		} else if (strcmp("value_type", key) == 0) {
+			ltmp = g_slist_last(schema->list);
+			if (!ltmp)
+				goto done;
+
+			/*
+			*FIXME: if value_type appers before sensor_id? or other
+			*wrong order
+			*/
+			entry = ltmp->data;
+			entry->value_type = intval;
+			err = 0;
+		} else if (strcmp("unit", key) == 0) {
+			ltmp = g_slist_last(schema->list);
+			if (!ltmp)
+				goto done;
+
+			/*
+			*FIXME: if unit appers before sensor_id? or other
+			*wrong order
+			*/
+			entry = ltmp->data;
+			entry->unit = intval;
+			err = 0;
 		} else if (strcmp("type_id", key) == 0) {
 			ltmp = g_slist_last(schema->list);
 			if (!ltmp)
 				goto done;
 
-			/* FIXME: if type_id appers before sensor_id? */
+			/*
+			*FIXME: if type_id appers before sensor_id? or other
+			*wrong order
+			*/
 			entry = ltmp->data;
 			entry->type_id = intval;
 			err = 0;
@@ -180,8 +207,10 @@ static void load_schema(struct json_object *jobj,
 		ltmp = g_slist_last(schema->list);
 		if (!ltmp)
 			goto done;
-
-		/* FIXME: if name comes before sensor_id or type_id  */
+		/*
+		*FIXME: if name comes before sensor_id,value_type,unit, type_id
+		*or other wrong order
+		*/
 		entry = ltmp->data;
 		strcpy(entry->name, data_name);
 		err = 0;
@@ -200,23 +229,18 @@ static void read_json_entry(struct json_object *jobj,
 	knot_data_bool *kbool;
 	knot_data_float *kfloat;
 	knot_data_int *kint;
-	knot_schema *kschema;
 	int32_t ipart, fpart;
 	enum json_type type;
 	const char *str;
 
 	type = json_object_get_type(jobj);
-	kschema = (knot_schema *) malloc(sizeof(knot_schema));
 
 	if ((strcmp("sensor_id", key) == 0) && (type == json_type_int))
 		kdata->sensor_id = json_object_get_int(jobj);
-	else if ((strcmp("unit", key) == 0) && (type == json_type_int)) {
-		kschema->unit = json_object_get_int(jobj);
-	} else if (strcmp("value", key) == 0) {
+	else if (strcmp("value", key) == 0) {
 		switch (type) {
 		case json_type_boolean:
 			kbool = (knot_data_bool *) kdata;
-			kschema->value_type = KNOT_VALUE_TYPE_BOOL;
 			kbool->value = json_object_get_boolean(jobj);
 			msg->hdr.payload_len = sizeof(knot_data_bool);
 			break;
@@ -228,7 +252,6 @@ static void read_json_entry(struct json_object *jobj,
 				break;
 
 			kfloat = (knot_data_float *) kdata;
-			kschema->value_type = KNOT_VALUE_TYPE_FLOAT;
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
 			kfloat->multiplier = 1; /* TODO: */
@@ -236,7 +259,6 @@ static void read_json_entry(struct json_object *jobj,
 			break;
 		case json_type_int:
 			kint = (knot_data_int *) kdata;
-			kschema->value_type = KNOT_VALUE_TYPE_INT;
 			kint->value = json_object_get_int(jobj);
 			kint->multiplier = 1;
 			msg->hdr.payload_len = sizeof(knot_data_int);
