@@ -128,7 +128,7 @@ static void load_schema(struct json_object *jobj,
 					const char *key, void *user_data)
 {
 	struct schema *schema = user_data;
-	knot_schema *entry;
+	knot_msg_schema *entry;
 	GSList *ltmp;
 	enum json_type type;
 	const char *data_name = NULL;
@@ -155,7 +155,7 @@ static void load_schema(struct json_object *jobj,
 		intval = json_object_get_int(jobj);
 
 		if (strcmp("sensor_id", key) == 0) {
-			entry = g_new0(knot_schema, 1);
+			entry = g_new0(knot_msg_schema, 1);
 			entry->sensor_id = intval;
 			schema->list = g_slist_append(schema->list, entry);
 			err = 0;
@@ -169,7 +169,7 @@ static void load_schema(struct json_object *jobj,
 			*wrong order
 			*/
 			entry = ltmp->data;
-			entry->value_type = intval;
+			entry->values.value_type = intval;
 			err = 0;
 		} else if (strcmp("unit", key) == 0) {
 			ltmp = g_slist_last(schema->list);
@@ -181,7 +181,7 @@ static void load_schema(struct json_object *jobj,
 			*wrong order
 			*/
 			entry = ltmp->data;
-			entry->unit = intval;
+			entry->values.unit = intval;
 			err = 0;
 		} else if (strcmp("type_id", key) == 0) {
 			ltmp = g_slist_last(schema->list);
@@ -193,7 +193,7 @@ static void load_schema(struct json_object *jobj,
 			*wrong order
 			*/
 			entry = ltmp->data;
-			entry->type_id = intval;
+			entry->values.type_id = intval;
 			err = 0;
 		}
 
@@ -212,7 +212,7 @@ static void load_schema(struct json_object *jobj,
 		*or other wrong order
 		*/
 		entry = ltmp->data;
-		strcpy(entry->name, data_name);
+		strcpy(entry->values.name, data_name);
 		err = 0;
 		break;
 	}
@@ -226,9 +226,9 @@ static void read_json_entry(struct json_object *jobj,
 {
 	knot_msg_data *msg = user_data;
 	knot_data *kdata = &(msg->payload);
-	knot_data_bool *kbool;
-	knot_data_float *kfloat;
-	knot_data_int *kint;
+	knot_value_type_bool *kbool;
+	knot_value_type_float *kfloat;
+	knot_value_type_int *kint;
 	int32_t ipart, fpart;
 	enum json_type type;
 	const char *str;
@@ -236,13 +236,13 @@ static void read_json_entry(struct json_object *jobj,
 	type = json_object_get_type(jobj);
 
 	if ((strcmp("sensor_id", key) == 0) && (type == json_type_int))
-		kdata->sensor_id = json_object_get_int(jobj);
+		msg->sensor_id = json_object_get_int(jobj);
 	else if (strcmp("value", key) == 0) {
 		switch (type) {
 		case json_type_boolean:
-			kbool = (knot_data_bool *) kdata;
-			kbool->value = json_object_get_boolean(jobj);
-			msg->hdr.payload_len = sizeof(knot_data_bool);
+			kbool = (knot_value_type_bool *) &(kdata->values.val_b);
+			*kbool = json_object_get_boolean(jobj);
+			msg->hdr.payload_len = sizeof(knot_value_type_bool);
 			break;
 		case json_type_double:
 			/* Trick to get integral and fractional parts */
@@ -251,17 +251,18 @@ static void read_json_entry(struct json_object *jobj,
 			if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
 				break;
 
-			kfloat = (knot_data_float *) kdata;
+			kfloat = (knot_value_type_float *) &(kdata->
+								values.val_f);
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
 			kfloat->multiplier = 1; /* TODO: */
-			msg->hdr.payload_len = sizeof(knot_data_float);
+			msg->hdr.payload_len = sizeof(knot_value_type_float);
 			break;
 		case json_type_int:
-			kint = (knot_data_int *) kdata;
+			kint = (knot_value_type_int *) &(kdata->values.val_i);
 			kint->value = json_object_get_int(jobj);
 			kint->multiplier = 1;
-			msg->hdr.payload_len = sizeof(knot_data_int);
+			msg->hdr.payload_len = sizeof(knot_value_type_int);
 			break;
 		case json_type_string:
 		case json_type_null:
@@ -377,6 +378,7 @@ static int write_knot_data(struct json_object *jobj)
 	msg.hdr.type = KNOT_MSG_DATA;
 	/* Payload len is set by read_json_entry() */
 
+	msg.hdr.payload_len += sizeof(msg.sensor_id);
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
 		err = errno;
@@ -402,7 +404,7 @@ static int write_knot_data(struct json_object *jobj)
 static int send_schema(GSList *list)
 {
 	knot_msg_schema msg;
-	knot_schema *entry;
+	knot_msg_schema *entry;
 	GSList *l;
 	ssize_t nbytes;
 	int err;
@@ -413,8 +415,12 @@ static int send_schema(GSList *list)
 	for (l = list; l;) {
 		entry = l->data;
 
-		msg.hdr.payload_len = sizeof(*entry);
-		memcpy(&msg.schema, entry, msg.hdr.payload_len);
+		msg.hdr.payload_len = sizeof(entry->values) +
+						sizeof(entry->sensor_id);
+
+		memcpy(&msg.values, &entry->values, sizeof(entry->values));
+		msg.sensor_id = entry->sensor_id;
+
 
 		l = g_slist_next(l);
 		if (!l)

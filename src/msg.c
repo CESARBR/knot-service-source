@@ -74,7 +74,7 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 
 static int sensor_id_cmp(gconstpointer a, gconstpointer b)
 {
-	const knot_schema *schema = a;
+	const knot_msg_schema *schema = a;
 	unsigned int sensor_id = GPOINTER_TO_UINT(b);
 
 	return sensor_id - schema->sensor_id;
@@ -114,7 +114,7 @@ static GSList *parse_device_schema(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
 	GSList *list = NULL;
-	knot_schema *entry;
+	knot_msg_schema *entry;
 	int sensor_id, value_type, unit, type_id, i;
 	const char *name;
 
@@ -201,12 +201,13 @@ static GSList *parse_device_schema(const char *json_str)
 		 * Validation not required: validation has been performed
 		 * previously when schema has been submitted to the cloud.
 		 */
-		entry = g_new0(knot_schema, 1);
+		entry = g_new0(knot_msg_schema, 1);
 		entry->sensor_id = sensor_id;
-		entry->value_type = value_type;
-		entry->unit = unit;
-		entry->type_id = type_id;
-		strncpy(entry->name, name, sizeof(entry->name) - 1);
+		entry->values.value_type = value_type;
+		entry->values.unit = unit;
+		entry->values.type_id = type_id;
+		strncpy(entry->values.name, name,
+						sizeof(entry->values.name) - 1);
 
 		list = g_slist_append(list, entry);
 	}
@@ -395,8 +396,8 @@ static int8_t msg_schema(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const knot_msg_schema *kmsch, gboolean eof)
 {
-	const knot_schema *schema = &(kmsch->schema);
-	knot_schema *kschema;
+	const knot_msg_schema *schema = kmsch;
+	knot_msg_schema *kschema;
 	struct json_object *jobj, *ajobj, *schemajobj;
 	struct trust *trust;
 	GSList *list;
@@ -435,15 +436,15 @@ static int8_t msg_schema(int sock, int proto_sock,
 		schema = list->data;
 		jobj = json_object_new_object();
 		json_object_object_add(jobj, "sensor_id",
-				       json_object_new_int(schema->sensor_id));
+				json_object_new_int(schema->sensor_id));
 		json_object_object_add(jobj, "value_type",
-				       json_object_new_int(schema->value_type));
+				json_object_new_int(schema->values.value_type));
 		json_object_object_add(jobj, "unit",
-				       json_object_new_int(schema->unit));
+				json_object_new_int(schema->values.unit));
 		json_object_object_add(jobj, "type_id",
-				       json_object_new_int(schema->type_id));
+				json_object_new_int(schema->values.type_id));
 		json_object_object_add(jobj, "name",
-				       json_object_new_string(schema->name));
+				json_object_new_string(schema->values.name));
 
 		json_object_array_add(ajobj, jobj);
 	}
@@ -478,18 +479,21 @@ static int8_t msg_data(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_data *kmdata)
 {
-	/* Pointer to KNOT data containing header and a primitive KNOT type */
+	/*
+	 * Pointer to KNOT data containing header, sensor id
+	 * and a primitive KNOT type
+	 */
 	const knot_data *kdata = &(kmdata->payload);
 	struct json_object *jobj;
 	const struct trust *trust;
-	const knot_schema *schema;
+	const knot_msg_schema *schema;
 	GSList *list;
 	json_raw_t json;
 	const char *jobjstr;
 	/* INT_MAX 2147483647 */
 	char str[12];
 	double doubleval;
-	uint8_t sensor_id, unit;
+	uint8_t sensor_id;
 	int len, err;
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
@@ -498,7 +502,7 @@ static int8_t msg_data(int sock, int proto_sock,
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	sensor_id = kdata->sensor_id;
+	sensor_id = kmdata->sensor_id;
 
 
 	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
@@ -509,43 +513,42 @@ static int8_t msg_data(int sock, int proto_sock,
 	}
 
 	schema = list->data;
-	unit = schema->unit;
-	err = knot_schema_is_valid(schema->type_id, schema->value_type,
-							schema->unit);
+
+	err = knot_schema_is_valid(schema->values.type_id,
+				schema->values.value_type, schema->values.unit);
 	if (err) {
 		LOG_INFO("sensor_id(0x%d), type_id(0x%04x): unit mismatch!\n",
-						sensor_id, schema->type_id);
+					sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
-	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", kdata->sensor_id,
-				schema->unit, schema->value_type);
+	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", sensor_id,
+				schema->values.unit, schema->values.value_type);
 
 	jobj = json_object_new_object();
 	json_object_object_add(jobj, "sensor_id",
 						json_object_new_int(sensor_id));
-	json_object_object_add(jobj, "unit", json_object_new_int(unit));
 
-	switch (schema->value_type) {
+	switch (schema->values.value_type) {
 	case KNOT_VALUE_TYPE_INT:
 		json_object_object_add(jobj, "value",
-			       json_object_new_int(kdata->int_k.value));
+			       json_object_new_int(kdata->values.val_i.value));
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 
 		/* FIXME: precision */
-		len = sprintf(str, "%d", kdata->float_k.value_dec);
+		len = sprintf(str, "%d", kdata->values.val_f.value_dec);
 
-		doubleval = kdata->float_k.multiplier *
-				(kdata->float_k.value_int +
-				 (kdata->float_k.value_dec / pow(10, len)));
+		doubleval = kdata->values.val_f.multiplier *
+			(kdata->values.val_f.value_int +
+			(kdata->values.val_f.value_dec / pow(10, len)));
 
 		json_object_object_add(jobj, "value",
 				       json_object_new_double(doubleval));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(jobj, "value",
-			       json_object_new_boolean(kdata->bool_k.value));
+			       json_object_new_boolean(kdata->values.val_b));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		break;
