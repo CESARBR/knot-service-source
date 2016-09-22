@@ -60,9 +60,9 @@ static gboolean opt_add = FALSE;
 static gboolean opt_rm = FALSE;
 static gboolean opt_schema = FALSE;
 static gboolean opt_data = FALSE;
-static char *opt_uuid = NULL;
-static char *opt_token = NULL;
-static char *opt_json = NULL;
+static char *opt_uuid;
+static char *opt_token;
+static char *opt_json;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
@@ -106,7 +106,7 @@ static void print_json_value(struct json_object *jobj,
 		break;
 	case json_type_boolean:
 		printf("%s(%s)\n", json_object_get_boolean(jobj) ?
-					"true": "false", name);
+					"true" : "false", name);
 		break;
 	case json_type_double:
 		printf("%lf(%s)\n", json_object_get_double(jobj), name);
@@ -752,6 +752,10 @@ int main(int argc, char *argv[])
 	GOptionGroup *schema_group;
 	GError *gerr = NULL;
 	int err = 0;
+
+	opt_uuid = NULL;
+	opt_token = NULL;
+	opt_json = NULL;
 
 	printf("KNOT Tool\n");
 

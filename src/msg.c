@@ -47,7 +47,9 @@ struct trust {
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
 	GSList *schema;			/* knot_schema accepted by cloud */
-	GSList *schema_tmp;		/* knot_schema to be submitted to cloud */
+	GSList *schema_tmp;		/*
+					* knot_schema to be submitted to cloud
+					*/
 };
 
 /* Maps sockets to sessions  */
@@ -81,9 +83,9 @@ static int sensor_id_cmp(gconstpointer a, gconstpointer b)
 }
 
 static int parse_device_info(const char *json_str,
-				       char **puuid, char **ptoken)
+					char **puuid, char **ptoken)
 {
-	json_object *jobj,*json_uuid, *json_token;
+	json_object *jobj, *json_uuid, *json_token;
 	const char *uuid, *token;
 	int err = -EINVAL;
 
@@ -154,7 +156,8 @@ static GSList *parse_device_schema(const char *json_str)
 		jobjentry = json_object_array_get_idx(jobjarray, i);
 
 		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry, "sensor_id", &jobjkey))
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
 			goto done;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
@@ -163,7 +166,8 @@ static GSList *parse_device_schema(const char *json_str)
 		sensor_id = json_object_get_int(jobjkey);
 
 		/* Getting 'value_type' */
-		if (!json_object_object_get_ex(jobjentry, "value_type", &jobjkey))
+		if (!json_object_object_get_ex(jobjentry, "value_type",
+								&jobjkey))
 			goto done;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
@@ -291,7 +295,7 @@ static int8_t msg_register(const credential_t *owner,
 	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
 	/* Add a watch to remove the credential when the client disconnects */
 	io = g_io_channel_unix_new(sock);
-	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR , node_hup_cb, NULL);
+	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
 	g_io_channel_unref(io);
 
 	return KNOT_SUCCESS;
@@ -386,7 +390,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 	/* Add a watch to remove the credential when the client disconnects */
 	io = g_io_channel_unix_new(sock);
-	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR , node_hup_cb, NULL);
+	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
 	g_io_channel_unref(io);
 
 	return KNOT_SUCCESS;
