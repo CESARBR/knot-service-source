@@ -688,38 +688,43 @@ static int cmd_unsubscribe(void)
  * devices. Commands are based on KNOT protocol, and they should be mapped
  * to any specific backend.
  */
-
-static GOptionEntry schema_options[] = {
-	{ "uuid", 0, 0, G_OPTION_ARG_STRING, &opt_uuid,
-						"Device's UUID", NULL },
-	{ "token", 0, 0, G_OPTION_ARG_STRING, &opt_token,
-						"Device's token", NULL },
-	{ "json", 0, 0, G_OPTION_ARG_FILENAME, &opt_json,
-						"Path to JSON file", NULL },
+static GOptionEntry options[] = {
+	{ "uuid", 'u', 0, G_OPTION_ARG_STRING, &opt_uuid,
+						"Device's UUID", "UUID" },
+	{ "token", 't', 0, G_OPTION_ARG_STRING, &opt_token,
+						"Device's token", "TOKEN" },
+	{ "json", 'j', 0, G_OPTION_ARG_FILENAME, &opt_json,
+						"Path to JSON file",
+						"json/data-temperature" },
 	{ NULL },
 };
 
-static GOptionEntry options[] = {
+static GOptionEntry commands[] = {
 
-	{ "add", 'a', 0, G_OPTION_ARG_NONE, &opt_add,
-				"Register a device to Meshblu",
+	{ "add", 0, 0, G_OPTION_ARG_NONE, &opt_add,
+		"Register a device to Meshblu. Eg: ./ktool --add",
 				NULL },
-	{ "remove", 'r', 0, G_OPTION_ARG_NONE, &opt_rm,
-				"Unregister a device from Meshblu",
+	{ "remove", 0, 0, G_OPTION_ARG_NONE, &opt_rm,
+		"Unregister a device from Meshblu. " \
+			"Eg: ./ktool --remove -u=value -t=value",
 				NULL },
-	{ "schema", 'h', 0, G_OPTION_ARG_NONE, &opt_schema,
-				"Get/Put JSON representing device's schema",
+	{ "schema", 0, 0, G_OPTION_ARG_NONE, &opt_schema,
+		"Get/Put JSON representing device's schema. " \
+			"Eg: ./ktool --schema -u=value -t=value -j=value",
 				NULL },
-	{ "data", 'd', 0, G_OPTION_ARG_NONE, &opt_data,
-				"Sends data of a given device", NULL },
-	{ "id", 'i', 0, G_OPTION_ARG_NONE, &opt_id,
-				"Identify a Meshblu device",
+	{ "data", 0, 0, G_OPTION_ARG_NONE, &opt_data,
+			"Sends data of a given device. " \
+			"Eg: ./ktool --data -u=value -t=value -j=value",
+				NULL},
+	{ "id", 0, 0, G_OPTION_ARG_NONE, &opt_id,
+		"Identify a Meshblu device",
 				NULL },
-	{ "subscribe", 's', 0, G_OPTION_ARG_NONE, &opt_subs,
-				"Subscribe for messages of a given device",
+	{ "subscribe", 0, 0, G_OPTION_ARG_NONE, &opt_subs,
+		"Subscribe for messages of a given device",
 				NULL },
-	{ "unsubscribe", 'u', 0, G_OPTION_ARG_NONE, &opt_unsubs,
-				"Unsubscribe for messages", NULL },
+	{ "unsubscribe", 0, 0, G_OPTION_ARG_NONE, &opt_unsubs,
+		"Unsubscribe for messages",
+				NULL },
 	{ NULL },
 };
 
@@ -749,7 +754,7 @@ static void sig_term(int sig)
 int main(int argc, char *argv[])
 {
 	GOptionContext *context;
-	GOptionGroup *schema_group;
+	GOptionGroup *opt_group;
 	GError *gerr = NULL;
 	int err = 0;
 
@@ -760,21 +765,20 @@ int main(int argc, char *argv[])
 	printf("KNOT Tool\n");
 
 	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, options, NULL);
+	g_option_context_add_main_entries(context, commands, NULL);
 
 	/* Define options for setting or reading JSON schema of a given
-	   device(UUID):
-	    read:
-		ktool --schema --uuid=value
-	    write:
-		ktool --schema --uuid=value --token=value --json=filename
+	 * device(UUID):
+	 *  read:
+	 *	ktool --schema --uuid=value
+	 *  write:
+	 *	ktool --schema --uuid=value --token=value --json=filename
 	 */
-	schema_group = g_option_group_new("schema", "Schema options",
+	opt_group = g_option_group_new("options", "Options usage",
 					"Show all schema options", NULL, NULL);
-	g_option_context_add_group(context, schema_group);
-	g_option_group_add_entries(schema_group, schema_options);
+	g_option_context_add_group(context, opt_group);
+	g_option_group_add_entries(opt_group, options);
 
-	/* TODO: Use GOptionGroup to inform parameters */
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
 		printf("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
