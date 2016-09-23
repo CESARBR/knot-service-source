@@ -38,7 +38,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <glib.h>
-
+#include <fcntl.h>
+#include <termios.h>
 #include <json-c/json.h>
 
 #include <knot_protocol.h>
@@ -58,14 +59,48 @@ static gboolean opt_add = FALSE;
 static gboolean opt_rm = FALSE;
 static gboolean opt_schema = FALSE;
 static gboolean opt_data = FALSE;
-static char *opt_uuid;
-static char *opt_token;
-static char *opt_json;
+static char *opt_uuid = NULL;
+static char *opt_token = NULL;
+static char *opt_json = NULL;
+static char *opt_tty = NULL;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
 
 static GMainLoop *main_loop;
+
+static ssize_t receive(int sockfd, void *buffer, size_t len)
+{
+	ssize_t nbytes;
+	int err, msg_size, offset, remaining;
+	knot_msg_header *hdr = buffer;
+
+	nbytes = read(sockfd, buffer, len);
+	if (nbytes < 0) {
+		err = -errno;
+		printf("read() error\n");
+		return err;
+	}
+	msg_size = hdr->payload_len + 2;
+
+	offset = nbytes;
+
+	while (offset < msg_size) {
+		remaining = len - offset;
+		if (remaining > 0)
+			nbytes = read(sock, buffer + offset, remaining);
+		else
+			goto done;
+
+		err = errno;
+		if (nbytes < 0 && err != EAGAIN)
+			goto done;
+		else if (nbytes > 0)
+			offset += nbytes;
+	}
+done:
+	return offset;
+}
 
 static int unix_connect(const char *opt_unix)
 {
@@ -88,6 +123,45 @@ static int unix_connect(const char *opt_unix)
 	}
 
 	return sock;
+}
+
+static int serial_connect(char *opt_tty)
+{
+	struct termios term;
+	int ttyfd;
+
+	memset(&term, 0, sizeof(term));
+	/*
+	 * 8-bit characters, no parity bit,no Bit mask for data bits
+	 * only need 1 stop bit
+	 */
+	term.c_cflag &= ~PARENB;
+	term.c_cflag &= ~CSTOPB;
+	term.c_cflag &= ~CSIZE;
+	term.c_cflag |= CS8;
+	/* No flow control*/
+	term.c_cflag &= ~CRTSCTS;
+	/* Read block until 2 bytes arrives */
+	term.c_cc[VMIN] = 2;
+	/* 0.1 seconds read timeout */
+	term.c_cc[VTIME] = 1;
+	/* Turn on READ & ignore ctrl lines */
+	term.c_cflag |= CREAD | CLOCAL;
+
+	cfsetospeed(&term, B9600);
+	cfsetispeed(&term, B9600);
+
+	ttyfd = open(opt_tty, O_RDWR | O_NOCTTY);
+	if (ttyfd < 0)
+		return -errno;
+	/*
+	 * Flushes the input and/or output queue and
+	 * Set the new options for the port
+	 */
+	tcflush(ttyfd, TCIFLUSH);
+	tcsetattr(ttyfd, TCSANOW, &term);
+
+	return ttyfd;
 }
 
 static void print_json_value(struct json_object *jobj,
@@ -336,7 +410,7 @@ static int authenticate(const char *uuid, const char *token)
 		return -err;
 	}
 
-	nbytes = read(sock, &resp, sizeof(resp));
+	nbytes = receive(sock, &resp, sizeof(resp));
 	if (nbytes < 0) {
 		err = errno;
 		printf("read(): %s(%d)\n", strerror(err), err);
@@ -384,7 +458,7 @@ static int write_knot_data(struct json_object *jobj)
 		return -err;
 	}
 
-	nbytes = read(sock, &resp, sizeof(resp));
+	nbytes = receive(sock, &resp, sizeof(resp));
 	if (nbytes < 0) {
 		err = errno;
 		printf("read(): %s(%d)\n", strerror(err), err);
@@ -459,7 +533,7 @@ static int cmd_register(void)
 	}
 
 	memset(&crdntl, 0, sizeof(crdntl));
-	nbytes = read(sock, &crdntl, sizeof(crdntl));
+	nbytes = receive(sock, &crdntl, sizeof(crdntl));
 	if (nbytes < 0) {
 		err = errno;
 		printf("KNOT Register read(): %s(%d)\n", strerror(err), err);
@@ -507,7 +581,7 @@ static int cmd_unregister(void)
 	}
 
 	memset(&rslt, 0, sizeof(rslt));
-	nbytes = read(sock, &rslt, sizeof(rslt));
+	nbytes = receive(sock, &rslt, sizeof(rslt));
 	if (nbytes < 0) {
 		err = errno;
 		printf("KNOT Unregister read(): %s(%d)\n", strerror(err), err);
@@ -697,25 +771,27 @@ static GOptionEntry options[] = {
 	{ "unix", 'U', 0, G_OPTION_ARG_STRING, &opt_unix,
 			"Specify unix socket to connect. Default: knot",
 			"[ knot | :thing:nrfd]" },
+	{ "tty", 'T', 0, G_OPTION_ARG_STRING, &opt_tty,
+			"Specify TTY to connect.", "/dev/ttyUSB0" },
 	{ NULL },
 };
 
 static GOptionEntry commands[] = {
 
 	{ "add", 0, 0, G_OPTION_ARG_NONE, &opt_add,
-		"Register a device to Meshblu. Eg: ./ktool --add [-U=value]",
+	"Register a device to Meshblu. Eg: ./ktool --add [-U=value | T=value]",
 				NULL },
 	{ "remove", 0, 0, G_OPTION_ARG_NONE, &opt_rm,
 		"Unregister a device from Meshblu. " \
-			"Eg: ./ktool --remove -u=value -t=value [-U=value]",
+		"Eg: ./ktool --remove -u=value -t=value [-U=value | T=value]",
 				NULL },
 	{ "schema", 0, 0, G_OPTION_ARG_NONE, &opt_schema,
-		"Get/Put JSON representing device's schema. " \
-		"Eg: ./ktool --schema -u=value -t=value -j=value [-U=value]",
+	"Get/Put JSON representing device's schema. " \
+	"Eg: ./ktool --schema -u=value -t=value -j=value [-U=value | T=value]",
 				NULL },
 	{ "data", 0, 0, G_OPTION_ARG_NONE, &opt_data,
-			"Sends data of a given device. " \
-		"Eg: ./ktool --data -u=value -t=value -j=value [-U=value]",
+	"Sends data of a given device. " \
+	"Eg: ./ktool --data -u=value -t=value -j=value [-U=value | -T=value]",
 				NULL},
 	{ "id", 0, 0, G_OPTION_ARG_NONE, &opt_id,
 		"Identify a Meshblu device",
@@ -793,7 +869,11 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sig_term);
 	main_loop = g_main_loop_new(NULL, FALSE);
 
-	sock = unix_connect(opt_unix);
+	if (opt_tty)
+		sock = serial_connect(opt_tty);
+	else
+		sock = unix_connect(opt_unix);
+
 	if (sock == -1) {
 		err = -errno;
 		printf("connect(): %s (%d)\n", strerror(-err), -err);
