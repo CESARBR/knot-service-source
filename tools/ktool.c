@@ -44,9 +44,6 @@
 #include <knot_protocol.h>
 #include <knot_types.h>
 
-/* Abstract unit socket namespace */
-#define KNOT_UNIX_SOCKET	"knot"
-
 struct schema {
 	GSList *list;
 	int err;
@@ -56,6 +53,7 @@ typedef void (*json_object_func_t) (struct json_object *jobj,
 					const char *key, void *user_data);
 
 static int sock;
+static char *opt_unix = "knot";
 static gboolean opt_add = FALSE;
 static gboolean opt_rm = FALSE;
 static gboolean opt_schema = FALSE;
@@ -69,7 +67,7 @@ static gboolean opt_unsubs = FALSE;
 
 static GMainLoop *main_loop;
 
-static int unix_connect(void)
+static int unix_connect(const char *opt_unix)
 {
 	int err, sock;
 	struct sockaddr_un addr;
@@ -81,7 +79,7 @@ static int unix_connect(void)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
+	strncpy(addr.sun_path + 1, opt_unix, strlen(opt_unix));
 
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
 		err = -errno;
@@ -696,25 +694,28 @@ static GOptionEntry options[] = {
 	{ "json", 'j', 0, G_OPTION_ARG_FILENAME, &opt_json,
 						"Path to JSON file",
 						"json/data-temperature" },
+	{ "unix", 'U', 0, G_OPTION_ARG_STRING, &opt_unix,
+			"Specify unix socket to connect. Default: knot",
+			"[ knot | :thing:nrfd]" },
 	{ NULL },
 };
 
 static GOptionEntry commands[] = {
 
 	{ "add", 0, 0, G_OPTION_ARG_NONE, &opt_add,
-		"Register a device to Meshblu. Eg: ./ktool --add",
+		"Register a device to Meshblu. Eg: ./ktool --add [-U=value]",
 				NULL },
 	{ "remove", 0, 0, G_OPTION_ARG_NONE, &opt_rm,
 		"Unregister a device from Meshblu. " \
-			"Eg: ./ktool --remove -u=value -t=value",
+			"Eg: ./ktool --remove -u=value -t=value [-U=value]",
 				NULL },
 	{ "schema", 0, 0, G_OPTION_ARG_NONE, &opt_schema,
 		"Get/Put JSON representing device's schema. " \
-			"Eg: ./ktool --schema -u=value -t=value -j=value",
+		"Eg: ./ktool --schema -u=value -t=value -j=value [-U=value]",
 				NULL },
 	{ "data", 0, 0, G_OPTION_ARG_NONE, &opt_data,
 			"Sends data of a given device. " \
-			"Eg: ./ktool --data -u=value -t=value -j=value",
+		"Eg: ./ktool --data -u=value -t=value -j=value [-U=value]",
 				NULL},
 	{ "id", 0, 0, G_OPTION_ARG_NONE, &opt_id,
 		"Identify a Meshblu device",
@@ -792,7 +793,7 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sig_term);
 	main_loop = g_main_loop_new(NULL, FALSE);
 
-	sock = unix_connect();
+	sock = unix_connect(opt_unix);
 	if (sock == -1) {
 		err = -errno;
 		printf("connect(): %s (%d)\n", strerror(-err), -err);
