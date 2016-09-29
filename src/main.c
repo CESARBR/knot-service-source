@@ -96,6 +96,10 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	/* Set user id to nobody */
+	err = setuid(65534);
+	LOG_INFO("Set user to nobody: %d\n", err);
+
 	signal(SIGTERM, sig_term);
 	signal(SIGINT, sig_term);
 	signal(SIGPIPE, SIG_IGN);
