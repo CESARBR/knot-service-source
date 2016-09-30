@@ -156,9 +156,27 @@ static const char *lws_reason2str(enum lws_callback_reasons reason)
 	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
 		return "RECEIVE CLIENT HTTP READ";
 
+	case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+		return "LWS_CALLBACK_HTTP_DROP_PROTOCOL";
+	case LWS_CALLBACK_CHECK_ACCESS_RIGHTS:
+		return "LWS_CALLBACK_CHECK_ACCESS_RIGHTS";
+	case LWS_CALLBACK_PROCESS_HTML:
+		return "LWS_CALLBACK_PROCESS_HTML";
+	case LWS_CALLBACK_ADD_HEADERS:
+		return "LWS_CALLBACK_ADD_HEADERS";
+	case LWS_CALLBACK_SESSION_INFO:
+		return "LWS_CALLBACK_SESSION_INFO";
+	case LWS_CALLBACK_GS_EVENT:
+		return "LWS_CALLBACK_GS_EVENT";
+	case LWS_CALLBACK_HTTP_PMO:
+		return "LWS_CALLBACK_HTTP_PMO";
+	case LWS_CALLBACK_CLIENT_HTTP_WRITEABLE:
+		return "LWS_CALLBACK_CLIENT_HTTP_WRITEABLE";
+	case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
+		return "LWS_CALLBACK_HTTP_BIND_PROTOCOL";
+
 	default:
 		return "UNKNOWN";
-
 	}
 }
 
@@ -182,10 +200,10 @@ static int ws_signin(int sock,const char *uuid, const char *token,
 
 
 static int callback_lws_http(struct lws *wsi,
-			       enum lws_callback_reasons reason,
-			       void *user, void *in, size_t len)
-{
+					enum lws_callback_reasons reason,
+					void *user, void *in, size_t len)
 
+{
 	LOG_INFO("reason(%02X): %s\n", reason, lws_reason2str(reason));
 
 	return 0;
