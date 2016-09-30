@@ -416,10 +416,12 @@ static int8_t msg_schema(int sock, int proto_sock,
 	}
 
 	/*
-	 * "schema":[
-	 *		{"sensor_id":<integer>, "type_id":<integer>, "name":"<name>"},
-	 *		...
-	 *	]
+	 * {
+	 *	"schema" : [
+	 *		{"sensor_id": x, "value_type": w,
+	 *			"unit": z "type_id": y, "name": "foo"}
+	 * 	]
+	 * }
 	 */
 
 	/* Add to a temporary list until receiving complete schema */
