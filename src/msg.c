@@ -50,6 +50,7 @@ struct trust {
 	GSList *schema_tmp;		/*
 					* knot_schema to be submitted to cloud
 					*/
+	GSList *config;			/* knot_config accepted by cloud */
 };
 
 /* Maps sockets to sessions  */
@@ -61,6 +62,7 @@ static void trust_free(struct trust *trust)
 	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
 	g_slist_free_full(trust->schema_tmp, g_free);
+	g_slist_free_full(trust->config, g_free);
 	g_free(trust);
 }
 
@@ -80,6 +82,44 @@ static int sensor_id_cmp(gconstpointer a, gconstpointer b)
 	unsigned int sensor_id = GPOINTER_TO_UINT(b);
 
 	return sensor_id - schema->sensor_id;
+}
+
+/*
+ * Parsing knot_value_types attribute
+ */
+static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
+{
+	json_object *jobjkey;
+	int32_t ipart, fpart;
+	const char *str;
+
+	jobjkey = jobj;
+	switch (json_object_get_type(jobjkey)) {
+	case json_type_boolean:
+		limit->val_b = json_object_get_boolean(jobjkey);
+		break;
+	case json_type_double:
+		/* Trick to get integral and fractional parts */
+		str = json_object_get_string(jobjkey);
+		/* FIXME: how to handle overflow? */
+		if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
+			break;
+		limit->val_f.value_int = ipart;
+		limit->val_f.value_dec = fpart;
+		limit->val_f.multiplier = 1; /* TODO: */
+		break;
+	case json_type_int:
+
+		limit->val_i.value = json_object_get_int(jobjkey);
+		limit->val_i.multiplier = 1;
+		break;
+	case json_type_string:
+	case json_type_null:
+	case json_type_object:
+	case json_type_array:
+	default:
+		break;
+	}
 }
 
 static int parse_device_info(const char *json_str,
@@ -219,6 +259,142 @@ done:
 	json_object_put(jobj);
 
 	return list;
+}
+
+/*
+ * Parses the json from the cloud with the config. The message is discarded if:
+ * There are no "devices" or "config" fields in the JSON or they are not arrays.
+ * The mandatory fields "sensor_id" and "event_flags" are missing.
+ * Any field that is sent has the wrong type.
+ */
+static GSList *parse_device_config(const char *json_str)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	GSList *list = NULL;
+	knot_msg_config *entry;
+	int sensor_id, event_flags, time_sec, i;
+	knot_value_types lower_limit, upper_limit;
+	json_type jtype;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj)
+		return NULL;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid":
+	 *		"config" : [
+	 *			{"sensor_id": v, "event_flags": w,
+	 *				"time_sec": x "lower_limit": y,
+	 *						"upper_limit": z}]
+	 *		}]
+	 * }
+	 */
+
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'config' is an array */
+	if (!json_object_object_get_ex(jobjentry, "config", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			goto done;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		sensor_id = json_object_get_int(jobjkey);
+
+		/* Getting 'event_flags' */
+		if (!json_object_object_get_ex(jobjentry, "event_flags",
+								&jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		event_flags = json_object_get_int(jobjkey);
+
+		/* If 'time_sec' is defined, gets it */
+
+		time_sec = 0;
+		if (json_object_object_get_ex(jobjentry, "time_sec",
+								 &jobjkey)) {
+			if (json_object_get_type(jobjkey) != json_type_int)
+				goto done;
+
+			time_sec = json_object_get_int(jobjkey);
+		}
+
+		/* If 'lower_limit' is defined, gets it. */
+
+		memset(&lower_limit, 0, sizeof(knot_value_types));
+		if (json_object_object_get_ex(jobjentry, "lower_limit",
+								&jobjkey)) {
+			jtype = json_object_get_type(jobjkey);
+			if (jtype != json_type_int &&
+				jtype != json_type_double &&
+				jtype != json_type_boolean)
+				goto done;
+
+			parse_json_value_types(jobjkey,
+						&lower_limit);
+		}
+
+		/* If 'upper_limit' is defined, gets it. */
+
+		memset(&upper_limit, 0, sizeof(knot_value_types));
+		if (json_object_object_get_ex(jobjentry, "upper_limit",
+								&jobjkey)){
+			jtype = json_object_get_type(jobjkey);
+			if (jtype != json_type_int &&
+			    jtype != json_type_double &&
+			    jtype != json_type_boolean)
+				goto done;
+			parse_json_value_types(jobjkey,
+						&upper_limit);
+		}
+
+		entry = g_new0(knot_msg_config, 1);
+		entry->sensor_id = sensor_id;
+		entry->values.event_flags = event_flags;
+		entry->values.time_sec = time_sec;
+		memcpy(&(entry->values.lower_limit), &lower_limit,
+						sizeof(knot_value_types));
+		memcpy(&(entry->values.upper_limit), &upper_limit,
+						sizeof(knot_value_types));
+		list = g_slist_append(list, entry);
+	}
+
+	json_object_put(jobj);
+
+	return list;
+
+done:
+	g_slist_free_full(list, g_free);
+	json_object_put(jobj);
+
+	return NULL;
 }
 
 static int8_t msg_register(const credential_t *owner,
@@ -377,6 +553,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	}
 
 	trust->schema = parse_device_schema(json.data);
+	trust->config = parse_device_config(json.data);
 
 	free(json.data);
 
