@@ -439,11 +439,13 @@ static int8_t msg_register(const credential_t *owner,
 
 	if (err < 0) {
 		LOG_ERROR("manager mknode: %s(%d)\n", strerror(-err), -err);
+		free(json.data);
 		return KNOT_CLOUD_FAILURE;
 	}
 
 	if (parse_device_info(json.data, &uuid, &token) < 0) {
 		LOG_ERROR("Unexpected response!\n");
+		free(json.data);
 		return KNOT_CLOUD_FAILURE;
 	}
 
