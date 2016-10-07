@@ -40,7 +40,7 @@
 static GMainLoop *main_loop;
 
 static const char *opt_host = NULL;
-static unsigned int opt_port = 80;
+static unsigned int opt_port = 0;
 /* Default is websockets */
 static const char *opt_proto = "http";
 static const char *opt_cfg;

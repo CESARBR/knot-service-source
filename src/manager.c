@@ -41,6 +41,8 @@
 
 #include <glib.h>
 
+#include <json-c/json.h>
+
 #include <knot_protocol.h>
 
 #include "log.h"
@@ -98,57 +100,92 @@ static struct node_ops *node_ops[] = {
 };
 
 static credential_t *owner;
+static char *serverName = NULL;
 
-static GKeyFile *load_config(const char *file)
+static char *load_config(const char *file)
 {
-	GError *gerr = NULL;
-	GKeyFile *keyfile;
+	char *buffer = NULL;
+	int length;
+	FILE *fl = fopen(file, "r");
 
-	keyfile = g_key_file_new();
+	if (fl == NULL) {
+		LOG_ERROR("Failed to open file: %s", file);
 
-	g_key_file_set_list_separator(keyfile, ',');
-
-	if (!g_key_file_load_from_file(keyfile, file, 0, &gerr)) {
-		LOG_ERROR("Parsing %s: %s\n", file, gerr->message);
-		g_error_free(gerr);
-		g_key_file_free(keyfile);
-		return NULL;
+	}else{
+		fseek(fl, 0, SEEK_END);
+		length = ftell(fl);
+		fseek(fl, 0, SEEK_SET);
+		buffer = (char *) malloc((length+1)*sizeof(char));
+		if (buffer) {
+			fread(buffer, length, 1, fl);
+			buffer[length] = '\0';
+		}
+		fclose(fl);
 	}
-
-	return keyfile;
+	return buffer;
 }
 
-static int parse_config(GKeyFile *config)
+static int parse_config(char *config, const char **host, unsigned int *port,
+							const char *proto)
 {
-	GError *gerr = NULL;
-	char *uuid, *token;
+	const char *uuid;
+	const char *token;
+	const char *tmp;
 
-	uuid = g_key_file_get_string(config, "Credential", "UUID", &gerr);
-	if (gerr) {
-		LOG_ERROR("%s", gerr->message);
-		g_clear_error(&gerr);
-		return -EINVAL;
-	} else
-		LOG_INFO("UUID=%s\n", uuid);
+	json_object *jobj;
+	json_object *obj_cloud;
+	json_object *obj_tmp;
 
-	token = g_key_file_get_string(config, "Credential", "TOKEN", &gerr);
-	if (gerr) {
-		LOG_ERROR("%s", gerr->message);
-		g_clear_error(&gerr);
-		g_free(uuid);
-		return -EINVAL;
-	} else
-		LOG_INFO("TOKEN=%s\n", token);
+	int err = -EINVAL;
 
-	if (strlen(uuid) != KNOT_PROTOCOL_UUID_LEN ||
-				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN)
+	jobj = json_tokener_parse(config);
+	if (jobj == NULL)
 		return -EINVAL;
+
+
+	if (!json_object_object_get_ex(jobj, "cloud", &obj_cloud))
+		goto done;
+
+
+	if (!json_object_object_get_ex(obj_cloud, "uuid", &obj_tmp))
+		goto done;
+	uuid = json_object_get_string(obj_tmp);
+
+	if (!json_object_object_get_ex(obj_cloud, "token", &obj_tmp))
+		goto done;
+	token = json_object_get_string(obj_tmp);
+
+	if (host == NULL)
+		goto done;
+
+	if (*host == NULL) {
+		if (!json_object_object_get_ex(obj_cloud, "serverName",
+								 &obj_tmp))
+			goto done;
+		tmp = json_object_get_string(obj_tmp);
+		serverName = g_strdup(tmp);
+		*host = serverName;
+	}
+
+	if (port == NULL)
+		goto done;
+
+	if (*port == 0) {
+		if (!json_object_object_get_ex(obj_cloud, "port", &obj_tmp))
+			goto done;
+		*port = json_object_get_int(obj_tmp);
+	}
 
 	owner = g_new0(credential_t, 1);
-	owner->uuid = uuid;
-	owner->token= token;
+	owner->uuid = g_strdup(uuid);
+	owner->token = g_strdup(token);
 
-	return 0;
+	err = 0; /* Success */
+
+done:
+	/* Free mem used in json parse: */
+	json_object_put(jobj);
+	return err;
 }
 
 static void node_io_destroy(gpointer user_data)
@@ -346,17 +383,16 @@ int manager_start(const char *file, const char *host, unsigned int port,
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
-	GKeyFile *keyfile;
+	char *json_str;
 	int err, sock, i;
 	guint server_watch_id;
 
-	keyfile = load_config(file);
-	if (keyfile == NULL)
+	json_str = load_config(file);
+	if (json_str == NULL)
 		return -ENOENT;
 
-	err = parse_config(keyfile);
-
-	g_key_file_free(keyfile);
+	err = parse_config(json_str, &host, &port, proto);
+	free(json_str);
 
 	if (err	< 0)
 		return err;
@@ -469,5 +505,8 @@ void manager_stop(void)
 		g_free(owner->uuid);
 		g_free(owner->token);
 		g_free(owner);
+	}
+	if (serverName) {
+		g_free(serverName);
 	}
 }
