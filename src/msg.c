@@ -59,7 +59,8 @@ struct trust {
 	GSList *schema_tmp;		/*
 					* knot_schema to be submitted to cloud
 					*/
-	GSList *config;			/* knot_config and checksum */
+	GSList *config;			/* knot_config accepted from cloud */
+	GSList *config_tmp;		/* knot_config to be validate by GW */
 };
 
 /* Maps sockets to sessions  */
@@ -79,7 +80,7 @@ static void trust_free(struct trust *trust)
 	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
 	g_slist_free_full(trust->schema_tmp, g_free);
-	g_slist_free_full(trust->config, (GDestroyNotify) config_free);
+	g_slist_free_full(trust->config, config_free);
 	g_free(trust);
 }
 
@@ -108,6 +109,60 @@ static char *checksum_config(json_object *jobjkey)
 	c = json_object_to_json_string(jobjkey);
 
 	return g_compute_checksum_for_string(G_CHECKSUM_SHA1, c, strlen(c));
+}
+
+/*
+ * Checks if the config message received from the cloud is valid.
+ * Validates if the values are valid and if the event_flags are consistent
+ * with desired events.
+ * No need to check if sensor_id,event_flags and time_sec are positive for
+ * they are unsigned from protocol.
+ */
+static int config_is_valid(GSList *config_list)
+{
+	knot_msg_config *config;
+	GSList *list;
+	int diff_int, diff_dec;
+
+	for (list = config_list; list; list = g_slist_next(list)) {
+		config = list->data;
+
+		/* Check if event_flags are valid */
+		if ((config->values.event_flags | KNOT_EVT_FLAG_NONE) &&
+			!(config->values.event_flags & (KNOT_EVT_FLAG_TIME |
+						KNOT_EVT_FLAG_LOWER_THRESHOLD |
+						KNOT_EVT_FLAG_UPPER_THRESHOLD |
+						KNOT_EVT_FLAG_CHANGE |
+						KNOT_EVT_FLAG_UNREGISTERED)))
+			return KNOT_ERROR_UNKNOWN;
+
+		/* Check consistency of time_sec */
+		if (config->values.event_flags & KNOT_EVT_FLAG_TIME) {
+			if (config->values.time_sec == 0)
+				return KNOT_ERROR_UNKNOWN;
+		} else {
+			if (config->values.time_sec > 0)
+				return KNOT_ERROR_UNKNOWN;
+		}
+
+		/* Check consistency of limits */
+		if (config->values.event_flags &
+					(KNOT_EVT_FLAG_LOWER_THRESHOLD |
+					KNOT_EVT_FLAG_UPPER_THRESHOLD)) {
+
+			diff_int = config->values.upper_limit.val_f.value_int -
+				config->values.lower_limit.val_f.value_int;
+
+			diff_dec = config->values.upper_limit.val_f.value_dec -
+				config->values.lower_limit.val_f.value_dec;
+
+			if (diff_int < 0)
+				return KNOT_ERROR_UNKNOWN;
+			else if (diff_int == 0 && diff_dec <= 0)
+				return KNOT_ERROR_UNKNOWN;
+		}
+	}
+	return KNOT_SUCCESS;
 }
 
 /*
@@ -418,7 +473,7 @@ static GSList *parse_device_config(const char *json_str)
 	return list;
 
 done:
-	g_slist_free_full(list, (GDestroyNotify) config_free);
+	g_slist_free_full(list, config_free);
 	json_object_put(jobj);
 
 	return NULL;
@@ -582,7 +637,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	}
 
 	trust->schema = parse_device_schema(json.data);
-	trust->config = parse_device_config(json.data);
+	trust->config_tmp = parse_device_config(json.data);
 
 	free(json.data);
 
@@ -590,6 +645,15 @@ static int8_t msg_auth(int sock, int proto_sock,
 		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
 		trust_free(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	if (config_is_valid(trust->config_tmp)) {
+		LOG_ERROR("Invalid config message");
+		g_slist_free_full(trust->config_tmp, config_free);
+		trust->config_tmp = NULL;
+	} else {
+		trust->config = trust->config_tmp;
+		trust->config_tmp = NULL;
 	}
 
 	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock), trust);
