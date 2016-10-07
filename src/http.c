@@ -138,7 +138,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	long ehttp;
 	size_t i;
 
-	if(!request || !fetch) {
+	if (!request || !fetch) {
 		LOG_ERROR("Invalid argument!\n");
 		return -EINVAL;
 	}
@@ -201,7 +201,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	curl_easy_setopt(ch, CURLOPT_MAXREDIRS, 1L);
 	curl_easy_setopt(ch, CURLOPT_NOPROGRESS, 1L);
 
-	if(sockfd > 0) {
+	if (sockfd > 0) {
 		curl_easy_setopt(ch, CURLOPT_OPENSOCKETFUNCTION, opensocket);
 		curl_easy_setopt(ch, CURLOPT_OPENSOCKETDATA, &sockfd);
 		curl_easy_setopt(ch, CURLOPT_SOCKOPTFUNCTION, sockopt_callback);
@@ -213,7 +213,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	curl_slist_free_all(headers);
 
-	if(rcode != CURLE_OK) {
+	if (rcode != CURLE_OK) {
 		curl_easy_cleanup(ch);
 		LOG_ERROR("curl_easy_perform(): %s(%d)\n",
 					curl_easy_strerror(rcode), rcode);
@@ -261,7 +261,7 @@ static int http_connect(void)
 	server.sin_addr.s_addr = host_addr.s_addr;
 	server.sin_port = htons(host_port);
 
-	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0){
+	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0) {
 		err = errno;
 		LOG_ERROR("Meshblu connect(): %s(%d)\n", strerror(err), err);
 
@@ -384,7 +384,7 @@ static int http_probe(const char *host, unsigned int port)
 		return -err;
 	}
 
-	host_addr.s_addr = *((unsigned long *) hostent-> h_addr_list[0]);
+	host_addr.s_addr = *((unsigned long *) hostent->h_addr_list[0]);
 
 	LOG_INFO("Meshblu IP: %s\n", inet_ntoa(host_addr));
 
