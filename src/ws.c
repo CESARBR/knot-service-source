@@ -417,6 +417,67 @@ done:
 	return err;
 }
 
+static int ws_rmnode(int sock, const char *uuid, const char *token,
+							json_raw_t *json)
+{
+	int err;
+	const char *jobjstring;
+	json_object *jobj;
+	json_object *jarray;
+	const char *expected_result = "unregistered";
+
+	jobj = json_object_new_object();
+	jarray = json_object_new_array();
+
+	if (!jobj || !jarray) {
+		LOG_ERROR("JSON: no memory\n");
+		return -ENOMEM;
+	}
+
+	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
+	json_object_object_add(jobj, "token", json_object_new_string(token));
+
+	jobjstring = json_object_to_json_string(jobj);
+
+	json_object_array_add(jarray, json_object_new_string("unregister"));
+	json_object_array_add(jarray, jobj);
+
+	jobjstring = json_object_to_json_string(jarray);
+
+	LOG_INFO("TX JSON %s\n", jobjstring);
+
+	psd = g_new0(struct per_session_data_ws, 1);
+	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+
+	if (psd->ws == NULL) {
+		LOG_ERROR("Not found\n");
+		err = -EBADF;
+		goto done;
+	}
+
+	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	lws_callback_on_writable(psd->ws);
+
+	/* Keep serving context until server responds or an error occurs */
+	while (!got_response || connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
+
+	err = ret2errno(psd->json, expected_result);
+
+	if (err < 0)
+		goto done;
+
+	err = handle_response(json);
+done:
+	got_response = FALSE;
+	connection_error = FALSE;
+
+	g_free(psd);
+	json_object_put(jarray);
+
+	return err;
+}
+
 static int callback_lws_http(struct lws *wsi,
 					enum lws_callback_reasons reason,
 					void *user, void *in, size_t len)
@@ -627,4 +688,5 @@ struct proto_ops proto_ws = {
 	.close = ws_close,
 	.mknode = ws_mknode,
 	.signin = ws_signin,
+	.rmnode = ws_rmnode,
 };
