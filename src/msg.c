@@ -43,6 +43,15 @@
 #include "log.h"
 #include "msg.h"
 
+struct config {
+	knot_msg_config msg_config;	/*
+					 * knot_message_config accepted from
+					 * cloud
+					 */
+	char *hash;			/* Checksum of msg_config */
+
+};
+
 struct trust {
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
@@ -50,11 +59,19 @@ struct trust {
 	GSList *schema_tmp;		/*
 					* knot_schema to be submitted to cloud
 					*/
-	GSList *config;			/* knot_config accepted by cloud */
+	GSList *config;			/* knot_config and checksum */
 };
 
 /* Maps sockets to sessions  */
 static GHashTable *trust_list;
+
+static void config_free(gpointer mem)
+{
+	struct config *cfg = mem;
+
+	g_free(cfg->hash);
+	g_free(cfg);
+}
 
 static void trust_free(struct trust *trust)
 {
@@ -62,7 +79,7 @@ static void trust_free(struct trust *trust)
 	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
 	g_slist_free_full(trust->schema_tmp, g_free);
-	g_slist_free_full(trust->config, g_free);
+	g_slist_free_full(trust->config, (GDestroyNotify) config_free);
 	g_free(trust);
 }
 
@@ -82,6 +99,15 @@ static int sensor_id_cmp(gconstpointer a, gconstpointer b)
 	unsigned int sensor_id = GPOINTER_TO_UINT(b);
 
 	return sensor_id - schema->sensor_id;
+}
+
+static char *checksum_config(json_object *jobjkey)
+{
+	const char *c;
+
+	c = json_object_to_json_string(jobjkey);
+
+	return g_compute_checksum_for_string(G_CHECKSUM_SHA1, c, strlen(c));
 }
 
 /*
@@ -271,7 +297,7 @@ static GSList *parse_device_config(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
 	GSList *list = NULL;
-	knot_msg_config *entry;
+	struct config *entry;
 	int sensor_id, event_flags, time_sec, i;
 	knot_value_types lower_limit, upper_limit;
 	json_type jtype;
@@ -375,14 +401,15 @@ static GSList *parse_device_config(const char *json_str)
 						&upper_limit);
 		}
 
-		entry = g_new0(knot_msg_config, 1);
-		entry->sensor_id = sensor_id;
-		entry->values.event_flags = event_flags;
-		entry->values.time_sec = time_sec;
-		memcpy(&(entry->values.lower_limit), &lower_limit,
+		entry = g_new0(struct config, 1);
+		entry->msg_config.sensor_id = sensor_id;
+		entry->msg_config.values.event_flags = event_flags;
+		entry->msg_config.values.time_sec = time_sec;
+		memcpy(&(entry->msg_config.values.lower_limit), &lower_limit,
 						sizeof(knot_value_types));
-		memcpy(&(entry->values.upper_limit), &upper_limit,
+		memcpy(&(entry->msg_config.values.upper_limit), &upper_limit,
 						sizeof(knot_value_types));
+		entry->hash = checksum_config(jobjentry);
 		list = g_slist_append(list, entry);
 	}
 
@@ -391,7 +418,7 @@ static GSList *parse_device_config(const char *json_str)
 	return list;
 
 done:
-	g_slist_free_full(list, g_free);
+	g_slist_free_full(list, (GDestroyNotify) config_free);
 	json_object_put(jobj);
 
 	return NULL;
