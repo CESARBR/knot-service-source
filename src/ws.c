@@ -478,6 +478,67 @@ done:
 	return err;
 }
 
+static int ws_schema(int sock, const char *uuid, const char *token,
+					const char *jreq, json_raw_t *json)
+{
+	int err;
+	struct json_object *jobj, *ajobj, *jobjdev, *jarray, *jset;
+	const char *jobjstr;
+	const char *expected_result = "updated";
+
+	jobj = json_tokener_parse(jreq);
+	if (jobj == NULL)
+		return -EINVAL;
+
+	ajobj = json_object_new_array();
+	jarray = json_object_new_array();
+	jobjdev = json_object_new_object();
+
+	json_object_array_add(jarray, json_object_new_string("update"));
+	json_object_object_add(jobjdev, "uuid", json_object_new_string(uuid));
+	json_object_object_add(jobjdev, "token", json_object_new_string(token));
+	json_object_array_add(ajobj, jobjdev);
+
+	jset = json_object_new_object();
+	json_object_object_add(jset, "$set", jobj);
+
+	json_object_array_add(ajobj, jset);
+	json_object_array_add(jarray, ajobj);
+	jobjstr = json_object_to_json_string(jarray);
+
+	psd = g_new0(struct per_session_data_ws, 1);
+	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+
+	if (psd->ws == NULL) {
+		LOG_ERROR("Not found\n");
+		err = -EBADF;
+		goto done;
+	}
+
+	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstr);
+	lws_callback_on_writable(psd->ws);
+
+	/* Keep serving context until server responds or an error occurs */
+	while (!got_response || connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
+
+	err = ret2errno(psd->json, expected_result);
+
+	if (err < 0)
+		goto done;
+
+	err = handle_response(json);
+
+done:
+	got_response = FALSE;
+	connection_error = FALSE;
+
+	json_object_put(jarray);
+	g_free(psd);
+
+	return err;
+}
+
 static int callback_lws_http(struct lws *wsi,
 					enum lws_callback_reasons reason,
 					void *user, void *in, size_t len)
@@ -689,4 +750,5 @@ struct proto_ops proto_ws = {
 	.mknode = ws_mknode,
 	.signin = ws_signin,
 	.rmnode = ws_rmnode,
+	.schema = ws_schema,
 };
