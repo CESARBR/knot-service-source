@@ -26,5 +26,11 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int manager_start(const struct settings *settings);
-void manager_stop(void);
+struct settings {
+	char *host;
+	unsigned int port;
+	const char *proto;
+	char *uuid;
+	char *token;
+	const char *tty;
+};

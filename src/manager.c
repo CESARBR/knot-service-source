@@ -41,8 +41,6 @@
 
 #include <glib.h>
 
-#include <json-c/json.h>
-
 #include <knot_protocol.h>
 
 #include "log.h"
@@ -50,6 +48,7 @@
 #include "proto.h"
 #include "serial.h"
 #include "msg.h"
+#include "settings.h"
 #include "manager.h"
 
 /*
@@ -62,6 +61,8 @@ struct session {
 	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
 	struct node_ops *ops;
 };
+
+static credential_t *owner;
 
 static GSList *server_watch = NULL;
 static GSList *session_list = NULL;
@@ -98,95 +99,6 @@ static struct node_ops *node_ops[] = {
 	&serial_ops,
 	NULL
 };
-
-static credential_t *owner;
-static char *serverName = NULL;
-
-static char *load_config(const char *file)
-{
-	char *buffer = NULL;
-	int length;
-	FILE *fl = fopen(file, "r");
-
-	if (fl == NULL) {
-		LOG_ERROR("Failed to open file: %s", file);
-
-	}else{
-		fseek(fl, 0, SEEK_END);
-		length = ftell(fl);
-		fseek(fl, 0, SEEK_SET);
-		buffer = (char *) malloc((length+1)*sizeof(char));
-		if (buffer) {
-			fread(buffer, length, 1, fl);
-			buffer[length] = '\0';
-		}
-		fclose(fl);
-	}
-	return buffer;
-}
-
-static int parse_config(char *config, const char **host, unsigned int *port,
-							const char *proto)
-{
-	const char *uuid;
-	const char *token;
-	const char *tmp;
-
-	json_object *jobj;
-	json_object *obj_cloud;
-	json_object *obj_tmp;
-
-	int err = -EINVAL;
-
-	jobj = json_tokener_parse(config);
-	if (jobj == NULL)
-		return -EINVAL;
-
-
-	if (!json_object_object_get_ex(jobj, "cloud", &obj_cloud))
-		goto done;
-
-
-	if (!json_object_object_get_ex(obj_cloud, "uuid", &obj_tmp))
-		goto done;
-	uuid = json_object_get_string(obj_tmp);
-
-	if (!json_object_object_get_ex(obj_cloud, "token", &obj_tmp))
-		goto done;
-	token = json_object_get_string(obj_tmp);
-
-	if (host == NULL)
-		goto done;
-
-	if (*host == NULL) {
-		if (!json_object_object_get_ex(obj_cloud, "serverName",
-								 &obj_tmp))
-			goto done;
-		tmp = json_object_get_string(obj_tmp);
-		serverName = g_strdup(tmp);
-		*host = serverName;
-	}
-
-	if (port == NULL)
-		goto done;
-
-	if (*port == 0) {
-		if (!json_object_object_get_ex(obj_cloud, "port", &obj_tmp))
-			goto done;
-		*port = json_object_get_int(obj_tmp);
-	}
-
-	owner = g_new0(credential_t, 1);
-	owner->uuid = g_strdup(uuid);
-	owner->token = g_strdup(token);
-
-	err = 0; /* Success */
-
-done:
-	/* Free mem used in json parse: */
-	json_object_put(jobj);
-	return err;
-}
 
 static void node_io_destroy(gpointer user_data)
 {
@@ -378,28 +290,20 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-int manager_start(const char *file, const char *host, unsigned int port,
-					const char *proto, const char *tty)
+int manager_start(const struct settings *settings)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *server_io;
-	char *json_str;
 	int err, sock, i;
 	guint server_watch_id;
 
-	json_str = load_config(file);
-	if (json_str == NULL)
-		return -ENOENT;
-
-	err = parse_config(json_str, &host, &port, proto);
-	free(json_str);
-
-	if (err	< 0)
-		return err;
+	owner = g_new0(credential_t, 1);
+	owner->uuid = settings->uuid;
+	owner->token = settings->token;
 
 	/* Tell Serial which port to use */
-	if (tty)
-		serial_load_config(tty);
+	if (settings->tty)
+		serial_load_config(settings->tty);
 
 	/* Starting msg layer */
 	err = msg_start();
@@ -414,13 +318,14 @@ int manager_start(const char *file, const char *host, unsigned int port,
 	 */
 
 	for (i = 0; proto_ops[i]; i++) {
-		if (strcmp(proto, proto_ops[i]->name) != 0)
+		if (strcmp(settings->proto, proto_ops[i]->name) != 0)
 			continue;
 
-		if (proto_ops[i]->probe(host, port) < 0)
+		if (proto_ops[i]->probe(settings->host, settings->port) < 0)
 			return -EIO;
 
-		LOG_INFO("proto_ops(%p): %s\n", proto_ops[i], proto_ops[i]->name);
+		LOG_INFO("proto_ops(%p): %s\n", proto_ops[i],
+							proto_ops[i]->name);
 		proto_index = i;
 	}
 
@@ -434,7 +339,8 @@ int manager_start(const char *file, const char *host, unsigned int port,
 	for (i = 0; node_ops[i]; i++) {
 
 		/* Ignore Serial driver if port is not informed */
-		if ((strcmp("Serial", node_ops[i]->name) == 0) && tty == NULL)
+		if ((strcmp("Serial", node_ops[i]->name) == 0) &&
+							settings->tty == NULL)
 			continue;
 
 		if (node_ops[i]->probe() < 0)
@@ -500,13 +406,4 @@ void manager_stop(void)
 	}
 
 	g_slist_free(session_list);
-
-	if (owner) {
-		g_free(owner->uuid);
-		g_free(owner->token);
-		g_free(owner);
-	}
-	if (serverName) {
-		g_free(serverName);
-	}
 }
