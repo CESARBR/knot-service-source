@@ -769,7 +769,6 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	sensor_id = kmdata->sensor_id;
 
-
 	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
 								sensor_id_cmp);
 	if (!list) {
@@ -797,7 +796,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	switch (schema->values.value_type) {
 	case KNOT_VALUE_TYPE_INT:
 		json_object_object_add(jobj, "value",
-			       json_object_new_int(kdata->values.val_i.value));
+				json_object_new_int(kdata->values.val_i.value));
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 
@@ -809,11 +808,11 @@ static int8_t msg_data(int sock, int proto_sock,
 			(kdata->values.val_f.value_dec / pow(10, len)));
 
 		json_object_object_add(jobj, "value",
-				       json_object_new_double(doubleval));
+					json_object_new_double(doubleval));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(jobj, "value",
-			       json_object_new_boolean(kdata->values.val_b));
+				json_object_new_boolean(kdata->values.val_b));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		break;
@@ -823,6 +822,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	}
 
 	jobjstr = json_object_to_json_string(jobj);
+
 	printf("JSON: %s\n", jobjstr);
 
 	memset(&json, 0, sizeof(json));
