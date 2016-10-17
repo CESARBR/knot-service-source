@@ -245,28 +245,17 @@ static GSList *parse_device_schema(const char *json_str)
 	if (!jobj)
 		return NULL;
 
-	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array ||
-				json_object_array_length(jobjarray) != 1)
-		goto done;
-
-	/* Getting first entry of 'devices' array :
+	/* Expected JSON object is in the following format:
 	 *
-	 * {"devices":[{"uuid": ...
+	 * {"uuid": ...
 	 *		"schema" : [
 	 *			{"sensor_id": x, "value_type": w,
 	 *				"unit": z "type_id": y, "name": "foo"}]
-	 *		}]
 	 * }
 	 */
-	jobjentry = json_object_array_get_idx(jobjarray, 0);
-	if (!jobjentry)
-		goto done;
 
 	/* 'schema' is an array */
-	if (!json_object_object_get_ex(jobjentry, "schema", &jobjarray))
+	if (!json_object_object_get_ex(jobj, "schema", &jobjarray))
 		goto done;
 
 	if (json_object_get_type(jobjarray) != json_type_array)
