@@ -34,6 +34,8 @@
 
 #include <glib.h>
 
+#include <json-c/json.h>
+
 #include "log.h"
 #include "proto.h"
 
@@ -65,6 +67,60 @@ static gboolean timeout_ws(gpointer user_data)
 	lws_service(context, 0);
 
 	return TRUE;
+}
+/*
+ * Return '0' if device has been created or a negative value
+ * mapped to generic Linux -errno codes.
+ */
+static int ret2errno(const char *json_str, const char *expected_result)
+{
+	json_object *jobj, *jobjentry;
+	int err = -EIO;
+
+	jobj = json_tokener_parse(json_str);
+	if (jobj == NULL)
+		goto done;
+
+	if (json_object_get_type(jobj) == json_type_array) {
+		jobjentry = json_object_array_get_idx(jobj, 0);
+		if (jobjentry == NULL)
+			goto done;
+	}
+	if (!strcmp(json_object_get_string(jobjentry), expected_result))
+		err = 0;
+
+done:
+	json_object_put(jobj);
+
+	return err;
+}
+static int handle_response(json_raw_t *json)
+{
+	size_t realsize;
+	json_object *jobj, *jres;
+	const char *jobjstringres;
+
+	jres = json_tokener_parse(psd->json);
+	if (jres == NULL)
+		return -EINVAL;
+
+	jobj = json_object_array_get_idx(jres, 1);
+	jobjstringres = json_object_to_json_string(jobj);
+
+	realsize = strlen(jobjstringres) + 1;
+
+	json->data = (char *) realloc(json->data, json->size + realsize);
+	if (json->data == NULL) {
+		LOG_ERROR("Not enough memory\n");
+		return -ENOMEM;
+	}
+
+	memcpy(json->data + json->size, jobjstringres, realsize);
+	json->size += realsize;
+	json->data[json->size - 1] = 0;
+	json_object_put(jres);
+
+	return 0;
 }
 
 static const char *lws_reason2str(enum lws_callback_reasons reason)
@@ -126,14 +182,13 @@ static const char *lws_reason2str(enum lws_callback_reasons reason)
 		return "PROTOCOL_INIT";
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		return "PROTOCOL_DESTROY";
-	case LWS_CALLBACK_WSI_CREATE: /* always protocol[0] */
+	case LWS_CALLBACK_WSI_CREATE:
 		return "WSI_CREATE";
-	case LWS_CALLBACK_WSI_DESTROY: /* always protocol[0] */
+	case LWS_CALLBACK_WSI_DESTROY:
 		return "WSI_DESTROY";
 	case LWS_CALLBACK_GET_THREAD_ID:
 		return "GET_THREAD_ID";
 
-	/* external poll() management support */
 	case LWS_CALLBACK_ADD_POLL_FD:
 		return "ADD_POLL_FD";
 	case LWS_CALLBACK_DEL_POLL_FD:
@@ -147,9 +202,8 @@ static const char *lws_reason2str(enum lws_callback_reasons reason)
 
 	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
 		return "OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY";
-	case LWS_CALLBACK_USER: /* user code can use any including / above */
+	case LWS_CALLBACK_USER:
 		return "USER";
-
 
 	case LWS_CALLBACK_RECEIVE_PONG:
 		return "RECEIVE PONG";
@@ -209,11 +263,59 @@ static void ws_close(int sock)
 static int ws_mknode(int sock, const char *owner_uuid,
 					json_raw_t *json)
 {
-	return -ENOSYS;
+	int err;
+	json_object *jobj, *jarray;
+	const char *jobjstring;
+	const char *expected_result = "registered";
+
+	jobj = json_tokener_parse(owner_uuid);
+	if (jobj == NULL)
+		return -EINVAL;
+
+	jarray = json_object_new_array();
+	json_object_array_add(jarray, json_object_new_string("register"));
+	json_object_array_add(jarray, jobj);
+	jobjstring = json_object_to_json_string(jarray);
+
+	psd = g_new0(struct per_session_data_ws, 1);
+	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+
+	if (psd->ws == NULL) {
+		err = -EBADF;
+		LOG_ERROR("Not found\n");
+		goto done;
+	}
+	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	lws_callback_on_writable(psd->ws);
+
+	/* Keep serving context until server responds or an error occurs */
+	while (!got_response || connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
+
+	err = ret2errno(psd->json, expected_result);
+
+	/*
+	 * The expected JSON format is:
+	 * ["registered", {"uuid":"VALUE",...,"token":"VALUE"}]
+	 */
+
+	if (err < 0)
+		goto done;
+
+	err = handle_response(json);
+
+done:
+	connection_error = FALSE;
+	got_response = FALSE;
+
+	json_object_put(jarray);
+	g_free(psd);
+
+	return err;
 }
 
-static int ws_signin(int sock,const char *uuid, const char *token,
-						json_raw_t *json)
+static int ws_signin(int sock, const char *uuid, const char *token,
+							json_raw_t *json)
 {
 	return -ENOSYS;
 }
@@ -336,7 +438,6 @@ static int callback_lws_http(struct lws *wsi,
 }
 
 static struct lws_protocols protocols[] = {
-
 	{
 		"http-only",
 		callback_lws_http,
