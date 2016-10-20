@@ -636,17 +636,90 @@ done:
 }
 
 /*
+ * Returns a list of all the configs that changed compared to the stored in
+ * trust->config. If the trust->config is empty, returns a list with all the
+ * configs that were received by the cloud. If nothing was received from the
+ * cloud, returns NULL.
+ */
+static GSList *get_changed_config(GSList *current, GSList *received)
+{
+	GSList *cur;
+	GSList *rec = received;
+	struct config *rcfg;
+	struct config *ccfg;
+	knot_msg_config *kmsg;
+	GSList *list = NULL;
+	gboolean match;
+
+	/*If nothing was received from the cloud, returns NULL.*/
+	if (!received)
+		return NULL;
+
+	/*
+	 * If there is nothing in the current config list, returns all that was
+	 *received from the cloud
+	 */
+	if (!current) {
+		while (rec) {
+			rcfg = rec->data;
+			kmsg = g_new0(knot_msg_config, 1);
+			memcpy(kmsg, &rcfg->kmcfg, sizeof(knot_msg_config));
+			kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
+			kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
+							sizeof(kmsg->values);
+			list = g_slist_append(list, kmsg);
+			rec = g_slist_next(rec);
+		}
+		return list;
+	}
+	/*
+	 * Compares the received configs with the ones already stored.
+	 * If the hash matches one in the current list, the config did not
+	 * change.
+	 * If no match was found, then either the config for that sensor changed
+	 * or it is a new sensor.
+	 */
+	/*
+	 * TODO:
+	 * If a sensor_id is not in the list anymore, notify the thing.
+	 */
+	/*
+	 * TODO:
+	 * Define which approach is better, the current or when at least one
+	 * config changes, the whole config message should be sent.
+	 */
+	while (rec) {
+		rcfg = rec->data;
+		match = FALSE;
+		for (cur = current; cur; cur = g_slist_next(cur)) {
+			ccfg = cur->data;
+			if (!strcmp(ccfg->hash, rcfg->hash)) {
+				match = TRUE;
+				break;
+			}
+		}
+		if (!match) {
+			kmsg = g_new0(knot_msg_config, 1);
+			memcpy(kmsg, &rcfg->kmcfg, sizeof(knot_msg_config));
+			kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
+			kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
+							sizeof(kmsg->values);
+			list = g_slist_append(list, kmsg);
+		}
+		rec = g_slist_next(rec);
+	}
+
+	return list;
+}
+
+/*
  * Parses the JSON from cloud to get all the configs. If the config is valid,
- * insert headers in the config messages and put them in the list that
- * will be sent to the thing. Returns the list with the messages to be sent or
- * NULL if any error occurs.
+ * checks if any changed, and put them in the list that  will be sent to the
+ * thing. Returns the list with the messages to be sent or  NULL if any error.
  */
 static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 {
 	struct trust *trust;
-	struct config *entry;
-	knot_msg_config *kmsg;
-	GSList *config_list = NULL;
 	GSList *list;
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
@@ -678,22 +751,14 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 		return NULL;
 	}
 
+	list = get_changed_config(trust->config, trust->config_tmp);
 	g_slist_free_full(trust->config, config_free);
 	trust->config = trust->config_tmp;
 	trust->config_tmp = NULL;
 
-	/* TODO: Send only the CONFIGs that changed */
-	for (list = trust->config; list; list = g_slist_next(list)) {
-		entry = list->data;
-		kmsg = &entry->kmcfg;
-		kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
-		kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
-							sizeof(kmsg->values);
-		config_list = g_slist_append(config_list, kmsg);
-	}
 	*result = KNOT_SUCCESS;
 
-	return config_list;
+	return list;
 }
 
 /*
@@ -757,7 +822,7 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 			LOG_ERROR("KNOT SEND ERROR\n");
 		tmp = g_slist_next(tmp);
 	}
-	g_slist_free(list);
+	g_slist_free_full(list, g_free);
 }
 
 
