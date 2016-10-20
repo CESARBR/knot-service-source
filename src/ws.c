@@ -37,8 +37,28 @@
 #include "log.h"
 #include "proto.h"
 
+#define MAX_PAYLOAD		4096
+#define SERVICE_TIMEOUT		100
+
 struct lws_context *context;
 static GHashTable *wstable;
+gboolean got_response = FALSE;
+gboolean connection_error = FALSE;
+gboolean connected = FALSE;
+static struct lws *ws;
+
+struct per_session_data_ws {
+	struct lws *ws;
+	/*
+	 * This buffer MUST have LWS_PRE bytes valid BEFORE the pointer. this
+	 * is defined in the lws documentation,
+	 */
+	unsigned char buffer[LWS_PRE + MAX_PAYLOAD];
+	unsigned int len;
+	char *json;
+};
+
+struct per_session_data_ws *psd;
 
 static gboolean timeout_ws(gpointer user_data)
 {
@@ -198,13 +218,119 @@ static int ws_signin(int sock,const char *uuid, const char *token,
 	return -ENOSYS;
 }
 
-
 static int callback_lws_http(struct lws *wsi,
 					enum lws_callback_reasons reason,
 					void *user, void *in, size_t len)
 
 {
 	LOG_INFO("reason(%02X): %s\n", reason, lws_reason2str(reason));
+
+	switch (reason) {
+	case LWS_CALLBACK_ESTABLISHED:
+		LOG_INFO("LWS_CALLBACK_ESTABLISHED\n");
+		break;
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+		LOG_INFO("LWS_CALLBACK_CLIENT_CONNECTION_ERROR\n");
+		connection_error = TRUE;
+		break;
+	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
+		break;
+	case LWS_CALLBACK_CLIENT_ESTABLISHED:
+		LOG_INFO("LWS_CALLBACK_CLIENT_ESTABLISHED\n");
+		connected = TRUE;
+		break;
+	case LWS_CALLBACK_CLOSED:
+		LOG_INFO("LWS_CALLBACK_CLOSED\n");
+		connection_error = TRUE;
+		break;
+	case LWS_CALLBACK_CLOSED_HTTP:
+		break;
+	case LWS_CALLBACK_RECEIVE:
+		break;
+	case LWS_CALLBACK_CLIENT_RECEIVE:
+		{
+		((char *)in)[len] = '\0';
+		psd->json = (char *) in;
+		got_response = TRUE;
+		LOG_INFO("JSON RX %d '%s'\n", (int)len, (char *)psd->json);
+		/* Flow control will be enabled again when client writes data */
+		lws_rx_flow_control(wsi, 0);
+		}
+		break;
+	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
+		break;
+	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		{
+		int l;
+
+		if (psd->ws == wsi)
+			LOG_INFO("Client wsi %p writable\n", wsi);
+
+		l = lws_write(psd->ws, &psd->buffer[LWS_PRE], psd->len,
+								LWS_WRITE_TEXT);
+		LOG_INFO("Wrote (%d) bytes\n", l);
+
+		/* Enable RX when after message is successfully sent */
+		if (l < 0) {
+			connection_error = TRUE;
+			return -1;
+		}
+			lws_rx_flow_control(wsi, 1);
+		}
+		break;
+	case LWS_CALLBACK_SERVER_WRITEABLE:
+	case LWS_CALLBACK_HTTP:
+	case LWS_CALLBACK_HTTP_BODY:
+	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
+	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
+	case LWS_CALLBACK_HTTP_WRITEABLE:
+	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
+	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
+	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
+	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
+	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
+	case LWS_CALLBACK_PROTOCOL_INIT:
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+	case LWS_CALLBACK_WSI_CREATE: // always protocol[0]
+	case LWS_CALLBACK_WSI_DESTROY: // always protocol[0]
+	case LWS_CALLBACK_GET_THREAD_ID:
+	case LWS_CALLBACK_ADD_POLL_FD:
+	case LWS_CALLBACK_DEL_POLL_FD:
+	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
+	case LWS_CALLBACK_LOCK_POLL:
+	case LWS_CALLBACK_UNLOCK_POLL:
+	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
+	case LWS_CALLBACK_USER:
+	case LWS_CALLBACK_RECEIVE_PONG:
+	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
+	case LWS_CALLBACK_WS_EXT_DEFAULTS:
+	case LWS_CALLBACK_CGI:
+	case LWS_CALLBACK_CGI_TERMINATED:
+	case LWS_CALLBACK_CGI_STDIN_DATA:
+	case LWS_CALLBACK_CGI_STDIN_COMPLETED:
+	case LWS_CALLBACK_ESTABLISHED_CLIENT_HTTP:
+	case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
+	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP:
+	case LWS_CALLBACK_COMPLETED_CLIENT_HTTP:
+	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
+	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
+	case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+	case LWS_CALLBACK_CHECK_ACCESS_RIGHTS:
+	case LWS_CALLBACK_PROCESS_HTML:
+	case LWS_CALLBACK_ADD_HEADERS:
+	case LWS_CALLBACK_SESSION_INFO:
+	case LWS_CALLBACK_GS_EVENT:
+	case LWS_CALLBACK_HTTP_PMO:
+	case LWS_CALLBACK_CLIENT_HTTP_WRITEABLE:
+	case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
+		break;
+	default:
+		break;
+	}
 
 	return 0;
 }
@@ -223,7 +349,6 @@ static struct lws_protocols protocols[] = {
 
 static int ws_connect(void)
 {
-	struct lws *ws;
 	struct lws_client_connect_info info;
 	static char ads_port[300];
 
@@ -235,8 +360,7 @@ static int ws_connect(void)
 
 	memset(&info, 0, sizeof(info));
 
-	snprintf(ads_port, sizeof(ads_port), "%s:%u",
-		 address, port);
+	snprintf(ads_port, sizeof(ads_port), "%s:%u", address, port);
 
 	LOG_INFO("Connecting to %s...\n", ads_port);
 
@@ -245,8 +369,10 @@ static int ws_connect(void)
 	info.port = port;
 	info.ssl_connection = use_ssl;
 	info.path = "/ws/v2";
-	info.host = address;
+	info.host = info.address;
+	info.origin = info.address;
 	info.ietf_version_or_minus_one = -1;
+	info.protocol = protocols[0].name;
 
 	ws = lws_client_connect_via_info(&info);
 
@@ -257,9 +383,13 @@ static int ws_connect(void)
 		return -err;
 	}
 
-	sock = lws_get_socket_fd(ws);
+	while (!connected || connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
 
+	sock = lws_get_socket_fd(ws);
 	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
+
+	connected = FALSE;
 
 	/* FIXME: Investigate alternatives for libwebsocket_service() */
 	g_timeout_add_seconds(1, timeout_ws, NULL);
