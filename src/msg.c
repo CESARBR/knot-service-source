@@ -66,6 +66,8 @@ struct trust {
 /* Maps sockets to sessions  */
 static GHashTable *trust_list;
 
+static char owner_uuid[37];
+
 static void config_free(gpointer mem)
 {
 	struct config *cfg = mem;
@@ -468,8 +470,7 @@ done:
 	return NULL;
 }
 
-static int8_t msg_register(const credential_t *owner,
-					int sock, int proto_sock,
+static int8_t msg_register(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_register *kreq,
 					knot_msg_credential *krsp)
@@ -499,7 +500,7 @@ static int8_t msg_register(const credential_t *owner,
 	json_object_object_add(jobj, "name",
 			       json_object_new_string(kreq->devName));
 	json_object_object_add(jobj, "owner",
-				json_object_new_string(owner->uuid));
+				json_object_new_string(owner_uuid));
 
 	jobjstring = json_object_to_json_string(jobj);
 
@@ -841,7 +842,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
-ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
+ssize_t msg_process(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
 				void *opdu, size_t omtu)
@@ -883,7 +884,7 @@ ssize_t msg_process(const credential_t *owner, int sock, int proto_sock,
 	case KNOT_MSG_REGISTER_REQ:
 
 		/* Payload length is set by the caller */
-		result = msg_register(owner, sock, proto_sock, proto_ops,
+		result = msg_register(sock, proto_sock, proto_ops,
 						&kreq->reg, &krsp->cred);
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
@@ -916,8 +917,11 @@ done:
 	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
 }
 
-int msg_start(void)
+int msg_start(const char *uuid)
 {
+	memset(owner_uuid, 0, sizeof(owner_uuid));
+	strncpy(owner_uuid, uuid, sizeof(owner_uuid));
+
 	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					NULL, (GDestroyNotify) trust_free);
 

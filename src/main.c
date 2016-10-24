@@ -255,7 +255,7 @@ int main(int argc, char *argv[])
 		manager_stop();
 		close(inotifyFD);
 		LOG_ERROR("inotify_add_watch(): %s\n", opt_cfg);
-		return EXIT_FAILURE;
+		goto failure;
 	}
 	/* Setting gio channel to watch inotify fd */
 	inotify_io = g_io_channel_unix_new(inotifyFD);

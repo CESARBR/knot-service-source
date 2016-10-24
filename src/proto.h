@@ -31,11 +31,6 @@ typedef struct {
 	size_t size;
 } json_raw_t;
 
-typedef struct {
-	char *uuid;
-	char *token;
-} credential_t;
-
 /* Node operations */
 struct proto_ops {
 	const char *name;
