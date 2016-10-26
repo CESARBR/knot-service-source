@@ -39,6 +39,8 @@
 #include <knot_types.h>
 #include <knot_protocol.h>
 
+#include <unistd.h>
+
 #include "proto.h"
 #include "log.h"
 #include "msg.h"
@@ -58,6 +60,11 @@ struct trust {
 					*/
 	GSList *config;			/* knot_config accepted from cloud */
 	GSList *config_tmp;		/* knot_config to be validate by GW */
+};
+
+struct proto_watch {
+	unsigned int id;
+	GIOChannel *node_io;
 };
 
 /* Maps sockets to sessions  */
@@ -89,6 +96,18 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 	int sock = g_io_channel_unix_get_fd(io);
 
 	g_hash_table_remove(trust_list, GINT_TO_POINTER(sock));
+
+	return FALSE;
+}
+
+static gboolean proto_hup_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct proto_watch *proto_watch = user_data;
+
+	g_source_remove(proto_watch->id);
+	g_io_channel_unref(proto_watch->node_io);
+	g_free(proto_watch);
 
 	return FALSE;
 }
@@ -135,14 +154,26 @@ static int config_is_valid(GSList *config_list)
 						KNOT_EVT_FLAG_UPPER_THRESHOLD |
 						KNOT_EVT_FLAG_CHANGE |
 						KNOT_EVT_FLAG_UNREGISTERED)))
+			/*
+			 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+			 * KNOT_INVALID_CONFIG in new protocol
+			 */
 			return KNOT_ERROR_UNKNOWN;
 
 		/* Check consistency of time_sec */
 		if (config->values.event_flags & KNOT_EVT_FLAG_TIME) {
 			if (config->values.time_sec == 0)
+				/*
+				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+				 * KNOT_INVALID_CONFIG in new protocol
+				 */
 				return KNOT_ERROR_UNKNOWN;
 		} else {
 			if (config->values.time_sec > 0)
+				/*
+				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+				 * KNOT_INVALID_CONFIG in new protocol
+				 */
 				return KNOT_ERROR_UNKNOWN;
 		}
 
@@ -158,8 +189,16 @@ static int config_is_valid(GSList *config_list)
 				config->values.lower_limit.val_f.value_dec;
 
 			if (diff_int < 0)
+				/*
+				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+				 * KNOT_INVALID_CONFIG in new protocol
+				 */
 				return KNOT_ERROR_UNKNOWN;
 			else if (diff_int == 0 && diff_dec <= 0)
+				/*
+				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+				 * KNOT_INVALID_CONFIG in new protocol
+				 */
 				return KNOT_ERROR_UNKNOWN;
 		}
 	}
@@ -596,13 +635,141 @@ done:
 	return result;
 }
 
+/*
+ * Parses the JSON from cloud to get all the configs. If the config is valid,
+ * insert headers in the config messages and put them in the list that
+ * will be sent to the thing. Returns the list with the messages to be sent or
+ * NULL if any error occurs.
+ */
+static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
+{
+	struct trust *trust;
+	struct config *entry;
+	knot_msg_config *kmsg;
+	GSList *config_list = NULL;
+	GSList *list;
+
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
+		LOG_INFO("Permission denied!\n");
+		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		return NULL;
+	}
+
+	trust->config_tmp = parse_device_config(json.data);
+
+	/*
+	 * TODO:
+	 * json.data should not be released here. 'free' should be called in the
+	 * same context (file/function) of the malloc.
+	 */
+	free(json.data);
+
+	/* config_is_valid() returns 0 if SUCCESS */
+	if (config_is_valid(trust->config_tmp)) {
+		LOG_ERROR("Invalid config message\n");
+		g_slist_free_full(trust->config_tmp, config_free);
+		trust->config_tmp = NULL;
+		/*
+		 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
+		 * KNOT_INVALID_CONFIG in new protocol
+		 */
+		*result = KNOT_NO_DATA;
+		return NULL;
+	}
+
+	g_slist_free_full(trust->config, config_free);
+	trust->config = trust->config_tmp;
+	trust->config_tmp = NULL;
+
+	/* TODO: Send only the CONFIGs that changed */
+	for (list = trust->config; list; list = g_slist_next(list)) {
+		entry = list->data;
+		kmsg = &entry->kmcfg;
+		kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
+		kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
+							sizeof(kmsg->values);
+		config_list = g_slist_append(config_list, kmsg);
+	}
+	*result = KNOT_SUCCESS;
+
+	return config_list;
+}
+
+/*
+ * Sends the messages to the THING. Expects a response from the gateway
+ * acknowledging that the message was successfully received.
+ */
+static int fw_push(int sock, knot_msg *kmsg)
+{
+	knot_msg_header resp;
+	ssize_t nbytes;
+	int err;
+
+	nbytes = write(sock, kmsg->buffer, kmsg->hdr.payload_len +
+							sizeof(kmsg->hdr));
+	if (nbytes < 0) {
+		err = errno;
+		LOG_ERROR("node_ops: %s(%d)\n", strerror(err), err);
+		return -err;
+	}
+
+	nbytes = read(sock, &resp, sizeof(knot_msg_header));
+	if (nbytes < 0) {
+		err = errno;
+		LOG_ERROR("KNOT RESP NOT RECEIVED: %s(%d)\n",
+							strerror(err), err);
+		return -err;
+	}
+	if (resp.type == KNOT_MSG_CONFIG_RESP)
+		LOG_INFO("KNOT CONFIG RECEIVED\n");
+	/*TODO LOG_INFO when "send data" is sent and ack successfully */
+
+	return 0;
+}
+
+/*
+ * Callback that parses the JSON for config (and in the future, send data)
+ * messages. It is called from the protocol that is used to communicate with
+ * the cloud (e.g. http, websocket).
+ */
+static void proto_watch_cb(json_raw_t json, void *user_data)
+{
+	const struct proto_watch *watch = user_data;
+	int sock;
+	ssize_t result;
+	GSList *list;
+	GSList *tmp;
+
+	sock = g_io_channel_unix_get_fd(watch->node_io);
+
+	list = msg_config(sock, json, &result);
+	/*
+	 * TODO
+	 * Parse JSON to "send data" and append in the list that will be sent
+	 * to thing.
+	 */
+
+	tmp = list;
+	while (tmp) {
+		result = fw_push(sock, tmp->data);
+		if (result)
+			LOG_ERROR("KNOT SEND ERROR\n");
+		tmp = g_slist_next(tmp);
+	}
+	g_slist_free(list);
+}
+
+
 static int8_t msg_auth(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const knot_msg_authentication *kmauth)
 {
 	GIOChannel *io;
+	GIOChannel *proto_io;
 	json_raw_t json;
 	struct trust *trust;
+	struct proto_watch *proto_watch;
 	int err;
 
 	if (g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock))) {
@@ -651,6 +818,18 @@ static int8_t msg_auth(int sock, int proto_sock,
 	io = g_io_channel_unix_new(sock);
 	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
 	g_io_channel_unref(io);
+
+
+	proto_watch = g_new0(struct proto_watch, 1);
+	proto_watch->id = proto_register_watch(proto_sock, trust->uuid,
+				trust->token, proto_watch_cb, proto_watch);
+	proto_watch->node_io = g_io_channel_ref(io);
+
+	/* Add a watch to remove source when cloud disconnects */
+	proto_io = g_io_channel_unix_new(proto_sock);
+	g_io_add_watch(proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, proto_hup_cb,
+			proto_watch);
+	g_io_channel_unref(proto_io);
 
 	return KNOT_SUCCESS;
 }
