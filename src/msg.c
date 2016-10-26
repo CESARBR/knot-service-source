@@ -44,11 +44,8 @@
 #include "msg.h"
 
 struct config {
-	knot_msg_config msg_config;	/*
-					 * knot_message_config accepted from
-					 * cloud
-					 */
-	char *hash;			/* Checksum of msg_config */
+	knot_msg_config kmcfg;		/* knot_message_config from cloud */
+	char *hash;			/* Checksum of kmcfg */
 
 };
 
@@ -448,12 +445,12 @@ static GSList *parse_device_config(const char *json_str)
 		}
 
 		entry = g_new0(struct config, 1);
-		entry->msg_config.sensor_id = sensor_id;
-		entry->msg_config.values.event_flags = event_flags;
-		entry->msg_config.values.time_sec = time_sec;
-		memcpy(&(entry->msg_config.values.lower_limit), &lower_limit,
+		entry->kmcfg.sensor_id = sensor_id;
+		entry->kmcfg.values.event_flags = event_flags;
+		entry->kmcfg.values.time_sec = time_sec;
+		memcpy(&(entry->kmcfg.values.lower_limit), &lower_limit,
 						sizeof(knot_value_types));
-		memcpy(&(entry->msg_config.values.upper_limit), &upper_limit,
+		memcpy(&(entry->kmcfg.values.upper_limit), &upper_limit,
 						sizeof(knot_value_types));
 		entry->hash = checksum_config(jobjentry);
 		list = g_slist_append(list, entry);
