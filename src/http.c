@@ -71,6 +71,25 @@ static char *host_uri;
 static char *device_uri;
 static char *data_uri;
 
+/* Struct used to fetch data from cloud and send to THING */
+struct to_fetch {
+	int proto_sock;
+	char uuid[MESHBLU_UUID_SIZE+1];		/* UUID + '\0' */
+	char token[MESHBLU_TOKEN_SIZE+1];	/* TOKEN + '\0' */
+	void (*proto_watch_cb)(json_raw_t, void *);
+	void *user_data;
+};
+
+static gboolean http_hup_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct to_fetch *fetch_watch = user_data;
+
+	g_free(fetch_watch);
+
+	return FALSE;
+}
+
 static int http2errno(long ehttp)
 {
 	switch (ehttp) {
@@ -444,6 +463,78 @@ static void http_remove(void)
 	g_free(host_uri);
 	g_free(device_uri);
 	g_free(data_uri);
+}
+/* Gets all the data from the device with the given uuid and token */
+static int http_fetch(int sock, const char *uuid, const char *token,
+							json_raw_t *json)
+{
+	/* Length: device_uri + '/' + UUID + '\0' */
+	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
+
+	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
+
+	/*
+	* HTTP 200: OK
+	* Return '0' if config not fails or a negative value
+	* mapped to generic Linux -errno codes.
+	*/
+
+	return fetch_url(sock, uri, NULL, uuid, token, json, "GET");
+}
+
+/*
+ * Gets the data from the device with the passed uuid and token and sends it to
+ * msg.c to parse and then send to the THING if necessary
+ */
+static gboolean proto_poll(gpointer user_data)
+{
+	struct to_fetch *data = user_data;
+	int result;
+	json_raw_t json;
+
+	memset(&json, 0, sizeof(json_raw_t));
+	result = http_fetch(data->proto_sock, data->uuid,
+						data->token, &json);
+	/*
+	 * TODO: Remove all HTTP specific headers from JSON before sending to
+	 * msg.c.
+	 */
+	if (result) {
+		LOG_ERROR("signin(): %s(%d)\n", strerror(-result), -result);
+		return TRUE;
+	}
+
+	data->proto_watch_cb(json, data->user_data);
+
+	return TRUE;
+}
+
+/*
+ * Watch or poll the cloud to changes in the device.
+ */
+unsigned int proto_register_watch(int proto_sock, const char *uuid,
+				const char *token, void (*proto_watch_cb)
+				(json_raw_t, void *), void *user_data)
+{
+	unsigned int gsource;
+	struct to_fetch *fetch_data;
+	GIOChannel *proto_io;
+
+	fetch_data = g_new0(struct to_fetch, 1);
+	memcpy(fetch_data->uuid, uuid, MESHBLU_UUID_SIZE+1);
+	memcpy(fetch_data->token, token, MESHBLU_TOKEN_SIZE+1);
+	fetch_data->proto_sock = proto_sock;
+	fetch_data->proto_watch_cb = proto_watch_cb;
+	fetch_data->user_data = user_data;
+
+	gsource = g_timeout_add_seconds(10, proto_poll, fetch_data);
+
+	proto_io = g_io_channel_unix_new(fetch_data->proto_sock);
+	g_io_add_watch(proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, http_hup_cb,
+			fetch_data);
+	g_io_channel_unref(proto_io);
+
+	return gsource;
 }
 
 struct proto_ops proto_http = {
