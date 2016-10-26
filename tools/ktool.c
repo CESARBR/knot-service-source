@@ -63,6 +63,7 @@ static char *opt_uuid = NULL;
 static char *opt_token = NULL;
 static char *opt_json = NULL;
 static char *opt_tty = NULL;
+static gboolean opt_cfg = FALSE;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
@@ -751,6 +752,79 @@ static int cmd_unsubscribe(void)
 	return -ENOSYS;
 }
 
+
+static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	knot_msg_config resp;
+	knot_msg_header hdr;
+	ssize_t nbytes;
+	int err, sock;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+		return FALSE;
+	sock = g_io_channel_unix_get_fd(io);
+
+
+	nbytes = read(sock, &resp, sizeof(resp));
+	if (nbytes < 0) {
+		err = errno;
+		printf("read(): %s(%d)\n", strerror(err), err);
+		return TRUE;
+	}
+	if (resp.hdr.type == KNOT_MSG_SET_CONFIG) {
+		printf("sensor_id: %d\n", resp.sensor_id);
+		printf("event_flags: %d\n", resp.values.event_flags);
+		printf("time_sec: %d\n", resp.values.time_sec);
+		printf("lower_limit: %d.%d\n",
+				resp.values.lower_limit.val_f.value_int,
+				resp.values.lower_limit.val_f.value_dec);
+		printf("upper_limit: %d.%d\n",
+				resp.values.upper_limit.val_f.value_int,
+				resp.values.upper_limit.val_f.value_dec);
+		hdr.type = KNOT_MSG_CONFIG_RESP;
+		hdr.payload_len = 0;
+		nbytes = write(sock, &hdr, sizeof(knot_msg_header));
+		if (nbytes < 0) {
+			err = errno;
+			printf("node_ops: %s(%d)\n", strerror(err), err);
+			return TRUE;
+		}
+	}
+
+	return TRUE;
+}
+
+static int cmd_config(void)
+{
+	int err;
+
+	if (!opt_uuid) {
+		printf("Device's UUID missing!\n");
+		return -EINVAL;
+	}
+
+	if (!opt_token) {
+		printf("Device's TOKEN missing!\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * When token is informed try authenticate first. Leave this
+	 * block sequential to allow testing sending data without
+	 * previous authentication.
+	 */
+	printf("Authenticating ...\n");
+	err = authenticate(opt_uuid, opt_token);
+
+	if (err) {
+		printf("Authentication failed!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /*
  * 'token' and 'uuid' are returned by registration process. Later a
  * command line prompt may be displayed to the user allowing an
@@ -802,6 +876,10 @@ static GOptionEntry commands[] = {
 	{ "unsubscribe", 0, 0, G_OPTION_ARG_NONE, &opt_unsubs,
 		"Unsubscribe for messages",
 				NULL },
+	{ "config", 'c', 0, G_OPTION_ARG_NONE, &opt_cfg,
+	"Listen for config file. " \
+	"Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]",
+				NULL },
 	{ NULL },
 };
 
@@ -826,6 +904,9 @@ static void sig_term(int sig)
 *./ktool --data --uuid=UUID --token=TOKEN --json=<path_to_json_file>
 *
 *JSON file examples in $(pwd)/../json/
+*
+*Receive config
+*./ktool --config --uuid=UUID --token=TOKEN
 */
 
 int main(int argc, char *argv[])
@@ -834,6 +915,10 @@ int main(int argc, char *argv[])
 	GOptionGroup *opt_group;
 	GError *gerr = NULL;
 	int err = 0;
+
+	guint receive_watch_id;
+	GIOChannel *knotd_io;
+	GIOCondition watch_cond;
 
 	opt_uuid = NULL;
 	opt_token = NULL;
@@ -880,6 +965,16 @@ int main(int argc, char *argv[])
 		return err;
 	}
 
+	/*
+	 * Starts watch to receive data from cloud
+	 */
+	knotd_io = g_io_channel_unix_new(sock);
+	watch_cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
+	receive_watch_id = g_io_add_watch(knotd_io, watch_cond, proto_receive,
+									NULL);
+	g_io_channel_unref(knotd_io);
+	printf("watch: %d\n", receive_watch_id);
+
 	if (opt_add) {
 		printf("Registering node ...\n");
 		err = cmd_register();
@@ -903,6 +998,9 @@ int main(int argc, char *argv[])
 	} else if (opt_unsubs) {
 		printf("Unsubscribing node ...\n");
 		err = cmd_unsubscribe();
+	} else if (opt_cfg) {
+		printf("Configuration files...\n");
+		err = cmd_config();
 	}
 
 	if (err < 0) {
