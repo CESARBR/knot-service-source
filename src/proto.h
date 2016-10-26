@@ -34,6 +34,7 @@ typedef struct {
 /* Node operations */
 struct proto_ops {
 	const char *name;
+	unsigned int source_id;
 	int (*probe) (const char *host, unsigned int port);
 	void (*remove) (void);
 
@@ -53,3 +54,13 @@ struct proto_ops {
 	int (*data) (int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *jbuf);
 };
+
+/*
+ * Watch that polls or monitors the cloud to check if "CONFIG" changed or
+ * "SET DATA".
+ */
+unsigned int proto_register_watch(int proto_sock, const char *uuid,
+				const char *token, void (*proto_watch_cb)
+				(json_raw_t, void *), void *user_data);
+
+void proto_unregister_watch(unsigned int source_id);
