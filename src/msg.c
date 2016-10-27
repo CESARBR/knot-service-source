@@ -120,11 +120,13 @@ static char *checksum_config(json_object *jobjkey)
 static int config_is_valid(GSList *config_list)
 {
 	knot_msg_config *config;
+	struct config *cfg;
 	GSList *list;
 	int diff_int, diff_dec;
 
 	for (list = config_list; list; list = g_slist_next(list)) {
-		config = list->data;
+		cfg = list->data;
+		config = &cfg->kmcfg;
 
 		/* Check if event_flags are valid */
 		if ((config->values.event_flags | KNOT_EVT_FLAG_NONE) &&
