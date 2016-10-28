@@ -41,13 +41,24 @@
 
 #define MAX_PAYLOAD		4096
 #define SERVICE_TIMEOUT		100
+#define IDENTIFY_REQUEST	"[\"identify\"]"
+#define READY_RESPONSE		"[\"ready\""
+#define NOT_READY_RESPONSE	"[\"notReady\""
+#define READY_RESPONSE_LEN	(sizeof(READY_RESPONSE) - 1)
+#define NOT_READY_RESPONSE_LEN	(sizeof(NOT_READY_RESPONSE) - 1)
+#define CLOUD_PATH		"/socket.io/?EIO=4&transport=websocket"
+#define DEFAULT_CLOUD_HOST	"localhost"
 
 struct lws_context *context;
 static GHashTable *wstable;
-gboolean got_response = FALSE;
-gboolean connection_error = FALSE;
-gboolean connected = FALSE;
-static struct lws *ws;
+static gboolean got_response = FALSE;
+static gboolean connection_error = FALSE;
+static gboolean connected = FALSE;
+static gboolean ready = FALSE;
+struct lws_client_connect_info info;
+static char *host_address = "localhost";
+static int host_port = 3000;
+
 
 struct per_session_data_ws {
 	struct lws *ws;
@@ -60,7 +71,21 @@ struct per_session_data_ws {
 	char *json;
 };
 
-struct per_session_data_ws *psd;
+static struct per_session_data_ws *psd;
+
+/*
+ * A message has the following structure: <packet_type>[json_message]
+ * Packet types defined by Engine.IO:
+ */
+enum packet_type {
+	EIO_OPEN,
+	EIO_CLOSE,
+	EIO_PING,
+	EIO_PONG,
+	EIO_MSG,
+	EIO_UPGRADE,
+	EIO_NOOP
+};
 
 static gboolean timeout_ws(gpointer user_data)
 {
@@ -259,7 +284,6 @@ static void ws_close(int sock)
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
 		log_error("Removing key: sock %d not found!", sock);
 }
-
 static int ws_mknode(int sock, const char *owner_uuid,
 					json_raw_t *json)
 {
@@ -581,6 +605,79 @@ done:
 	return err;
 }
 
+static int send_identity(void)
+{
+	int err = -ECONNREFUSED;
+	/*
+	 * Part of the connection establishment process is to identify yourself
+	 * an identity msg with an empty json will generate a new uuid/token
+	 * a possible FIXME is to authenticate the owner (GW)
+	 */
+	psd->len = snprintf((char *) psd->buffer + LWS_PRE, MAX_PAYLOAD,
+							"42[\"identity\",{}]");
+	lws_callback_on_writable(psd->ws);
+
+	/*
+	 * After receiving an identify request and sending an identity response
+	 * the cloud will send a ready or notReady back which will be mapped
+	 * to ready or connection_error respectively.
+	 */
+	while (!ready && !connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
+
+	if (connection_error)
+		goto done;
+
+	err = 0;
+done:
+	ready = FALSE;
+	connected = TRUE;
+	got_response = FALSE;
+	g_free(psd);
+
+	return err;
+}
+
+static void handle_cloud_response(const char *resp)
+{
+	int packet_type, offset = 0, len = strlen(resp);
+
+	/* Find message type */
+	if (sscanf(resp, "%1d", &packet_type) < 0)
+		return;
+	/*
+	 * Skip packet type, if packet type is EIO_OPEN, resp is like 0{...}
+	 * otherwise resp is packet_type[...]
+	 */
+	if (packet_type == EIO_OPEN)
+		resp += 1;
+	else {
+		while (offset < len && resp[offset] != '[')
+			offset++;
+		resp += offset;
+	}
+	log_info("JSON_RX %d = %s", packet_type, resp);
+
+	switch (packet_type) {
+	case EIO_OPEN:
+	case EIO_PONG:
+		/* TODO */
+		break;
+	case EIO_MSG:
+		if (!strcmp(resp, IDENTIFY_REQUEST))
+			connected = TRUE;
+		else if (!strncmp(resp, READY_RESPONSE, READY_RESPONSE_LEN))
+			ready = TRUE;
+		else if (!strncmp(resp, NOT_READY_RESPONSE,
+							NOT_READY_RESPONSE_LEN))
+			connection_error = TRUE;
+		else
+			break;
+	default:
+		break;
+	}
+}
+
 static int callback_lws_http(struct lws *wsi,
 					enum lws_callback_reasons reason,
 					void *user, void *in, size_t len)
@@ -611,14 +708,7 @@ static int callback_lws_http(struct lws *wsi,
 	case LWS_CALLBACK_RECEIVE:
 		break;
 	case LWS_CALLBACK_CLIENT_RECEIVE:
-		{
-		((char *)in)[len] = '\0';
-		psd->json = (char *) in;
-		got_response = TRUE;
-		log_info("JSON RX %d '%s'", (int)len, (char *)psd->json);
-		/* Flow control will be enabled again when client writes data */
-		lws_rx_flow_control(wsi, 0);
-		}
+		handle_cloud_response((char *) in);
 		break;
 	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
 		break;
@@ -712,46 +802,68 @@ static struct lws_protocols protocols[] = {
 static int ws_connect(void)
 {
 	struct lws_client_connect_info info;
+	int err, sock;
 	static char ads_port[300];
-
 	gboolean use_ssl = FALSE; /* wss */
-	// const char *address = "meshblu.octoblu.com";
-	const char *address = "localhost";
-	// int sock, port = 80;
-	int sock, port = 8000;
 
 	memset(&info, 0, sizeof(info));
-
-	snprintf(ads_port, sizeof(ads_port), "%s:%u", address, port);
+	snprintf(ads_port, sizeof(ads_port) - 1, "%s:%u", host_address,
+								host_port);
 
 	log_info("Connecting to %s...", ads_port);
 
+	psd = g_new0(struct per_session_data_ws, 1);
 	info.context = context;
-	info.address = address;
-	info.port = port;
 	info.ssl_connection = use_ssl;
-	info.path = "/ws/v2";
+	info.address = host_address;
+	info.port = host_port;
+	info.path = CLOUD_PATH;
 	info.host = info.address;
 	info.origin = info.address;
 	info.ietf_version_or_minus_one = -1;
 	info.protocol = protocols[0].name;
 
-	ws = lws_client_connect_via_info(&info);
+	connected = FALSE;
+	connection_error = FALSE;
+	got_response = FALSE;
 
-	if (ws == NULL) {
-		int err = errno;
+	psd->ws = lws_client_connect_via_info(&info);
+
+	if (psd->ws == NULL) {
+		err = errno;
 		log_error("libwebsocket_client_connect(): %s(%d)",
 							strerror(err), err);
 		return -err;
 	}
 
-	while (!connected || connection_error)
+	/*
+	 * Connect via info is a non blocking method, it returns a websocket
+	 * instance but it may not be writable yet, so here we keep serving the
+	 * context until the connection is actually established. When the
+	 * LWS_CALLBACK_CLIENT_ESTABLISHED is triggered.
+	 */
+	while (!connected && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	sock = lws_get_socket_fd(ws);
-	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), ws);
+	if (connection_error) {
+		g_free(psd);
+		return -ECONNREFUSED;
+	}
+	/* Map ws to a unique int */
+	sock = lws_get_socket_fd(psd->ws);
+	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), psd->ws);
 
 	connected = FALSE;
+	connection_error = FALSE;
+	got_response = FALSE;
+
+	err = send_identity();
+	if (err < 0)
+		return err;
+
+	connected = FALSE;
+	connection_error = FALSE;
+	got_response = FALSE;
 
 	/* FIXME: Investigate alternatives for libwebsocket_service() */
 	g_timeout_add_seconds(1, timeout_ws, NULL);
@@ -761,16 +873,16 @@ static int ws_connect(void)
 
 static int ws_probe(const char *host, unsigned int port)
 {
-	struct lws_context_creation_info info;
+	struct lws_context_creation_info i;
 
-	memset(&info, 0, sizeof info);
+	memset(&i, 0, sizeof(i));
 
-	info.port = CONTEXT_PORT_NO_LISTEN;
-	info.gid = -1;
-	info.uid = -1;
-	info.protocols = protocols;
+	i.port = CONTEXT_PORT_NO_LISTEN;
+	i.gid = -1;
+	i.uid = -1;
+	i.protocols = protocols;
 
-	context = lws_create_context(&info);
+	context = lws_create_context(&i);
 
 	wstable = g_hash_table_new(g_direct_hash, g_direct_equal);
 
