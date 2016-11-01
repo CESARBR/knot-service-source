@@ -48,6 +48,8 @@
 #define NOT_READY_RESPONSE_LEN	(sizeof(NOT_READY_RESPONSE) - 1)
 #define CLOUD_PATH		"/socket.io/?EIO=4&transport=websocket"
 #define DEFAULT_CLOUD_HOST	"localhost"
+#define DEVICE_INDEX		0
+#define OPERATION_PREFIX	420
 
 struct lws_context *context;
 static GHashTable *wstable;
@@ -115,7 +117,7 @@ static int ret2errno(const char *json_str, const char *expected_result)
 		goto done;
 
 	if (json_object_get_type(jobj) == json_type_array) {
-		jobjentry = json_object_array_get_idx(jobj, 0);
+		jobjentry = json_object_array_get_idx(jobj, DEVICE_INDEX);
 		if (jobjentry == NULL)
 			goto done;
 	}
@@ -137,7 +139,7 @@ static int handle_response(json_raw_t *json)
 	if (jres == NULL)
 		return -EINVAL;
 
-	jobj = json_object_array_get_idx(jres, 1);
+	jobj = json_object_array_get_idx(jres, DEVICE_INDEX);
 	jobjstringres = json_object_to_json_string(jobj);
 
 	realsize = strlen(jobjstringres) + 1;
@@ -320,15 +322,14 @@ static void ws_close(int sock)
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
 		log_error("Removing key: sock %d not found!", sock);
 }
-static int ws_mknode(int sock, const char *owner_uuid,
+static int ws_mknode(int sock, const char *device_json,
 					json_raw_t *json)
 {
 	int err;
 	json_object *jobj, *jarray;
 	const char *jobjstring;
-	const char *expected_result = "registered";
 
-	jobj = json_tokener_parse(owner_uuid);
+	jobj = json_tokener_parse(device_json);
 	if (jobj == NULL)
 		return -EINVAL;
 
@@ -345,29 +346,43 @@ static int ws_mknode(int sock, const char *owner_uuid,
 		log_error("Not found");
 		goto done;
 	}
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	/*
+	 * Since the size of psd->buffer is LWS_PRE + MAX_PAYLOAD bytes and the
+	 * buffer is offset by LWS_PRE, this means there are only MAX_PAYLOAD
+	 * bytes left to write.
+	 */
+	psd->len = snprintf((char *) psd->buffer + LWS_PRE, MAX_PAYLOAD,
+					"%d%s", OPERATION_PREFIX, jobjstring);
+	/*
+	 * lws_callback_on_writable tells libwebsockets there is data to be sent
+	 * As soon as possible LWS_CALLBACK_CLIENT_WRITEABLE will be triggered
+	 * and psd->buffer will be written. Meanwhile, lws_service keeps the
+	 * context 'alive' until server responds or an error occurs. Since knotd
+	 * wasn't designed to be completely asynchronous, the operations on
+	 * msg.c expects a blocking behavior, so this while forces it. Every
+	 * message received will trigger a LWS_CALLBACK_CLIENT_RECEIVE. Once
+	 * the server responds, the got_response flag will be set to TRUE and
+	 * we leave the loop. Since all messages are serialized by the unix
+	 * socket between radio daemon (eg: nrfd, lorad) and knotd, there is no
+	 * problem in using a global 'per session data (psd)' and flags, they
+	 * won't be overwritten.
+	 */
 	lws_callback_on_writable(psd->ws);
-
-	/* Keep serving context until server responds or an error occurs */
-	while (!got_response || connection_error)
+	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	err = ret2errno(psd->json, expected_result);
-
-	/*
-	 * The expected JSON format is:
-	 * ["registered", {"uuid":"VALUE",...,"token":"VALUE"}]
-	 */
-	if (err < 0)
-		goto done;
+	if (connection_error)
+		err = -ECONNRESET;
 
 	err = handle_response(json);
-
+	if (err < 0)
+		goto done;
 done:
 	connection_error = FALSE;
 	got_response = FALSE;
 
 	json_object_put(jarray);
+	g_free(psd->json);
 	g_free(psd);
 
 	return err;
@@ -709,8 +724,13 @@ static void handle_cloud_response(const char *resp)
 		else if (!strncmp(resp, NOT_READY_RESPONSE,
 							NOT_READY_RESPONSE_LEN))
 			connection_error = TRUE;
-		else
-			break;
+		else {
+			if (psd->json)
+				g_free(psd->json);
+			psd->json = g_strdup(resp);
+			got_response = TRUE;
+		}
+		break;
 	default:
 		break;
 	}
