@@ -87,6 +87,14 @@ enum packet_type {
 	EIO_NOOP
 };
 
+struct handshake_data {
+	const char *sid;
+	int pingInterval;
+	int pingTimeout;
+};
+
+static struct handshake_data *h_data;
+
 static gboolean timeout_ws(gpointer user_data)
 {
 	lws_service(context, 0);
@@ -146,6 +154,34 @@ static int handle_response(json_raw_t *json)
 	json_object_put(jres);
 
 	return 0;
+}
+
+static void parse_handshake_data(const char *json_str)
+{
+	json_object *jobj, *jsid, *jtimeout, *jinterval;
+
+	jobj = json_tokener_parse(json_str);
+	/*
+	 * During connection establishment a JSON is received with a socket id
+	 * (sid), pingInterval - frequency the client should ping the server and
+	 * pingTimeout - time to disconnect after not receiving a pong
+	 */
+	if (!json_object_object_get_ex(jobj, "sid", &jsid))
+		goto done;
+	if (!json_object_object_get_ex(jobj, "pingInterval", &jinterval))
+		goto done;
+	if (!json_object_object_get_ex(jobj, "pingTimeout", &jtimeout))
+		goto done;
+
+	h_data = g_new0(struct handshake_data, 1);
+
+	h_data->sid = json_object_get_string(jsid);
+	h_data->pingInterval = json_object_get_int(jinterval);
+	h_data->pingTimeout = json_object_get_int(jtimeout);
+
+	/* TODO: Send ping every h_data.pingInterval; */
+done:
+	json_object_put(jobj);
 }
 
 static const char *lws_reason2str(enum lws_callback_reasons reason)
@@ -660,6 +696,8 @@ static void handle_cloud_response(const char *resp)
 
 	switch (packet_type) {
 	case EIO_OPEN:
+		parse_handshake_data(resp);
+		break;
 	case EIO_PONG:
 		/* TODO */
 		break;
@@ -893,6 +931,7 @@ static void ws_remove(void)
 {
 	g_hash_table_destroy(wstable);
 	lws_context_destroy(context);
+	g_free(h_data);
 }
 
 struct proto_ops proto_ws = {
