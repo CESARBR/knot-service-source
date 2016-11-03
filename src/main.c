@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
 	}
 
 	memset(&settings, 0, sizeof(settings));
-	settings.proto = "http";/* only supported protocol at moment */
+	settings.proto = opt_proto;
 	settings.tty = opt_tty;
 	/*
 	 * Command line options (host and port) have higher priority
