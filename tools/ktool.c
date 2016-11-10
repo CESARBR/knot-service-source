@@ -756,8 +756,8 @@ static int cmd_unsubscribe(void)
 static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
-	knot_msg_config resp;
-	knot_msg_header hdr;
+	knot_msg recv;
+	knot_msg resp;
 	ssize_t nbytes;
 	int err, sock;
 
@@ -766,25 +766,26 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	sock = g_io_channel_unix_get_fd(io);
 
 
-	nbytes = read(sock, &resp, sizeof(resp));
+	nbytes = read(sock, &recv, sizeof(recv));
 	if (nbytes < 0) {
 		err = errno;
 		printf("read(): %s(%d)\n", strerror(err), err);
 		return TRUE;
 	}
-	if (resp.hdr.type == KNOT_MSG_SET_CONFIG) {
-		printf("sensor_id: %d\n", resp.sensor_id);
-		printf("event_flags: %d\n", resp.values.event_flags);
-		printf("time_sec: %d\n", resp.values.time_sec);
+	if (recv.hdr.type == KNOT_MSG_SET_CONFIG) {
+		printf("sensor_id: %d\n", recv.config.sensor_id);
+		printf("event_flags: %d\n", recv.config.values.event_flags);
+		printf("time_sec: %d\n", recv.config.values.time_sec);
 		printf("lower_limit: %d.%d\n",
-				resp.values.lower_limit.val_f.value_int,
-				resp.values.lower_limit.val_f.value_dec);
+				recv.config.values.lower_limit.val_f.value_int,
+				recv.config.values.lower_limit.val_f.value_dec);
 		printf("upper_limit: %d.%d\n",
-				resp.values.upper_limit.val_f.value_int,
-				resp.values.upper_limit.val_f.value_dec);
-		hdr.type = KNOT_MSG_CONFIG_RESP;
-		hdr.payload_len = 0;
-		nbytes = write(sock, &hdr, sizeof(knot_msg_header));
+				recv.config.values.upper_limit.val_f.value_int,
+				recv.config.values.upper_limit.val_f.value_dec);
+		resp.hdr.type = KNOT_MSG_CONFIG_RESP;
+		resp.hdr.payload_len = sizeof(resp.action.result);
+		resp.action.result = recv.config.sensor_id;
+		nbytes = write(sock, &resp, sizeof(knot_msg_result));
 		if (nbytes < 0) {
 			err = errno;
 			printf("node_ops: %s(%d)\n", strerror(err), err);
