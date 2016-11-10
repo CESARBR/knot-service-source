@@ -767,7 +767,6 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
  */
 static int fw_push(int sock, knot_msg *kmsg)
 {
-	knot_msg_header resp;
 	ssize_t nbytes;
 	int err;
 
@@ -778,17 +777,6 @@ static int fw_push(int sock, knot_msg *kmsg)
 		LOG_ERROR("node_ops: %s(%d)\n", strerror(err), err);
 		return -err;
 	}
-
-	nbytes = read(sock, &resp, sizeof(knot_msg_header));
-	if (nbytes < 0) {
-		err = errno;
-		LOG_ERROR("KNOT RESP NOT RECEIVED: %s(%d)\n",
-							strerror(err), err);
-		return -err;
-	}
-	if (resp.type == KNOT_MSG_CONFIG_RESP)
-		LOG_INFO("KNOT CONFIG RECEIVED\n");
-	/*TODO LOG_INFO when "send data" is sent and ack successfully */
 
 	return 0;
 }
@@ -1085,6 +1073,22 @@ static int8_t msg_data(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
+static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
+{
+	struct trust *trust;
+	uint8_t sensor_id;
+
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
+		LOG_INFO("Permission denied!\n");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+	sensor_id = rsp->result;
+	LOG_INFO("THING %s received config for sensor %d\n", trust->uuid,
+								sensor_id);
+	return KNOT_SUCCESS;
+}
+
 ssize_t msg_process(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
@@ -1146,6 +1150,10 @@ ssize_t msg_process(int sock, int proto_sock,
 		result = msg_schema(sock, proto_sock, proto_ops, &kreq->schema,
 									eof);
 		break;
+	case KNOT_MSG_CONFIG_RESP:
+		result = msg_config_resp(sock, &kreq->action);
+		/* No octets to be transmitted */
+		return 0;
 	default:
 		/* TODO: reply unknown command */
 		break;
