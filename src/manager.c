@@ -221,9 +221,11 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 						strerror(-olen), -olen);
 		return TRUE;
 	}
+	/* If there are no octets to be sent */
+	if (!olen)
+		return TRUE;
 
 	/* Response from the gateway: error or response for the given command */
-
 	sentbytes = ops->send(sock, opdu, olen);
 	if (sentbytes < 0)
 		LOG_ERROR("node_ops: %s(%ld)\n",
