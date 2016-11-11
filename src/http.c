@@ -506,6 +506,8 @@ static gboolean proto_poll(gpointer user_data)
 
 	data->proto_watch_cb(json, data->user_data);
 
+	free(json.data);
+
 	return TRUE;
 }
 

@@ -731,13 +731,6 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 
 	trust->config_tmp = parse_device_config(json.data);
 
-	/*
-	 * TODO:
-	 * json.data should not be released here. 'free' should be called in the
-	 * same context (file/function) of the malloc.
-	 */
-	free(json.data);
-
 	/* config_is_valid() returns 0 if SUCCESS */
 	if (config_is_valid(trust->config_tmp)) {
 		LOG_ERROR("Invalid config message\n");
