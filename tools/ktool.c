@@ -772,7 +772,8 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		printf("read(): %s(%d)\n", strerror(err), err);
 		return TRUE;
 	}
-	if (recv.hdr.type == KNOT_MSG_SET_CONFIG) {
+	switch (recv.hdr.type) {
+	case KNOT_MSG_SET_CONFIG:
 		printf("sensor_id: %d\n", recv.config.sensor_id);
 		printf("event_flags: %d\n", recv.config.values.event_flags);
 		printf("time_sec: %d\n", recv.config.values.time_sec);
@@ -791,6 +792,26 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 			printf("node_ops: %s(%d)\n", strerror(err), err);
 			return TRUE;
 		}
+		break;
+	case KNOT_MSG_SET_DATA:
+		printf("sensor_id: %d\n", recv.data.sensor_id);
+		printf("value: %d.%d\n",
+				recv.data.payload.values.val_f.value_int,
+				recv.data.payload.values.val_f.value_dec);
+		resp.hdr.type = KNOT_MSG_DATA_RESP;
+		resp.hdr.payload_len = sizeof(knot_data) +
+						sizeof(resp.data.sensor_id);
+		resp.data.sensor_id = recv.data.sensor_id;
+		memcpy(&(resp.data.payload), &(recv.data.payload),
+							sizeof(knot_data));
+		nbytes = write(sock, &resp, sizeof(knot_msg_data));
+		if (nbytes < 0) {
+			err = errno;
+			printf("node_ops: %s(%d)\n", strerror(err), err);
+			return TRUE;
+		}
+		break;
+
 	}
 
 	return TRUE;
