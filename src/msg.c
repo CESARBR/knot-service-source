@@ -508,6 +508,101 @@ done:
 	return NULL;
 }
 
+/*
+ * Parses the json from the cloud with the set_data.
+ * Whenever the GW sends a data to the thing, it will also insert another field
+ * in the data in the cloud informing that this data have already been sent.
+ * When/if the user updates the data, the field is erased and the data is sent
+ * again, regardless if the value is the same or not.
+ */
+static GSList *parse_device_setdata(const char *json_str)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	GSList *list = NULL;
+	knot_msg_data *entry;
+	int sensor_id, i;
+	knot_data data;
+	json_type jtype;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj)
+		return NULL;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid":
+	 *		"set_data" : [
+	 *			{"sensor_id": v,
+	 *			"value": w}]
+	 *		}]
+	 * }
+	 */
+
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'set_data' is an array */
+	if (!json_object_object_get_ex(jobjentry, "set_data", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			goto done;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		sensor_id = json_object_get_int(jobjkey);
+
+		/* Getting 'value' */
+		memset(&data, 0, sizeof(knot_data));
+		if (json_object_object_get_ex(jobjentry, "value",
+								&jobjkey)) {
+			jtype = json_object_get_type(jobjkey);
+			if (jtype != json_type_int &&
+				jtype != json_type_double &&
+				jtype != json_type_boolean)
+				goto done;
+
+			parse_json_value_types(jobjkey,
+						&data.values);
+		}
+
+		entry = g_new0(knot_msg_data, 1);
+		entry->sensor_id = sensor_id;
+		memcpy(&(entry->payload), &data, sizeof(knot_data));
+		list = g_slist_append(list, entry);
+	}
+	json_object_put(jobj);
+
+	return list;
+
+done:
+	g_slist_free_full(list, g_free);
+	json_object_put(jobj);
+
+	return NULL;
+}
+
+
 static int8_t msg_register(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_register *kreq,
@@ -634,6 +729,38 @@ done:
 
 	return result;
 }
+
+/*
+ * Includes the proper header in the setdata messages and returns a list with
+ * all the sensor data that will be sent to the thing.
+ */
+static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result)
+{
+	struct trust *trust;
+	GSList *list;
+	GSList *tmp;
+	knot_msg_data *kmdata;
+
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
+		LOG_INFO("Permission denied!\n");
+		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		return NULL;
+	}
+	*result = KNOT_SUCCESS;
+
+	list = parse_device_setdata(json.data);
+
+	for (tmp = list; tmp; tmp = g_slist_next(tmp)) {
+		kmdata = tmp->data;
+		kmdata->hdr.type = KNOT_MSG_SET_DATA;
+		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
+							sizeof(kmdata->payload);
+	}
+
+	return list;
+}
+
 
 /*
  * Returns a list of all the configs that changed compared to the stored in
@@ -790,11 +917,7 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 	sock = g_io_channel_unix_get_fd(watch->node_io);
 
 	list = msg_config(sock, json, &result);
-	/*
-	 * TODO
-	 * Parse JSON to "send data" and append in the list that will be sent
-	 * to thing.
-	 */
+	list = g_slist_concat(list, msg_setdata(sock, json, &result));
 
 	tmp = list;
 	while (tmp) {
@@ -1151,7 +1274,8 @@ static void update_device_setdata(const struct proto_ops *proto_ops,
 			continue;
 
 		if (json_object_get_int(jobjkey) != sensor_id) {
-			json_object_array_add(ajobj, jobjentry);
+			json_object_array_add(ajobj,
+						json_object_get(jobjentry));
 			continue;
 		}
 		/*
@@ -1166,21 +1290,16 @@ static void update_device_setdata(const struct proto_ops *proto_ops,
 	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
 
 done:
-	free(json.data);
 	if (jobj)
 		json_object_put(jobj);
 	if (setdatajobj)
 		json_object_put(setdatajobj);
+	free(json.data);
 }
 
 /*
- * Works exactly as msg_data() (copy & paste), except that includes the field
- * "onthing" as TRUE, indicating that the data was passed and successfully
- * updated from the cloud to the THING.
- */
-/*
- * TODO: is this function necessary? Or msg_data should be modified and both
- * unified?
+ * Works like msg_data() (copy & paste), but removes the received info from
+ * the 'devices' database.
  */
 static int8_t msg_setdata_resp(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
