@@ -1082,6 +1082,213 @@ static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
 	return KNOT_SUCCESS;
 }
 
+/*
+ * Updates de 'devices' db, removing the sensor_id that was acknowledged by the
+ * THING.
+ */
+static void update_device_setdata(const struct proto_ops *proto_ops,
+					int proto_sock, char *uuid, char *token,
+					uint8_t sensor_id)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	json_object *ajobj, *setdatajobj;
+	json_raw_t json;
+	const char *jobjstr;
+	int i, err;
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->fetch(proto_sock, uuid, token, &json);
+
+	if (err < 0) {
+		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
+		goto done;
+	}
+
+	jobj = json_tokener_parse(json.data);
+	if (!jobj)
+		goto done;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid":
+	 *		"set_data" : [
+	 *			{"sensor_id": v,
+	 *			"value": w}]
+	 *		}]
+	 * }
+	 */
+
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'set_data' is an array */
+	if (!json_object_object_get_ex(jobjentry, "set_data", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	ajobj = json_object_new_array();
+	setdatajobj = json_object_new_object();
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			break;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
+			continue;
+
+		if (json_object_get_int(jobjkey) != sensor_id) {
+			json_object_array_add(ajobj, jobjentry);
+			continue;
+		}
+		/*
+		 * TODO: if the value changed before it was updated, the entry
+		 * should not be erased
+		 */
+	}
+
+	json_object_object_add(setdatajobj, "set_data", ajobj);
+	jobjstr = json_object_to_json_string(setdatajobj);
+
+	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
+
+done:
+	free(json.data);
+	if (jobj)
+		json_object_put(jobj);
+	if (setdatajobj)
+		json_object_put(setdatajobj);
+}
+
+/*
+ * Works exactly as msg_data() (copy & paste), except that includes the field
+ * "onthing" as TRUE, indicating that the data was passed and successfully
+ * updated from the cloud to the THING.
+ */
+/*
+ * TODO: is this function necessary? Or msg_data should be modified and both
+ * unified?
+ */
+static int8_t msg_setdata_resp(int sock, int proto_sock,
+					const struct proto_ops *proto_ops,
+					const knot_msg_data *kmdata)
+{
+	/*
+	 * Pointer to KNOT data containing header, sensor id
+	 * and a primitive KNOT type
+	 */
+	const knot_data *kdata = &(kmdata->payload);
+	struct json_object *jobj;
+	const struct trust *trust;
+	const knot_msg_schema *schema;
+	GSList *list;
+	json_raw_t json;
+	const char *jobjstr;
+	/* INT_MAX 2147483647 */
+	char str[12];
+	double doubleval;
+	uint8_t sensor_id;
+	int len, err;
+
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
+		LOG_INFO("Permission denied!\n");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	sensor_id = kmdata->sensor_id;
+
+	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
+								sensor_id_cmp);
+	if (!list) {
+		LOG_INFO("sensor_id(0x%02x): data type mismatch!\n", sensor_id);
+		return KNOT_INVALID_DATA;
+	}
+
+	schema = list->data;
+
+	err = knot_schema_is_valid(schema->values.type_id,
+				schema->values.value_type, schema->values.unit);
+	if (err) {
+		LOG_INFO("sensor_id(0x%d), type_id(0x%04x): unit mismatch!\n",
+					sensor_id, schema->values.type_id);
+		return KNOT_INVALID_DATA;
+	}
+
+	LOG_INFO("sensor:%d, unit:%d, value_type:%d\n", sensor_id,
+				schema->values.unit, schema->values.value_type);
+
+	/* Fetches the 'devices' db */
+	update_device_setdata(proto_ops, proto_sock, trust->uuid, trust->token,
+								sensor_id);
+
+	jobj = json_object_new_object();
+	json_object_object_add(jobj, "sensor_id",
+						json_object_new_int(sensor_id));
+
+	switch (schema->values.value_type) {
+	case KNOT_VALUE_TYPE_INT:
+		json_object_object_add(jobj, "value",
+				json_object_new_int(kdata->values.val_i.value));
+		break;
+	case KNOT_VALUE_TYPE_FLOAT:
+
+		/* FIXME: precision */
+		len = sprintf(str, "%d", kdata->values.val_f.value_dec);
+
+		doubleval = kdata->values.val_f.multiplier *
+			(kdata->values.val_f.value_int +
+			(kdata->values.val_f.value_dec / pow(10, len)));
+
+		json_object_object_add(jobj, "value",
+					json_object_new_double(doubleval));
+		break;
+	case KNOT_VALUE_TYPE_BOOL:
+		json_object_object_add(jobj, "value",
+				json_object_new_boolean(kdata->values.val_b));
+		break;
+	case KNOT_VALUE_TYPE_RAW:
+		break;
+	default:
+		json_object_put(jobj);
+		return KNOT_INVALID_DATA;
+	}
+
+	jobjstr = json_object_to_json_string(jobj);
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->data(proto_sock, trust->uuid, trust->token,
+							jobjstr, &json);
+	if (json.data)
+		free(json.data);
+
+	json_object_put(jobj);
+
+	if (err < 0) {
+		LOG_ERROR("manager data(): %s(%d)\n", strerror(-err), -err);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	LOG_INFO("THING %s updated data for sensor %d\n", trust->uuid,
+								sensor_id);
+
+	return KNOT_SUCCESS;
+}
+
+
 ssize_t msg_process(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
@@ -1146,6 +1353,10 @@ ssize_t msg_process(int sock, int proto_sock,
 	case KNOT_MSG_CONFIG_RESP:
 		result = msg_config_resp(sock, &kreq->action);
 		/* No octets to be transmitted */
+		return 0;
+	case KNOT_MSG_DATA_RESP:
+		result = msg_setdata_resp(sock, proto_sock, proto_ops,
+								&kreq->data);
 		return 0;
 	default:
 		/* TODO: reply unknown command */

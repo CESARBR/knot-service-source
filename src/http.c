@@ -464,6 +464,24 @@ static void http_remove(void)
 	g_free(device_uri);
 	g_free(data_uri);
 }
+
+static int http_setdata(int sock, const char *uuid, const char *token,
+					const char *jreq, json_raw_t *json)
+{
+	/* Length: device_uri + '/' + UUID + '\0' */
+	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
+
+	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
+
+	/*
+	 * HTTP 200: OK
+	 * Return '0' if schema not fails or a negative value
+	 * mapped to generic Linux -errno codes.
+	 */
+
+	return fetch_url(sock, uri, jreq, uuid, token, json, "PUT");
+}
+
 /* Gets all the data from the device with the given uuid and token */
 static int http_fetch(int sock, const char *uuid, const char *token,
 							json_raw_t *json)
@@ -551,4 +569,6 @@ struct proto_ops proto_http = {
 	.rmnode = http_rmnode,
 	.schema = http_schema,
 	.data = http_data,
+	.fetch = http_fetch,
+	.setdata = http_setdata,
 };

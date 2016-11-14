@@ -53,6 +53,10 @@ struct proto_ops {
 					const char *jreq, json_raw_t *json);
 	int (*data) (int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *jbuf);
+	int (*fetch) (int sock, const char *uuid, const char *token,
+							json_raw_t *json);
+	int (*setdata) (int sock, const char *uuid, const char *token,
+					const char *jreq, json_raw_t *json);
 };
 
 /*
