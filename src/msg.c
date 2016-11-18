@@ -602,6 +602,83 @@ done:
 	return NULL;
 }
 
+/*
+ * Parses the json from the cloud with the get_data.
+ */
+static GSList *parse_device_getdata(const char *json_str)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	GSList *list = NULL;
+	knot_msg_data *entry;
+	int sensor_id, i;
+	knot_data data;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj)
+		return NULL;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid":
+	 *		"get_data" : [
+	 *			{"sensor_id": v
+	 *			}]
+	 *		}]
+	 * }
+	 */
+
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'set_data' is an array */
+	if (!json_object_object_get_ex(jobjentry, "get_data", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			goto done;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
+			goto done;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto done;
+
+		sensor_id = json_object_get_int(jobjkey);
+
+		/* Sets 'value' to all 0s. It will not be used by the thing */
+		memset(&data, 0, sizeof(knot_data));
+
+		entry = g_new0(knot_msg_data, 1);
+		entry->sensor_id = sensor_id;
+		memcpy(&(entry->payload), &data, sizeof(knot_data));
+		list = g_slist_append(list, entry);
+	}
+	json_object_put(jobj);
+
+	return list;
+
+done:
+	g_slist_free_full(list, g_free);
+	json_object_put(jobj);
+
+	return NULL;
+}
 
 static int8_t msg_register(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
@@ -728,6 +805,37 @@ done:
 		free(jbuf.data);
 
 	return result;
+}
+
+/*
+ * Includes the proper header in the getdata messages and returns a list with
+ * all the sensor from which the data is requested.
+ */
+static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
+{
+	struct trust *trust;
+	GSList *list;
+	GSList *tmp;
+	knot_msg_data *kmdata;
+
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (!trust) {
+		LOG_INFO("Permission denied!\n");
+		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		return NULL;
+	}
+	*result = KNOT_SUCCESS;
+
+	list = parse_device_getdata(json.data);
+
+	for (tmp = list; tmp; tmp = g_slist_next(tmp)) {
+		kmdata = tmp->data;
+		kmdata->hdr.type = KNOT_MSG_GET_DATA;
+		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
+							sizeof(kmdata->payload);
+	}
+
+	return list;
 }
 
 /*
@@ -918,6 +1026,7 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 
 	list = msg_config(sock, json, &result);
 	list = g_slist_concat(list, msg_setdata(sock, json, &result));
+	list = g_slist_concat(list, msg_getdata(sock, json, &result));
 
 	tmp = list;
 	while (tmp) {
