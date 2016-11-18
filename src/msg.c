@@ -1197,6 +1197,101 @@ static int8_t msg_schema(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
+/*
+ * Updates de 'devices' db, removing the sensor_id that just sent the data
+ */
+static void update_device_getdata(const struct proto_ops *proto_ops,
+					int proto_sock, char *uuid, char *token,
+					uint8_t sensor_id)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	json_object *ajobj, *setdatajobj;
+	json_raw_t json;
+	const char *jobjstr;
+	int i, err;
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->fetch(proto_sock, uuid, token, &json);
+
+	if (err < 0) {
+		LOG_ERROR("signin(): %s(%d)\n", strerror(-err), -err);
+		goto done;
+	}
+
+	jobj = json_tokener_parse(json.data);
+	if (!jobj)
+		goto done;
+
+	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array ||
+				json_object_array_length(jobjarray) != 1)
+		goto done;
+
+	/* Getting first entry of 'devices' array :
+	 *
+	 * {"devices":[{"uuid":
+	 *		"set_data" : [
+	 *			{"sensor_id": v,
+	 *			"value": w}]
+	 *		}]
+	 * }
+	 */
+
+	jobjentry = json_object_array_get_idx(jobjarray, 0);
+	if (!jobjentry)
+		goto done;
+
+	/* 'set_data' is an array */
+	if (!json_object_object_get_ex(jobjentry, "get_data", &jobjarray))
+		goto done;
+
+	if (json_object_get_type(jobjarray) != json_type_array)
+		goto done;
+
+	ajobj = json_object_new_array();
+	setdatajobj = json_object_new_object();
+
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			break;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry, "sensor_id",
+								&jobjkey))
+			continue;
+
+		/*
+		 * Creates a list with all the sensor_id in the get_data list
+		 * except for the one that was just received
+		 */
+		if (json_object_get_int(jobjkey) != sensor_id) {
+			json_object_array_add(ajobj,
+						json_object_get(jobjentry));
+			continue;
+		}
+		/*
+		 * TODO: if the value changed before it was updated, the entry
+		 * should not be erased
+		 */
+	}
+
+	json_object_object_add(setdatajobj, "get_data", ajobj);
+	jobjstr = json_object_to_json_string(setdatajobj);
+
+	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
+
+done:
+	if (jobj)
+		json_object_put(jobj);
+	if (setdatajobj)
+		json_object_put(setdatajobj);
+	free(json.data);
+}
+
 static int8_t msg_data(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_data *kmdata)
@@ -1294,6 +1389,9 @@ static int8_t msg_data(int sock, int proto_sock,
 		LOG_ERROR("manager data(): %s(%d)\n", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
+
+	update_device_getdata(proto_ops, proto_sock, trust->uuid, trust->token,
+								sensor_id);
 
 	return KNOT_SUCCESS;
 }
