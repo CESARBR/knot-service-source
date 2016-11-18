@@ -760,6 +760,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	knot_msg resp;
 	ssize_t nbytes;
 	int err, sock;
+	struct json_object *jobj;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
 		return FALSE;
@@ -810,6 +811,37 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 			printf("node_ops: %s(%d)\n", strerror(err), err);
 			return TRUE;
 		}
+		break;
+	case KNOT_MSG_GET_DATA:
+		/*
+		 * Based on the sensor_id, sends the correct data json. The
+		 * test folders only contains schema and data for the sensor_ids
+		 * 251,252 and 253.
+		 */
+		switch (recv.data.sensor_id) {
+		case 251:
+			jobj = json_object_from_file("json/data-volume.json");
+			break;
+		case 252:
+			jobj = json_object_from_file("json/data-temperature.json");
+			break;
+		case 253:
+			jobj = json_object_from_file("json/data-switch.json");
+			break;
+		default:
+			jobj = NULL;
+		}
+
+		if (!jobj) {
+			printf("json file(%s): failed to read from file!\n",
+								opt_json);
+			return -EINVAL;
+		}
+
+		json_object_foreach(jobj, print_json_value, NULL);
+		write_knot_data(jobj);
+		json_object_put(jobj);
+
 		break;
 
 	}
