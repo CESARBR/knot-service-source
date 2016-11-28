@@ -12,24 +12,22 @@ such as Bluetooth Low Energy, and Wi-Fi are planned.
 Dependencies: none
 
 How to build:
-$CFLAGS="-I$(pwd)/../knot-proto.git/src" ./bootstrap-configure --enable-debug \
---disable-optimization
+$CFLAGS="-I$(pwd)/../knot-protocol-source.git/src" \
+LIBS="$(pwd)/../knot-protocol-source.git/src/libknotprotocol.a" \
+./bootstrap-configure --enable-debug --disable-optimization
 
 'CFLAGS' must include your local knot protocol library folder.
 
+Setup before running knotd:
+You need get that file 'https://raw.githubusercontent.com/CESARBR/knot-gateway-webui/master/app/config/gatewayConfig.json'
+
 How to check for memory leaks and open file descriptors:
 $valgrind --leak-check=full --track-fds=yes ./src/knotd \
---config=$(pwd)/src/knot.conf --proto=http --tty=/dev/USB0
+--config=$(pwd)/gatewayConfig.json --proto=http
 
 How to test (Unix sockets):
 $src/knotd
 $tools/ktool connect
 
-Setup before running knotd:
-'src/knot.conf' file must be updated according to a valid user settings.
-
-Register an account at 'https://app.octoblu.com' and get the UUID
-and token required to change 'src/knot.conf'
-
 How to run 'knotd' specifying host & port:
-$src/knotd --config=src/knot.conf --proto=http --host=localhost --port=8000
+$src/knotd --config=gatewayConfig.json --proto=http --host=localhost --port=3000
