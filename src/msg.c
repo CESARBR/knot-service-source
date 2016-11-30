@@ -691,8 +691,16 @@ static int8_t msg_register(int sock, int proto_sock,
 	const char *jobjstring;
 	char *uuid, *token;
 	json_raw_t json;
-	int err;
+	int err, len;
 	int8_t result;
+	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
+
+	/*
+	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
+	 * for the terminating null character
+	 */
+	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
+	strncpy(thing_name, kreq->devName, len);
 
 	if (kreq->devName[0] == '\0') {
 		LOG_ERROR("Empty device name!\n");
@@ -708,7 +716,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	json_object_object_add(jobj, "KNOTDevice",
 				json_object_new_string("type"));
 	json_object_object_add(jobj, "name",
-			       json_object_new_string(kreq->devName));
+				json_object_new_string(thing_name));
 	json_object_object_add(jobj, "owner",
 				json_object_new_string(owner_uuid));
 
@@ -1652,7 +1660,6 @@ ssize_t msg_process(int sock, int proto_sock,
 
 	switch (kreq->hdr.type) {
 	case KNOT_MSG_REGISTER_REQ:
-
 		/* Payload length is set by the caller */
 		result = msg_register(sock, proto_sock, proto_ops,
 						&kreq->reg, &krsp->cred);
