@@ -113,7 +113,7 @@ static char *load_config(const char *file)
 
 static int parse_config(const char *config, struct settings *settings)
 {
-	const char *uuid, *token, *tmp;
+	const char *uuid, *tmp;
 	json_object *jobj, *obj_cloud, *obj_tmp;
 	int err = -EINVAL;
 
@@ -128,11 +128,6 @@ static int parse_config(const char *config, struct settings *settings)
 		goto done;
 
 	uuid = json_object_get_string(obj_tmp);
-
-	if (!json_object_object_get_ex(obj_cloud, "token", &obj_tmp))
-		goto done;
-
-	token = json_object_get_string(obj_tmp);
 
 	if (settings->host == NULL) {
 		if (!json_object_object_get_ex(obj_cloud, "serverName",
@@ -151,7 +146,6 @@ static int parse_config(const char *config, struct settings *settings)
 	}
 
 	settings->uuid = g_strdup(uuid);
-	settings->token = g_strdup(token);
 
 	err = 0; /* Success */
 
@@ -223,7 +217,7 @@ int main(int argc, char *argv[])
 	settings.tty = opt_tty;
 	/*
 	 * Command line options (host and port) have higher priority
-	 * than values read from config file. UUID and Token should
+	 * than values read from config file. UUID should
 	 * not be read from command line due security reason.
 	 */
 
@@ -284,7 +278,6 @@ int main(int argc, char *argv[])
 	manager_stop();
 	g_free(settings.host);
 	g_free(settings.uuid);
-	g_free(settings.token);
 
 	LOG_INFO("Exiting\n");
 
@@ -293,7 +286,6 @@ int main(int argc, char *argv[])
 failure:
 	g_free(settings.host);
 	g_free(settings.uuid);
-	g_free(settings.token);
 
 	return EXIT_FAILURE;
 }
