@@ -1632,9 +1632,6 @@ ssize_t msg_process(int sock, int proto_sock,
 		return -EINVAL;
 	}
 
-	/* Response is always the next opcode */
-	rtype = kreq->hdr.type + 1;
-
 	/* Set a default payload length for error */
 	krsp->hdr.payload_len = sizeof(krsp->action.result);
 
@@ -1659,22 +1656,29 @@ ssize_t msg_process(int sock, int proto_sock,
 		/* Payload length is set by the caller */
 		result = msg_register(sock, proto_sock, proto_ops,
 						&kreq->reg, &krsp->cred);
+		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
 		result = msg_unregister(sock, proto_sock, proto_ops,
 								&kreq->unreg);
+		rtype = KNOT_MSG_UNREGISTER_RESP;
 		break;
 	case KNOT_MSG_DATA:
 		result = msg_data(sock, proto_sock, proto_ops, &kreq->data);
+		rtype = KNOT_MSG_DATA_RESP;
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(sock, proto_sock, proto_ops, &kreq->auth);
+		rtype = KNOT_MSG_AUTH_RESP;
 		break;
 	case KNOT_MSG_SCHEMA:
-	case KNOT_MSG_SCHEMA | KNOT_MSG_SCHEMA_FLAG_END:
-		eof = kreq->hdr.type & KNOT_MSG_SCHEMA_FLAG_END ? TRUE : FALSE;
+	case KNOT_MSG_SCHEMA_END:
+		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? TRUE : FALSE;
 		result = msg_schema(sock, proto_sock, proto_ops, &kreq->schema,
 									eof);
+		rtype = KNOT_MSG_SCHEMA_RESP;
+		if (eof)
+			rtype = KNOT_MSG_SCHEMA_END_RESP;
 		break;
 	case KNOT_MSG_CONFIG_RESP:
 		result = msg_config_resp(sock, &kreq->action);

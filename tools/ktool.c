@@ -497,8 +497,7 @@ static int send_schema(GSList *list)
 
 		l = g_slist_next(l);
 		if (!l)
-			msg.hdr.type = KNOT_MSG_SCHEMA |
-					KNOT_MSG_SCHEMA_FLAG_END;
+			msg.hdr.type = KNOT_MSG_SCHEMA_END_RESP;
 
 		nbytes = write(sock, &msg, sizeof(msg.hdr) +
 						msg.hdr.payload_len);
