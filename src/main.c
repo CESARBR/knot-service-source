@@ -76,50 +76,11 @@ static GOptionEntry options[] = {
 	{ NULL },
 };
 
-static char *load_config(const char *file)
-{
-	int length;
-	char *buffer;
-	FILE *fl;
-
-	fl = fopen(file, "r");
-	if (fl == NULL) {
-		LOG_ERROR("Failed to open file: %s", file);
-		return NULL;
-	}
-
-	fseek(fl, 0, SEEK_END);
-	length = ftell(fl);
-	fseek(fl, 0, SEEK_SET);
-
-	buffer = (char *) malloc((length + 1) * sizeof(char));
-	if (buffer == NULL) {
-		fclose(fl);
-		return NULL;
-	}
-
-	if (fread(buffer, length, 1, fl) != 1) {
-		free(buffer);
-		fclose(fl);
-		return NULL;
-	}
-
-	buffer[length] = '\0';
-
-	fclose(fl);
-
-	return buffer;
-}
-
-static int parse_config(const char *config, struct settings *settings)
+static int parse_config(json_object *jobj, struct settings *settings)
 {
 	const char *uuid, *tmp;
-	json_object *jobj, *obj_cloud, *obj_tmp;
+	json_object *obj_cloud, *obj_tmp;
 	int err = -EINVAL;
-
-	jobj = json_tokener_parse(config);
-	if (jobj == NULL)
-		return -EINVAL;
 
 	if (!json_object_object_get_ex(jobj, "cloud", &obj_cloud))
 		goto done;
@@ -148,10 +109,7 @@ static int parse_config(const char *config, struct settings *settings)
 	settings->uuid = g_strdup(uuid);
 
 	err = 0; /* Success */
-
 done:
-	/* Free mem used in json parse: */
-	json_object_put(jobj);
 	return err;
 }
 
@@ -185,7 +143,7 @@ int main(int argc, char *argv[])
 	GOptionContext *context;
 	GError *gerr = NULL;
 	int err;
-	char *json_str;
+	json_object *jobj;
 	GIOChannel *inotify_io;
 	int inotifyFD, wd;
 	guint watch_id;
@@ -208,10 +166,6 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	json_str = load_config(opt_cfg);
-	if (json_str == NULL)
-		return EXIT_FAILURE;
-
 	memset(&settings, 0, sizeof(settings));
 	settings.proto = "http";/* only supported protocol at moment */
 	settings.tty = opt_tty;
@@ -226,10 +180,17 @@ int main(int argc, char *argv[])
 
 	settings.port = opt_port;
 
-	err = parse_config(json_str, &settings);
-	free(json_str);
+	/* Load data from config file */
+	jobj = json_object_from_file(opt_cfg);
+	if (!jobj)
+		goto failure;
+
+	err = parse_config(jobj, &settings);
+	/* Free mem derived from jobj*/
+	json_object_put(jobj);
 	if (err < 0)
 		goto failure;
+
 
 	err = manager_start(&settings);
 	if (err < 0) {
