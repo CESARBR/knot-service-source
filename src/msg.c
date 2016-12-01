@@ -680,101 +680,6 @@ done:
 	return NULL;
 }
 
-static int8_t msg_register(int sock, int proto_sock,
-					const struct proto_ops *proto_ops,
-					const knot_msg_register *kreq,
-					knot_msg_credential *krsp)
-{
-	GIOChannel *io;
-	struct trust *trust;
-	json_object *jobj;
-	const char *jobjstring;
-	char *uuid, *token;
-	json_raw_t json;
-	int err, len;
-	int8_t result;
-	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
-
-	/*
-	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
-	 * for the terminating null character
-	 */
-	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
-	strncpy(thing_name, kreq->devName, len);
-
-	if (kreq->devName[0] == '\0') {
-		LOG_ERROR("Empty device name!\n");
-		return KNOT_REGISTER_INVALID_DEVICENAME;
-	}
-
-	jobj = json_object_new_object();
-	if (!jobj) {
-		LOG_ERROR("JSON: no memory\n");
-		return KNOT_ERROR_UNKNOWN;
-	}
-
-	json_object_object_add(jobj, "KNOTDevice",
-				json_object_new_string("type"));
-	json_object_object_add(jobj, "name",
-				json_object_new_string(thing_name));
-	json_object_object_add(jobj, "owner",
-				json_object_new_string(owner_uuid));
-
-	jobjstring = json_object_to_json_string(jobj);
-
-	memset(&json, 0, sizeof(json));
-	err = proto_ops->mknode(proto_sock, jobjstring, &json);
-
-	json_object_put(jobj);
-
-	if (err < 0) {
-		LOG_ERROR("manager mknode: %s(%d)\n", strerror(-err), -err);
-		free(json.data);
-		return KNOT_CLOUD_FAILURE;
-	}
-
-	if (parse_device_info(json.data, &uuid, &token) < 0) {
-		LOG_ERROR("Unexpected response!\n");
-		free(json.data);
-		return KNOT_CLOUD_FAILURE;
-	}
-
-	free(json.data);
-
-	LOG_INFO("UUID: %s, TOKEN: %s\n", uuid, token);
-
-	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (strlen(uuid) != 36 || strlen(token) != 40) {
-		LOG_ERROR("Invalid UUID or token!\n");
-		result = KNOT_CLOUD_FAILURE;
-		goto done;
-	}
-
-	strcpy(krsp->uuid, uuid);
-	strcpy(krsp->token, token);
-
-	/* Payload length includes the result, UUID and TOKEN */
-	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
-
-	trust = g_new0(struct trust, 1);
-	trust->uuid = uuid;
-	trust->token = token;
-
-	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
-	/* Add a watch to remove the credential when the client disconnects */
-	io = g_io_channel_unix_new(sock);
-	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
-	g_io_channel_unref(io);
-
-	return KNOT_SUCCESS;
-
-done:
-	g_free(uuid);
-	g_free(token);
-
-	return result;
-}
-
 static int8_t msg_unregister(int sock, int proto_sock,
 					const struct proto_ops *proto_ops,
 					const knot_msg_unregister *kreq)
@@ -1046,6 +951,112 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 	g_slist_free_full(list, g_free);
 }
 
+static int8_t msg_register(int sock, int proto_sock,
+					const struct proto_ops *proto_ops,
+					const knot_msg_register *kreq,
+					knot_msg_credential *krsp)
+{
+	GIOChannel *io, *proto_io;
+	struct trust *trust;
+	json_object *jobj;
+	const char *jobjstring;
+	char *uuid, *token;
+	json_raw_t json;
+	int err, len;
+	int8_t result;
+	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
+	struct proto_watch *proto_watch;
+
+	/*
+	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
+	 * for the terminating null character
+	 */
+	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
+	strncpy(thing_name, kreq->devName, len);
+
+	if (kreq->devName[0] == '\0') {
+		LOG_ERROR("Empty device name!\n");
+		return KNOT_REGISTER_INVALID_DEVICENAME;
+	}
+
+	jobj = json_object_new_object();
+	if (!jobj) {
+		LOG_ERROR("JSON: no memory\n");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	json_object_object_add(jobj, "KNOTDevice",
+				json_object_new_string("type"));
+	json_object_object_add(jobj, "name",
+				json_object_new_string(thing_name));
+	json_object_object_add(jobj, "owner",
+				json_object_new_string(owner_uuid));
+
+	jobjstring = json_object_to_json_string(jobj);
+
+	memset(&json, 0, sizeof(json));
+	err = proto_ops->mknode(proto_sock, jobjstring, &json);
+
+	json_object_put(jobj);
+
+	if (err < 0) {
+		LOG_ERROR("manager mknode: %s(%d)\n", strerror(-err), -err);
+		free(json.data);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	if (parse_device_info(json.data, &uuid, &token) < 0) {
+		LOG_ERROR("Unexpected response!\n");
+		free(json.data);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	free(json.data);
+
+	LOG_INFO("UUID: %s, TOKEN: %s\n", uuid, token);
+
+	/* Parse function never returns NULL for 'uuid' or 'token' fields */
+	if (strlen(uuid) != 36 || strlen(token) != 40) {
+		LOG_ERROR("Invalid UUID or token!\n");
+		result = KNOT_CLOUD_FAILURE;
+		goto done;
+	}
+
+	strcpy(krsp->uuid, uuid);
+	strcpy(krsp->token, token);
+
+	/* Payload length includes the result, UUID and TOKEN */
+	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+
+	trust = g_new0(struct trust, 1);
+	trust->uuid = uuid;
+	trust->token = token;
+
+	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
+	/* Add a watch to remove the credential when the client disconnects */
+	io = g_io_channel_unix_new(sock);
+	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
+	g_io_channel_unref(io);
+
+	proto_watch = g_new0(struct proto_watch, 1);
+	proto_watch->id = proto_register_watch(proto_sock, trust->uuid,
+				trust->token, proto_watch_cb, proto_watch);
+	proto_watch->node_io = g_io_channel_ref(io);
+
+	/* Add a watch to remove source when cloud disconnects */
+	proto_io = g_io_channel_unix_new(proto_sock);
+	g_io_add_watch(proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, proto_hup_cb,
+			proto_watch);
+	g_io_channel_unref(proto_io);
+
+	return KNOT_SUCCESS;
+
+done:
+	g_free(uuid);
+	g_free(token);
+
+	return result;
+}
 
 static int8_t msg_auth(int sock, int proto_sock,
 				const struct proto_ops *proto_ops,
