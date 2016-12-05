@@ -46,7 +46,7 @@ static GMainLoop *main_loop;
 
 static struct settings settings;
 
-static const char *opt_cfg;
+static const char *opt_cfg = "/etc/knot/gatewayConfig.json";
 /*
  * Settings provided by command line have higher
  * priority than values read from config file.
