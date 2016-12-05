@@ -967,17 +967,20 @@ static int8_t msg_register(int sock, int proto_sock,
 	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct proto_watch *proto_watch;
 
-	/*
-	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
-	 * for the terminating null character
-	 */
-	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
-	strncpy(thing_name, kreq->devName, len);
-
 	if (kreq->devName[0] == '\0') {
 		LOG_ERROR("Empty device name!\n");
 		return KNOT_REGISTER_INVALID_DEVICENAME;
 	}
+
+	/*
+	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
+	 * for the terminating null character
+	 */
+	memset(thing_name, 0, sizeof(thing_name));
+
+	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
+
+	strncpy(thing_name, kreq->devName, len);
 
 	jobj = json_object_new_object();
 	if (!jobj) {
