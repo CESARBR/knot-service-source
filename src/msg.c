@@ -48,6 +48,7 @@
 struct config {
 	knot_msg_config kmcfg;		/* knot_message_config from cloud */
 	char *hash;			/* Checksum of kmcfg */
+	gboolean confirmed;
 
 };
 
@@ -494,6 +495,7 @@ static GSList *parse_device_config(const char *json_str)
 		memcpy(&(entry->kmcfg.values.upper_limit), &upper_limit,
 						sizeof(knot_value_types));
 		entry->hash = checksum_config(jobjentry);
+		entry->confirmed = FALSE;
 		list = g_slist_append(list, entry);
 	}
 
@@ -843,6 +845,17 @@ static GSList *get_changed_config(GSList *current, GSList *received)
 			ccfg = cur->data;
 			if (!strcmp(ccfg->hash, rcfg->hash)) {
 				match = TRUE;
+				rcfg->confirmed = ccfg->confirmed;
+				if (!rcfg->confirmed) {
+					kmsg = g_new0(knot_msg_config, 1);
+					memcpy(kmsg, &rcfg->kmcfg,
+						sizeof(knot_msg_config));
+					kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
+					kmsg->hdr.payload_len =
+						sizeof(kmsg->sensor_id) +
+						sizeof(kmsg->values);
+					list = g_slist_append(list, kmsg);
+				}
 				break;
 			}
 		}
@@ -1422,6 +1435,8 @@ static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
 {
 	struct trust *trust;
 	uint8_t sensor_id;
+	GSList *list;
+	struct config *entry;
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
@@ -1429,6 +1444,13 @@ static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 	sensor_id = rsp->result;
+	for (list = trust->config; list; list = g_slist_next(list)) {
+		entry = list->data;
+		if (entry->kmcfg.sensor_id == sensor_id) {
+			entry->confirmed = TRUE;
+			break;
+		}
+	}
 	LOG_INFO("THING %s received config for sensor %d\n", trust->uuid,
 								sensor_id);
 	return KNOT_SUCCESS;
