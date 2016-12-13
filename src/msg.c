@@ -1159,6 +1159,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	json_raw_t json;
 	const char *jobjstr;
 	int err;
+	gboolean found = FALSE;
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
@@ -1175,9 +1176,18 @@ static int8_t msg_schema(int sock, int proto_sock,
 	 * }
 	 */
 
-	/* Add to a temporary list until receiving complete schema */
+	/*
+	 * Checks whether the schema was received before and if not, adds
+	 * to a temporary list until receiving complete schema.
+	 */
 	kschema = g_memdup(schema, sizeof(*schema));
-	trust->schema_tmp = g_slist_append(trust->schema_tmp, kschema);
+	for (list = trust->schema_tmp; list ; list = g_slist_next(list)) {
+		schema = list->data;
+		if (kschema->sensor_id == schema->sensor_id)
+			found = TRUE;
+	}
+	if (!found)
+		trust->schema_tmp = g_slist_append(trust->schema_tmp, kschema);
 
 	 /* TODO: missing timer to wait for end of schema transfer */
 
