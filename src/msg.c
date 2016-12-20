@@ -1001,8 +1001,8 @@ static int8_t msg_register(int sock, int proto_sock,
 		return KNOT_ERROR_UNKNOWN;
 	}
 
-	json_object_object_add(jobj, "KNOTDevice",
-				json_object_new_string("type"));
+	json_object_object_add(jobj, "type",
+				json_object_new_string("KNOTDevice"));
 	json_object_object_add(jobj, "name",
 				json_object_new_string(thing_name));
 	json_object_object_add(jobj, "owner",
