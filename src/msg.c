@@ -71,7 +71,7 @@ struct proto_watch {
 /* Maps sockets to sessions  */
 static GHashTable *trust_list;
 
-static char owner_uuid[37];
+static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 
 static void config_free(gpointer mem)
 {
@@ -1032,7 +1032,8 @@ static int8_t msg_register(int sock, int proto_sock,
 	LOG_INFO("UUID: %s, TOKEN: %s\n", uuid, token);
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (strlen(uuid) != 36 || strlen(token) != 40) {
+	if (strlen(uuid) != KNOT_PROTOCOL_UUID_LEN ||
+				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN) {
 		LOG_ERROR("Invalid UUID or token!\n");
 		result = KNOT_CLOUD_FAILURE;
 		goto done;
