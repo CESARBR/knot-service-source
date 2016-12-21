@@ -178,9 +178,6 @@ int main(int argc, char *argv[])
 	 * not be read from command line due security reason.
 	 */
 
-	if (opt_host)
-		settings.host = g_strdup(opt_host);
-
 	settings.port = opt_port;
 
 	/* Load data from config file */
@@ -194,6 +191,10 @@ int main(int argc, char *argv[])
 	if (err < 0)
 		goto failure;
 
+	if (opt_host) {
+		g_free(settings.host);
+		settings.host = g_strdup(opt_host);
+	}
 
 	err = manager_start(&settings);
 	if (err < 0) {
