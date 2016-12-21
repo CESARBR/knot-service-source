@@ -88,7 +88,10 @@ static int parse_config(json_object *jobj, struct settings *settings)
 	if (!json_object_object_get_ex(obj_cloud, "uuid", &obj_tmp))
 		goto done;
 
+	/* UUID is mandatory */
 	uuid = json_object_get_string(obj_tmp);
+	if (!uuid)
+		goto done;
 
 	if (settings->host == NULL) {
 		if (!json_object_object_get_ex(obj_cloud, "serverName",
