@@ -197,6 +197,15 @@ int main(int argc, char *argv[])
 		LOG_ERROR("start(): %s (%d)\n", strerror(-err), -err);
 		goto failure;
 	}
+
+	/* Set user id to nobody */
+	err = setuid(65534);
+	if (err != 0) {
+		manager_stop();
+		LOG_ERROR("Set uid to nobody failed.  %s(%d). Exiting ...\n",
+							strerror(errno), errno);
+		goto failure;
+	}
 	/*
 	 * TODO: implement a robust & clean way to reload settings
 	 * instead of force quitting when configuration file changes.
@@ -218,9 +227,6 @@ int main(int argc, char *argv[])
 	g_io_channel_set_close_on_unref(inotify_io, TRUE);
 	g_io_channel_unref(inotify_io);
 
-	/* Set user id to nobody */
-	err = setuid(65534);
-	LOG_INFO("Set user to nobody: %d\n", err);
 
 	signal(SIGTERM, sig_term);
 	signal(SIGINT, sig_term);
