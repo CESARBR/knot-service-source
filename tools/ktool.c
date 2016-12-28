@@ -497,7 +497,7 @@ static int send_schema(GSList *list)
 
 		l = g_slist_next(l);
 		if (!l)
-			msg.hdr.type = KNOT_MSG_SCHEMA_END_RESP;
+			msg.hdr.type = KNOT_MSG_SCHEMA_END;
 
 		nbytes = write(sock, &msg, sizeof(msg.hdr) +
 						msg.hdr.payload_len);
@@ -718,29 +718,6 @@ static int cmd_data(void)
 	return 0;
 }
 
-static int cmd_id(void)
-{
-	int err;
-	ssize_t nbytes;
-	uint8_t datagram[128];
-
-	memset(datagram, 0, sizeof(datagram));
-
-	/*
-	 * TODO: set knot protocol headers and payload
-	 * Send UUID and token to identify a previously
-	 * registered device.
-	 */
-	nbytes = write(sock, datagram, sizeof(datagram));
-	if (nbytes < 0) {
-		err = errno;
-		printf("write(): %s(%d)\n", strerror(err), err);
-		return -err;
-	}
-
-	return 0;
-}
-
 static int cmd_subscribe(void)
 {
 	return -ENOSYS;
@@ -921,7 +898,7 @@ static GOptionEntry commands[] = {
 	"Eg: ./ktool --data -u=value -t=value -j=value [-U=value | -T=value]",
 				NULL},
 	{ "id", 0, 0, G_OPTION_ARG_NONE, &opt_id,
-		"Identify a Meshblu device",
+		"Identify (Authenticate) a Meshblu device",
 				NULL },
 	{ "subscribe", 0, 0, G_OPTION_ARG_NONE, &opt_subs,
 		"Subscribe for messages of a given device",
@@ -1044,7 +1021,7 @@ int main(int argc, char *argv[])
 		err = cmd_unregister();
 	} else if (opt_id) {
 		printf("Identifying node ...\n");
-		err = cmd_id();
+		err = authenticate(opt_uuid, opt_token);
 	} else if (opt_subs) {
 		printf("Subscribing node ...\n");
 		err = cmd_subscribe();
