@@ -50,6 +50,7 @@
 #define DEFAULT_CLOUD_HOST	"localhost"
 #define DEVICE_INDEX		0
 #define OPERATION_PREFIX	420
+#define MESSAGE_PREFIX		42
 
 struct lws_context *context;
 static GHashTable *wstable;
@@ -497,9 +498,7 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 {
 	int err;
 	const char *jobjstring;
-	json_object *jobj;
-	json_object *jarray;
-	const char *expected_result = "unregistered";
+	json_object *jobj, *jarray;
 
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
@@ -530,19 +529,24 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 		goto done;
 	}
 
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	psd->len = snprintf((char *) psd->buffer + LWS_PRE, MAX_PAYLOAD,
+					"%d%s", OPERATION_PREFIX, jobjstring);
 	lws_callback_on_writable(psd->ws);
 
-	/* Keep serving context until server responds or an error occurs */
-	while (!got_response || connection_error)
+	/*
+	 * Execution is blocked until server responds or and error occurs
+	 * lws_service makes sure libwebsockets keeps doing its job.
+	 */
+	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	err = ret2errno(psd->json, expected_result);
+	if (connection_error)
+		err = -ECONNRESET;
+
+	err = handle_response(json);
 
 	if (err < 0)
 		goto done;
-
-	err = handle_response(json);
 done:
 	got_response = FALSE;
 	connection_error = FALSE;
