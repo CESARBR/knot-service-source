@@ -104,32 +104,7 @@ static gboolean timeout_ws(gpointer user_data)
 
 	return TRUE;
 }
-/*
- * Return '0' if device has been created or a negative value
- * mapped to generic Linux -errno codes.
- */
-static int ret2errno(const char *json_str, const char *expected_result)
-{
-	json_object *jobj, *jobjentry;
-	int err = -EIO;
 
-	jobj = json_tokener_parse(json_str);
-	if (jobj == NULL)
-		goto done;
-
-	if (json_object_get_type(jobj) == json_type_array) {
-		jobjentry = json_object_array_get_idx(jobj, DEVICE_INDEX);
-		if (jobjentry == NULL)
-			goto done;
-	}
-	if (!strcmp(json_object_get_string(jobjentry), expected_result))
-		err = 0;
-
-done:
-	json_object_put(jobj);
-
-	return err;
-}
 static int handle_response(json_raw_t *json)
 {
 	size_t realsize;
@@ -594,9 +569,8 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json)
 {
 	int err;
-	struct json_object *jobj, *ajobj, *jobjdev, *jarray, *jset;
+	struct json_object *jobj, *ajobj, *jobjdev, *jarray;
 	const char *jobjstr;
-	const char *expected_result = "updated";
 
 	jobj = json_tokener_parse(jreq);
 	if (jobj == NULL)
@@ -611,10 +585,7 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 	json_object_object_add(jobjdev, "token", json_object_new_string(token));
 	json_object_array_add(ajobj, jobjdev);
 
-	jset = json_object_new_object();
-	json_object_object_add(jset, "$set", jobj);
-
-	json_object_array_add(ajobj, jset);
+	json_object_array_add(ajobj, jobj);
 	json_object_array_add(jarray, ajobj);
 	jobjstr = json_object_to_json_string(jarray);
 
@@ -627,17 +598,18 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 		goto done;
 	}
 
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstr);
+	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
+						MESSAGE_PREFIX, jobjstr);
 	lws_callback_on_writable(psd->ws);
 
 	/* Keep serving context until server responds or an error occurs */
-	while (!got_response || connection_error)
+	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	err = ret2errno(psd->json, expected_result);
-
-	if (err < 0)
+	if (connection_error) {
+		err = -ECONNREFUSED;
 		goto done;
+	}
 
 	err = handle_response(json);
 
@@ -646,6 +618,7 @@ done:
 	connection_error = FALSE;
 
 	json_object_put(jarray);
+	g_free(psd->json);
 	g_free(psd);
 
 	return err;
