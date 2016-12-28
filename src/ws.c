@@ -100,7 +100,7 @@ static struct handshake_data *h_data;
 
 static gboolean timeout_ws(gpointer user_data)
 {
-	lws_service(context, 0);
+	lws_service(context, SERVICE_TIMEOUT);
 
 	return TRUE;
 }
@@ -395,8 +395,6 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	int err;
 	const char *jobjstring;
 	json_object *jobj, *jarray;
-	const char *expected_result = "ready";
-	const char *expected_result_schema = "device";
 
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
@@ -426,19 +424,20 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 		goto done;
 	}
 
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
+						MESSAGE_PREFIX, jobjstring);
 	lws_callback_on_writable(psd->ws);
 
 	/* Keep serving context until server responds or an error occurs */
-	while (!got_response || connection_error)
+	while (!ready && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	if (ret2errno((char *)psd->json, expected_result) < 0) {
-		err = -EIO;
+	if (connection_error) {
+		err = -ECONNREFUSED;
 		goto done;
 	}
 
-	got_response = FALSE;
+	ready = FALSE;
 	connection_error = FALSE;
 
 	/*
@@ -464,26 +463,20 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	}
 
 
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
+	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
+						OPERATION_PREFIX, jobjstring);
 	lws_callback_on_writable(psd->ws);
 
-	while (!got_response || connection_error)
+	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
-	err = ret2errno(psd->json, expected_result_schema);
-	/*
-	 * The expected result:
-	 * ["devices",{"uuid": ...
-	 *		"schema" : [
-	 *			{"sensor_id": x, "value_type": w,
-	 *				"unit": z "type_id": y, "name": "foo"}]
-	 *		}]
-	 */
-	if (err < 0)
+	if (handle_response(json) < 0) {
+		err = -EIO;
 		goto done;
+	}
 
-	err = handle_response(json);
 done:
+	ready = FALSE;
 	got_response = FALSE;
 	connection_error = FALSE;
 
