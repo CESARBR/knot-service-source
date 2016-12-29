@@ -650,17 +650,21 @@ static int ws_data(int sock, const char *uuid, const char *token,
 		err = -EBADF;
 		goto done;
 	}
-	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstr);
+	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
+						OPERATION_PREFIX, jobjstr);
 	lws_callback_on_writable(psd->ws);
 	err = 0;
 
-	/* WS data does not expect any response */
+	while (!got_response && !connection_error)
+		lws_service(context, SERVICE_TIMEOUT);
+
 
 done:
 	got_response = FALSE;
 	connection_error = FALSE;
 
 	json_object_put(jmsg);
+	g_free(psd->json);
 	g_free(psd);
 
 	return err;
