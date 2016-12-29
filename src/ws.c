@@ -133,7 +133,8 @@ done:
 static int handle_response(json_raw_t *json)
 {
 	size_t realsize;
-	json_object *jobj, *jres;
+	json_object *jobj, *jres, *jprop, *jschema, *jschema_val;
+	int has_schema;
 	const char *jobjstringres;
 
 	jres = json_tokener_parse(psd->json);
@@ -141,7 +142,20 @@ static int handle_response(json_raw_t *json)
 		return -EINVAL;
 
 	jobj = json_object_array_get_idx(jres, DEVICE_INDEX);
+	/* Try to find device information inside the returned json */
+	json_object_object_get_ex(jobj, "device", &jprop);
+	/* Meshblu returns schema as value of key '1' */
+	has_schema = json_object_object_get_ex(jprop, "1", &jschema);
+	/* If response has schema, combine it as a key/value pair */
+	if (has_schema) {
+		json_object_object_get_ex(jschema, "schema", &jschema_val);
+		json_object_object_add(jprop, "schema",
+						json_object_get(jschema_val));
+	}
+	/* If device property was found return it */
 	jobjstringres = json_object_to_json_string(jobj);
+	if (jprop)
+		jobjstringres = json_object_to_json_string(jprop);
 
 	realsize = strlen(jobjstringres) + 1;
 
