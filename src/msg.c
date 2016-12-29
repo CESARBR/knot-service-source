@@ -391,30 +391,18 @@ static GSList *parse_device_config(const char *json_str)
 	if (!jobj)
 		return NULL;
 
-	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array ||
-				json_object_array_length(jobjarray) != 1)
-		goto done;
-
-	/* Getting first entry of 'devices' array :
+	/* Getting 'config' from the device properties:
 	 *
-	 * {"devices":[{"uuid":
+	 * {"uuid": ...
 	 *		"config" : [
 	 *			{"sensor_id": v, "event_flags": w,
 	 *				"time_sec": x "lower_limit": y,
 	 *						"upper_limit": z}]
-	 *		}]
 	 * }
 	 */
 
-	jobjentry = json_object_array_get_idx(jobjarray, 0);
-	if (!jobjentry)
-		goto done;
-
 	/* 'config' is an array */
-	if (!json_object_object_get_ex(jobjentry, "config", &jobjarray))
+	if (!json_object_object_get_ex(jobj, "config", &jobjarray))
 		goto done;
 
 	if (json_object_get_type(jobjarray) != json_type_array)
