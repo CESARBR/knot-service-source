@@ -594,29 +594,17 @@ static GSList *parse_device_getdata(const char *json_str)
 	if (!jobj)
 		return NULL;
 
-	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array ||
-				json_object_array_length(jobjarray) != 1)
-		goto done;
-
-	/* Getting first entry of 'devices' array :
-	 *
+	/*
+	 * Getting 'get_data' from the device properties
 	 * {"devices":[{"uuid":
 	 *		"get_data" : [
 	 *			{"sensor_id": v
 	 *			}]
-	 *		}]
 	 * }
 	 */
 
-	jobjentry = json_object_array_get_idx(jobjarray, 0);
-	if (!jobjentry)
-		goto done;
-
 	/* 'set_data' is an array */
-	if (!json_object_object_get_ex(jobjentry, "get_data", &jobjarray))
+	if (!json_object_object_get_ex(jobj, "get_data", &jobjarray))
 		goto done;
 
 	if (json_object_get_type(jobjarray) != json_type_array)
