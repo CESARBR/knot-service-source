@@ -1226,15 +1226,11 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 	if (!jobj)
 		goto done;
 
-	if (!json_object_object_get_ex(jobj, "devices", &jobjarray))
-		goto done;
+	ajobj = json_object_new_array();
+	setdatajobj = json_object_new_object();
 
-	if (json_object_get_type(jobjarray) != json_type_array ||
-				json_object_array_length(jobjarray) != 1)
-		goto done;
-
-	/* Getting first entry of 'devices' array :
-	 *
+	/*
+	 * Getting 'get_data' from the device properties
 	 * {"devices":[{"uuid":
 	 *		"set_data" : [
 	 *			{"sensor_id": v,
@@ -1243,19 +1239,12 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 	 * }
 	 */
 
-	jobjentry = json_object_array_get_idx(jobjarray, 0);
-	if (!jobjentry)
-		goto done;
-
-	/* 'set_data' is an array */
-	if (!json_object_object_get_ex(jobjentry, "get_data", &jobjarray))
+	/* 'get_data' is an array */
+	if (!json_object_object_get_ex(jobj, "get_data", &jobjarray))
 		goto done;
 
 	if (json_object_get_type(jobjarray) != json_type_array)
 		goto done;
-
-	ajobj = json_object_new_array();
-	setdatajobj = json_object_new_object();
 
 	for (i = 0; i < json_object_array_length(jobjarray); i++) {
 
@@ -1283,7 +1272,7 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 		 */
 	}
 
-	json_object_object_add(setdatajobj, "get_data", ajobj);
+	json_object_object_add(setdatajobj, "get_data", json_object_get(ajobj));
 	jobjstr = json_object_to_json_string(setdatajobj);
 
 	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
@@ -1293,6 +1282,8 @@ done:
 		json_object_put(jobj);
 	if (setdatajobj)
 		json_object_put(setdatajobj);
+	if (ajobj)
+		json_object_put(ajobj);
 	free(json.data);
 }
 
