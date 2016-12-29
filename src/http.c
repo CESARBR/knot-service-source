@@ -486,6 +486,7 @@ static int http_setdata(int sock, const char *uuid, const char *token,
 static int http_fetch(int sock, const char *uuid, const char *token,
 							json_raw_t *json)
 {
+	int err;
 	/* Length: device_uri + '/' + UUID + '\0' */
 	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
 
@@ -496,8 +497,14 @@ static int http_fetch(int sock, const char *uuid, const char *token,
 	* Return '0' if config not fails or a negative value
 	* mapped to generic Linux -errno codes.
 	*/
+	err = fetch_url(sock, uri, NULL, uuid, token, json, "GET");
+	if (err < 0)
+		return err;
 
-	return fetch_url(sock, uri, NULL, uuid, token, json, "GET");
+	if (check_json(json->data, json) < 0)
+		return -EINVAL;
+
+	return err;
 }
 
 /*
