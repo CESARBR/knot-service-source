@@ -652,12 +652,12 @@ static int cmd_schema(void)
 	memset(&schema, 0, sizeof(schema));
 	json_object_foreach(jobj, load_schema, &schema);
 	if (!schema.err)
-		send_schema(schema.list);
+		err = send_schema(schema.list);
 
 	g_slist_free_full(schema.list, g_free);
 	json_object_put(jobj);
 
-	return 0;
+	return err;
 }
 
 static int cmd_data(void)

@@ -177,6 +177,11 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		 * last reference and the destroy callback
 		 * is called.
 		 */
+		if (cond & G_IO_HUP && session->proto_io) {
+			proto_sock =
+				g_io_channel_unix_get_fd(session->proto_io);
+			proto_ops[proto_index]->close(proto_sock);
+		}
 		session->node_id = 0;
 		return FALSE;
 	}
@@ -255,6 +260,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
+	/* FIXME: Stop knotd if cloud if not available */
 	proto_sock = proto_ops[proto_index]->connect();
 	if (proto_sock < 0) {
 		log_info("Can't connect to cloud service!");

@@ -106,7 +106,8 @@ static gboolean proto_hup_cb(GIOChannel *io, GIOCondition cond,
 {
 	struct proto_watch *proto_watch = user_data;
 
-	g_source_remove(proto_watch->id);
+	if (proto_watch->id > 0)
+		g_source_remove(proto_watch->id);
 	g_io_channel_unref(proto_watch->node_io);
 	g_free(proto_watch);
 
