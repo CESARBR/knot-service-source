@@ -611,9 +611,8 @@ static GSList *parse_device_getdata(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
 	GSList *list = NULL;
-	knot_msg_data *entry;
+	knot_msg_item *entry;
 	int sensor_id, i;
-	knot_data data;
 
 	jobj = json_tokener_parse(json_str);
 	if (!jobj)
@@ -663,12 +662,8 @@ static GSList *parse_device_getdata(const char *json_str)
 
 		sensor_id = json_object_get_int(jobjkey);
 
-		/* Sets 'value' to all 0s. It will not be used by the thing */
-		memset(&data, 0, sizeof(knot_data));
-
-		entry = g_new0(knot_msg_data, 1);
+		entry = g_new0(knot_msg_item, 1);
 		entry->sensor_id = sensor_id;
-		memcpy(&(entry->payload), &data, sizeof(knot_data));
 		list = g_slist_append(list, entry);
 	}
 	json_object_put(jobj);
@@ -731,7 +726,7 @@ static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
 	struct trust *trust;
 	GSList *list;
 	GSList *tmp;
-	knot_msg_data *kmdata;
+	knot_msg_item *kmitem;
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
@@ -744,10 +739,9 @@ static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
 	list = parse_device_getdata(json.data);
 
 	for (tmp = list; tmp; tmp = g_slist_next(tmp)) {
-		kmdata = tmp->data;
-		kmdata->hdr.type = KNOT_MSG_GET_DATA;
-		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
-							sizeof(kmdata->payload);
+		kmitem = tmp->data;
+		kmitem->hdr.type = KNOT_MSG_GET_DATA;
+		kmitem->hdr.payload_len = sizeof(kmitem->sensor_id);
 	}
 
 	return list;
@@ -1442,7 +1436,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	return KNOT_SUCCESS;
 }
 
-static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
+static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
 {
 	struct trust *trust;
 	uint8_t sensor_id;
@@ -1454,7 +1448,7 @@ static int8_t msg_config_resp(int sock, const knot_msg_result *rsp)
 		LOG_INFO("Permission denied!\n");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
-	sensor_id = rsp->result;
+	sensor_id = rsp->sensor_id;
 	for (list = trust->config; list; list = g_slist_next(list)) {
 		entry = list->data;
 		if (entry->kmcfg.sensor_id == sensor_id) {
@@ -1735,7 +1729,7 @@ ssize_t msg_process(int sock, int proto_sock,
 			rtype = KNOT_MSG_SCHEMA_END_RESP;
 		break;
 	case KNOT_MSG_CONFIG_RESP:
-		result = msg_config_resp(sock, &kreq->action);
+		result = msg_config_resp(sock, &kreq->item);
 		/* No octets to be transmitted */
 		return 0;
 	case KNOT_MSG_DATA_RESP:

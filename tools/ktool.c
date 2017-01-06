@@ -784,9 +784,9 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 				recv.config.values.upper_limit.val_f.value_int,
 				recv.config.values.upper_limit.val_f.value_dec);
 		resp.hdr.type = KNOT_MSG_CONFIG_RESP;
-		resp.hdr.payload_len = sizeof(resp.action.result);
-		resp.action.result = recv.config.sensor_id;
-		nbytes = write(sock, &resp, sizeof(knot_msg_result));
+		resp.hdr.payload_len = sizeof(resp.item.sensor_id);
+		resp.item.sensor_id = recv.config.sensor_id;
+		nbytes = write(sock, &resp, sizeof(knot_msg_item));
 		if (nbytes < 0) {
 			err = errno;
 			printf("node_ops: %s(%d)\n", strerror(err), err);
@@ -817,7 +817,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		 * test folders only contains schema and data for the sensor_ids
 		 * 251,252 and 253.
 		 */
-		switch (recv.data.sensor_id) {
+		switch (recv.item.sensor_id) {
 		case 251:
 			jobj = json_object_from_file("json/data-volume.json");
 			break;
