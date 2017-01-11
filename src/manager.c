@@ -255,10 +255,15 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
+	proto_sock = proto_ops[proto_index]->connect();
+	if (proto_sock < 0) {
+		LOG_INFO("Can't connect to cloud service!\n");
+		return FALSE;
+	}
+
 	node_io = g_io_channel_unix_new(sockfd);
 	g_io_channel_set_close_on_unref(node_io, TRUE);
 
-	proto_sock = proto_ops[proto_index]->connect();
 	proto_io = g_io_channel_unix_new(proto_sock);
 
 	session = g_new0(struct session, 1);
