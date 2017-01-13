@@ -1,6 +1,6 @@
 {
 	"schema": {
-		"sensor_id": 255,
+		"sensor_id": 252,
 		"value_type": 01,
 		"unit": 01,
 		"type_id": 0005,

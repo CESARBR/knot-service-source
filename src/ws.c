@@ -217,137 +217,6 @@ done:
 	json_object_put(jobj);
 }
 
-static const char *lws_reason2str(enum lws_callback_reasons reason)
-{
-	switch (reason) {
-	case LWS_CALLBACK_ESTABLISHED:
-		return "ESTABLISHED";
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-		return "CLIENT_CONNECTION_ERROR";
-	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
-		return "CLIENT_FILTER_PRE_ESTABLISH";
-	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-		return "CLIENT_ESTABLISHED";
-	case LWS_CALLBACK_CLOSED:
-		return "CLOSED";
-	case LWS_CALLBACK_CLOSED_HTTP:
-		return "CLOSED_HTTP";
-	case LWS_CALLBACK_RECEIVE:
-		return "RECEIVE";
-	case LWS_CALLBACK_CLIENT_RECEIVE:
-		return "CLIENT_RECEIVE";
-	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
-		return "CLIENT_RECEIVE_PONG";
-	case LWS_CALLBACK_CLIENT_WRITEABLE:
-		return "CLIENT_WRITEABLE";
-	case LWS_CALLBACK_SERVER_WRITEABLE:
-		return "SERVER_WRITEABLE";
-	case LWS_CALLBACK_HTTP:
-		return "HTTP";
-	case LWS_CALLBACK_HTTP_BODY:
-		return "HTTP_BODY";
-	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
-		return "BODY_COMPLETION";
-	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-		return "HTTP_FILE_COMPLETION";
-	case LWS_CALLBACK_HTTP_WRITEABLE:
-		return "HTTP_WRITEABLE";
-	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
-		return "FILTER_NETWORK_CONNECTION";
-	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
-		return "FILTER_HTTP_CONNECTION";
-	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
-		return "SERVER_NEW_CLIENT_INSTANTIATED";
-	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-		return "FILTER_PROTOCOL_CONNECTION";
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
-		return "OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS";
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
-		return "OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS";
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-		return "OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION";
-	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-		return "CLIENT_APPEND_HANDSHAKE_HEADER";
-	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
-		return "CONFIRM_EXTENSION_OKAY";
-	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
-		return "CLIENT_CONFIRM_EXTENSION_SUPPORTED";
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		return "PROTOCOL_INIT";
-	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		return "PROTOCOL_DESTROY";
-	case LWS_CALLBACK_WSI_CREATE:
-		return "WSI_CREATE";
-	case LWS_CALLBACK_WSI_DESTROY:
-		return "WSI_DESTROY";
-	case LWS_CALLBACK_GET_THREAD_ID:
-		return "GET_THREAD_ID";
-
-	case LWS_CALLBACK_ADD_POLL_FD:
-		return "ADD_POLL_FD";
-	case LWS_CALLBACK_DEL_POLL_FD:
-		return "DEL_POLL_FD";
-	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
-		return "CHANGE_MODE_POLL_FD";
-	case LWS_CALLBACK_LOCK_POLL:
-		return "LOCK_POLL";
-	case LWS_CALLBACK_UNLOCK_POLL:
-		return "UNLOCK_POLL";
-
-	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
-		return "OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY";
-	case LWS_CALLBACK_USER:
-		return "USER";
-
-	case LWS_CALLBACK_RECEIVE_PONG:
-		return "RECEIVE PONG";
-	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
-		return "PEER INITIATED CLOSE";
-	case LWS_CALLBACK_WS_EXT_DEFAULTS:
-		return "EXT DEFAULTS";
-	case LWS_CALLBACK_CGI:
-		return "CGI";
-	case LWS_CALLBACK_CGI_TERMINATED:
-		return "CGI TERMINATED";
-	case LWS_CALLBACK_CGI_STDIN_DATA:
-		return "CGI STDIN DATA";
-	case LWS_CALLBACK_CGI_STDIN_COMPLETED:
-		return "CGI STDIN COMPLETED";
-	case LWS_CALLBACK_ESTABLISHED_CLIENT_HTTP:
-		return "ESTABLISHED CLIENT HTTP";
-	case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
-		return "CLOSED CLIENT HTTP";
-	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP:
-		return "RECEIVE CLIENT HTTP";
-	case LWS_CALLBACK_COMPLETED_CLIENT_HTTP:
-		return "COMPLETED CLIENT HTTP";
-	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
-		return "RECEIVE CLIENT HTTP READ";
-
-	case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
-		return "LWS_CALLBACK_HTTP_DROP_PROTOCOL";
-	case LWS_CALLBACK_CHECK_ACCESS_RIGHTS:
-		return "LWS_CALLBACK_CHECK_ACCESS_RIGHTS";
-	case LWS_CALLBACK_PROCESS_HTML:
-		return "LWS_CALLBACK_PROCESS_HTML";
-	case LWS_CALLBACK_ADD_HEADERS:
-		return "LWS_CALLBACK_ADD_HEADERS";
-	case LWS_CALLBACK_SESSION_INFO:
-		return "LWS_CALLBACK_SESSION_INFO";
-	case LWS_CALLBACK_GS_EVENT:
-		return "LWS_CALLBACK_GS_EVENT";
-	case LWS_CALLBACK_HTTP_PMO:
-		return "LWS_CALLBACK_HTTP_PMO";
-	case LWS_CALLBACK_CLIENT_HTTP_WRITEABLE:
-		return "LWS_CALLBACK_CLIENT_HTTP_WRITEABLE";
-	case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
-		return "LWS_CALLBACK_HTTP_BIND_PROTOCOL";
-
-	default:
-		return "UNKNOWN";
-	}
-}
-
 static void ws_close(int sock)
 {
 	GSList *entry;
@@ -422,6 +291,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	 * won't be overwritten.
 	 */
 	lws_callback_on_writable(entry->data);
+	log_info("JSON TX: %s", jobjstring);
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
@@ -652,10 +522,12 @@ static int ws_update(int sock, const char *uuid, const char *token,
 		err = -EBADF;
 		goto done;
 	}
-
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 						MESSAGE_PREFIX, jobjstr);
 	lws_callback_on_writable(entry->data);
+
+	log_info("JSON TX: %s", jobjstr);
+
 	lws_service(context, SERVICE_TIMEOUT);
 
 	if (connection_error) {
@@ -782,7 +654,6 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 			offset++;
 		resp += offset;
 	}
-	log_info("JSON_RX %d = %s", packet_type, resp);
 
 	switch (packet_type) {
 	case EIO_OPEN:
@@ -790,9 +661,9 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 		break;
 	case EIO_PONG:
 		/* TODO */
-		log_info("PONG");
 		break;
 	case EIO_MSG:
+		log_info("JSON_RX %d = %s", packet_type, resp);
 		if (!strcmp(resp, IDENTIFY_REQUEST))
 			connected = TRUE;
 		else if (!strncmp(resp, READY_RESPONSE, READY_RESPONSE_LEN))
@@ -862,9 +733,6 @@ static int callback_lws_http(struct lws *wsi,
 					void *user_data, void *in, size_t len)
 
 {
-	log_info("reason(%02X): %s - wsi: %p", reason,
-						lws_reason2str(reason), wsi);
-
 	switch (reason) {
 	case LWS_CALLBACK_ESTABLISHED:
 		log_info("LWS_CALLBACK_ESTABLISHED");
@@ -904,7 +772,12 @@ static int callback_lws_http(struct lws *wsi,
 
 		l = lws_write(wsi, &psd->buffer[LWS_PRE], psd->len,
 								LWS_WRITE_TEXT);
-		log_info("Wrote (%d) bytes", l);
+		/*
+		 * Since pings are sent continuously, ignore them to have
+		 * a cleaner log.
+		 */
+		if (l > 1)
+			log_info("Wrote (%d) bytes", l);
 
 		/* Enable RX when after message is successfully sent */
 		if (l < 0) {
