@@ -625,11 +625,11 @@ done:
 	return err;
 }
 
-static int ws_schema(int sock, const char *uuid, const char *token,
+static int ws_update(int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json)
 {
 	int err;
-	struct json_object *jobj, *ajobj, *jobjdev, *jarray;
+	struct json_object *jobj, *jarray;
 	const char *jobjstr;
 	GSList *entry;
 
@@ -637,17 +637,12 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 	if (jobj == NULL)
 		return -EINVAL;
 
-	ajobj = json_object_new_array();
 	jarray = json_object_new_array();
-	jobjdev = json_object_new_object();
 
 	json_object_array_add(jarray, json_object_new_string("update"));
-	json_object_object_add(jobjdev, "uuid", json_object_new_string(uuid));
-	json_object_object_add(jobjdev, "token", json_object_new_string(token));
-	json_object_array_add(ajobj, jobjdev);
+	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
 
-	json_object_array_add(ajobj, jobj);
-	json_object_array_add(jarray, ajobj);
+	json_object_array_add(jarray, jobj);
 	jobjstr = json_object_to_json_string(jarray);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
@@ -661,6 +656,7 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 						MESSAGE_PREFIX, jobjstr);
 	lws_callback_on_writable(entry->data);
+	lws_service(context, SERVICE_TIMEOUT);
 
 	if (connection_error) {
 		err = -ECONNREFUSED;
@@ -672,8 +668,8 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 done:
 	got_response = FALSE;
 	connection_error = FALSE;
-
 	json_object_put(jarray);
+
 	return err;
 }
 
@@ -1146,9 +1142,9 @@ struct proto_ops proto_ws = {
 	.mknode = ws_mknode,
 	.signin = ws_signin,
 	.rmnode = ws_rmnode,
-	.schema = ws_schema,
+	.schema = ws_update,
 	.data = ws_data,
 	.fetch = ws_device,
 	.async = proto_register_watch,
-	.setdata = ws_schema
+	.setdata = ws_update
 };
