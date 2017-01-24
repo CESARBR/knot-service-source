@@ -133,7 +133,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 
 	json->data = (char *) realloc(json->data, json->size + realsize + 1);
 	if (json->data == NULL) {
-		LOG_ERROR("Not enough memory\n");
+		log_error("Not enough memory");
 		return 0;
 	}
 
@@ -172,7 +172,7 @@ static int check_json(const char *json_str, json_raw_t *json)
 
 	json->data = (char *) realloc(json->data, realsize);
 	if (json->data == NULL) {
-		LOG_ERROR("Not enough memory\n");
+		log_error("Not enough memory");
 		return -ENOMEM;
 	}
 
@@ -199,15 +199,15 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	size_t i;
 
 	if (!request || !fetch) {
-		LOG_ERROR("Invalid argument!\n");
+		log_error("Invalid argument!");
 		return -EINVAL;
 	}
 
-	LOG_INFO("action: %s\n", action);
+	log_info("action: %s", action);
 
 	ch = curl_easy_init();
 	if (ch == NULL) {
-		LOG_ERROR("curl_easy_init(): init failed\n");
+		log_error("curl_easy_init(): init failed");
 		return -ENOMEM;
 	}
 
@@ -225,7 +225,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	curl_easy_setopt(ch, CURLOPT_URL, action);
 
-	LOG_INFO("HTTP(%s): %s\n", upcase_request, action);
+	log_info("HTTP(%s): %s", upcase_request, action);
 
 	if (uuid && token) {
 
@@ -235,7 +235,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 		snprintf(token_hdr, sizeof(token_hdr), "%s%s",
 					MESHBLU_AUTH_TOKEN, token);
 		headers = curl_slist_append(headers, token_hdr);
-		LOG_INFO(" AUTH: %s\n       %s\n", uuid, token);
+		log_info(" AUTH: %s\n       %s", uuid, token);
 	}
 
 	if (json) {
@@ -245,7 +245,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 					    "Content-Type: application/json");
 		headers = curl_slist_append(headers, "charsets: utf-8");
 		curl_easy_setopt(ch, CURLOPT_POSTFIELDS, json);
-		LOG_INFO(" JSON TX: %s\n", json);
+		log_info(" JSON TX: %s", json);
 	}
 
 	if (headers)
@@ -275,7 +275,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	if (rcode != CURLE_OK) {
 		curl_easy_cleanup(ch);
-		LOG_ERROR("curl_easy_perform(): %s(%d)\n",
+		log_error("curl_easy_perform(): %s(%d)",
 					curl_easy_strerror(rcode), rcode);
 		return -EIO;
 	}
@@ -285,17 +285,17 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	curl_easy_cleanup(ch);
 
 	if (rcode != CURLE_OK) {
-		LOG_ERROR("curl_easy_getinfo(): %s(%d)\n",
+		log_error("curl_easy_getinfo(): %s(%d)",
 					curl_easy_strerror(rcode), rcode);
 		return -EIO;
 	}
 
 	if (fetch->data)
-		LOG_INFO(" JSON RX: %s\n", fetch->data);
+		log_info(" JSON RX: %s", fetch->data);
 	else
-		LOG_INFO(" JSON RX: Empty\n");
+		log_info(" JSON RX: Empty");
 
-	LOG_INFO("HTTP: %ld\n", ehttp);
+	log_info("HTTP: %ld", ehttp);
 
 	return http2errno(ehttp);
 }
@@ -312,7 +312,7 @@ static int http_connect(void)
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock == -1) {
 		err = errno;
-		LOG_ERROR("Meshblu socket(): %s(%d)\n", strerror(err), err);
+		log_error("Meshblu socket(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
@@ -323,7 +323,7 @@ static int http_connect(void)
 
 	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0) {
 		err = errno;
-		LOG_ERROR("Meshblu connect(): %s(%d)\n", strerror(err), err);
+		log_error("Meshblu connect(): %s(%d)", strerror(err), err);
 
 		close(sock);
 		return -err;
@@ -446,14 +446,14 @@ static int http_probe(const char *host, unsigned int port)
 	hostent = gethostbyname(host_uri);
 	if  (hostent == NULL) {
 		err = errno;
-		LOG_ERROR("gethostbyname(%s): %s (%d)\n", host_uri,
+		log_error("gethostbyname(%s): %s (%d)", host_uri,
 						       strerror(err), err);
 		return -err;
 	}
 
 	host_addr.s_addr = *((unsigned long *) hostent->h_addr_list[0]);
 
-	LOG_INFO("Meshblu IP: %s\n", inet_ntoa(host_addr));
+	log_info("Meshblu IP: %s", inet_ntoa(host_addr));
 
 	return 0;
 }
@@ -525,7 +525,7 @@ static gboolean proto_poll(gpointer user_data)
 	 * msg.c.
 	 */
 	if (result) {
-		LOG_ERROR("signin(): %s(%d)\n", strerror(-result), -result);
+		log_error("signin(): %s(%d)", strerror(-result), -result);
 		return TRUE;
 	}
 

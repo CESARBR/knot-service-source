@@ -126,11 +126,11 @@ static gboolean inotify_cb(GIOChannel *gio, GIOCondition condition,
 
 	numRead = read(inotifyFD, buf, BUF_LEN);
 	if (numRead == -1) {
-		LOG_ERROR("Error read from inotify fd\n");
+		log_error("Error read from inotify fd");
 		return FALSE;
 	}
 
-	LOG_INFO("Read %ld bytes from inotify fd\n", (long) numRead);
+	log_info("Read %ld bytes from inotify fd", (long) numRead);
 
 	/* Process the events in buffer returned by read() */
 
@@ -150,22 +150,26 @@ int main(int argc, char *argv[])
 	GIOChannel *inotify_io;
 	int inotifyFD, wd;
 	guint watch_id;
-	LOG_INFO("KNOT Gateway\n");
+
+	log_init("knotd");
+	log_info("KNOT Gateway");
 
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
 
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		LOG_ERROR("Invalid arguments: %s\n", gerr->message);
+		log_error("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
 		g_option_context_free(context);
+		log_close();
 		return EXIT_FAILURE;
 	}
 
 	g_option_context_free(context);
 
 	if (!opt_cfg) {
-		LOG_ERROR("Missing KNOT configuration file!\n");
+		log_error("Missing KNOT configuration file!\n");
+		log_close();
 		return EXIT_FAILURE;
 	}
 
@@ -198,7 +202,7 @@ int main(int argc, char *argv[])
 
 	err = manager_start(&settings);
 	if (err < 0) {
-		LOG_ERROR("start(): %s (%d)\n", strerror(-err), -err);
+		log_error("start(): %s (%d)", strerror(-err), -err);
 		goto failure;
 	}
 
@@ -206,7 +210,7 @@ int main(int argc, char *argv[])
 	err = setuid(65534);
 	if (err != 0) {
 		manager_stop();
-		LOG_ERROR("Set uid to nobody failed.  %s(%d). Exiting ...\n",
+		log_error("Set uid to nobody failed.  %s(%d). Exiting ...",
 							strerror(errno), errno);
 		goto failure;
 	}
@@ -222,7 +226,7 @@ int main(int argc, char *argv[])
 	if (wd == -1) {
 		manager_stop();
 		close(inotifyFD);
-		LOG_ERROR("inotify_add_watch(): %s\n", opt_cfg);
+		log_error("inotify_add_watch(): %s", opt_cfg);
 		goto failure;
 	}
 	/* Setting gio channel to watch inotify fd */
@@ -250,7 +254,8 @@ int main(int argc, char *argv[])
 	g_free(settings.host);
 	g_free(settings.uuid);
 
-	LOG_INFO("Exiting\n");
+	log_info("Exiting");
+	log_close();
 
 	return EXIT_SUCCESS;
 
@@ -258,5 +263,6 @@ failure:
 	g_free(settings.host);
 	g_free(settings.uuid);
 
+	log_close();
 	return EXIT_FAILURE;
 }

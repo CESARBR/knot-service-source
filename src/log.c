@@ -1,7 +1,7 @@
 /*
  * This file is part of the KNOT Project
  *
- * Copyright (c) 2015, CESAR. All rights reserved.
+ * Copyright (c) 2017, CESAR. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -26,10 +26,59 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-void log_init(const char *ident);
-void log_close(void);
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
-void log_info(const char *format, ...) __attribute__((format(printf, 1, 2)));
-void log_error(const char *format, ...) __attribute__((format(printf, 1, 2)));
-void log_warn(const char *format, ...) __attribute__((format(printf, 1, 2)));
-void log_dbg(const char *format, ...) __attribute__((format(printf, 1, 2)));
+#include <syslog.h>
+#include <stdarg.h>
+
+#include "log.h"
+
+void log_error(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	vsyslog(LOG_ERR, format, ap);
+	va_end(ap);
+}
+
+void log_warn(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	vsyslog(LOG_WARNING, format, ap);
+	va_end(ap);
+}
+
+void log_info(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	vsyslog(LOG_INFO, format, ap);
+	va_end(ap);
+}
+
+void log_dbg(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	vsyslog(LOG_DEBUG, format, ap);
+	va_end(ap);
+}
+
+void log_init(const char *ident)
+{
+	int option = LOG_NDELAY | LOG_PID | LOG_PERROR;
+
+	openlog(ident, option, LOG_DAEMON);
+}
+
+void log_close(void)
+{
+	closelog();
+}

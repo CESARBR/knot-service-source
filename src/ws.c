@@ -111,7 +111,7 @@ static int handle_response(json_raw_t *json)
 
 	json->data = (char *) realloc(json->data, json->size + realsize);
 	if (json->data == NULL) {
-		LOG_ERROR("Not enough memory\n");
+		log_error("Not enough memory");
 		return -ENOMEM;
 	}
 
@@ -257,7 +257,7 @@ static const char *lws_reason2str(enum lws_callback_reasons reason)
 static void ws_close(int sock)
 {
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock)))
-		LOG_ERROR("Removing key: sock %d not found!\n", sock);
+		log_error("Removing key: sock %d not found!", sock);
 }
 
 static int ws_mknode(int sock, const char *owner_uuid,
@@ -282,7 +282,7 @@ static int ws_mknode(int sock, const char *owner_uuid,
 
 	if (psd->ws == NULL) {
 		err = -EBADF;
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		goto done;
 	}
 	psd->len = sprintf((char *)&psd->buffer[LWS_PRE], "%s", jobjstring);
@@ -326,7 +326,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	jarray = json_object_new_array();
 
 	if (!jobj || !jarray) {
-		LOG_ERROR("JSON: no memory\n");
+		log_error("JSON: no memory");
 		return -ENOMEM;
 	}
 
@@ -339,13 +339,13 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	LOG_INFO("TX JSON %s\n", jobjstring);
+	log_info("TX JSON %s", jobjstring);
 
 	psd = g_new0(struct per_session_data_ws, 1);
 	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	if (psd->ws == NULL) {
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -382,7 +382,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	if (psd->ws == NULL) {
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -430,7 +430,7 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	jarray = json_object_new_array();
 
 	if (!jobj || !jarray) {
-		LOG_ERROR("JSON: no memory\n");
+		log_error("JSON: no memory");
 		return -ENOMEM;
 	}
 
@@ -444,13 +444,13 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	LOG_INFO("TX JSON %s\n", jobjstring);
+	log_info("TX JSON %s", jobjstring);
 
 	psd = g_new0(struct per_session_data_ws, 1);
 	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	if (psd->ws == NULL) {
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -510,7 +510,7 @@ static int ws_schema(int sock, const char *uuid, const char *token,
 	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	if (psd->ws == NULL) {
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -561,7 +561,7 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	psd->ws = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	if (psd->ws == NULL) {
-		LOG_ERROR("Not found\n");
+		log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -586,24 +586,24 @@ static int callback_lws_http(struct lws *wsi,
 					void *user, void *in, size_t len)
 
 {
-	LOG_INFO("reason(%02X): %s\n", reason, lws_reason2str(reason));
+	log_info("reason(%02X): %s", reason, lws_reason2str(reason));
 
 	switch (reason) {
 	case LWS_CALLBACK_ESTABLISHED:
-		LOG_INFO("LWS_CALLBACK_ESTABLISHED\n");
+		log_info("LWS_CALLBACK_ESTABLISHED");
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-		LOG_INFO("LWS_CALLBACK_CLIENT_CONNECTION_ERROR\n");
+		log_info("LWS_CALLBACK_CLIENT_CONNECTION_ERROR");
 		connection_error = TRUE;
 		break;
 	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
 		break;
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-		LOG_INFO("LWS_CALLBACK_CLIENT_ESTABLISHED\n");
+		log_info("LWS_CALLBACK_CLIENT_ESTABLISHED");
 		connected = TRUE;
 		break;
 	case LWS_CALLBACK_CLOSED:
-		LOG_INFO("LWS_CALLBACK_CLOSED\n");
+		log_info("LWS_CALLBACK_CLOSED");
 		connection_error = TRUE;
 		break;
 	case LWS_CALLBACK_CLOSED_HTTP:
@@ -615,7 +615,7 @@ static int callback_lws_http(struct lws *wsi,
 		((char *)in)[len] = '\0';
 		psd->json = (char *) in;
 		got_response = TRUE;
-		LOG_INFO("JSON RX %d '%s'\n", (int)len, (char *)psd->json);
+		log_info("JSON RX %d '%s'", (int)len, (char *)psd->json);
 		/* Flow control will be enabled again when client writes data */
 		lws_rx_flow_control(wsi, 0);
 		}
@@ -627,11 +627,11 @@ static int callback_lws_http(struct lws *wsi,
 		int l;
 
 		if (psd->ws == wsi)
-			LOG_INFO("Client wsi %p writable\n", wsi);
+			log_info("Client wsi %p writable", wsi);
 
 		l = lws_write(psd->ws, &psd->buffer[LWS_PRE], psd->len,
 								LWS_WRITE_TEXT);
-		LOG_INFO("Wrote (%d) bytes\n", l);
+		log_info("Wrote (%d) bytes", l);
 
 		/* Enable RX when after message is successfully sent */
 		if (l < 0) {
@@ -724,7 +724,7 @@ static int ws_connect(void)
 
 	snprintf(ads_port, sizeof(ads_port), "%s:%u", address, port);
 
-	LOG_INFO("Connecting to %s...\n", ads_port);
+	log_info("Connecting to %s...", ads_port);
 
 	info.context = context;
 	info.address = address;
@@ -740,7 +740,7 @@ static int ws_connect(void)
 
 	if (ws == NULL) {
 		int err = errno;
-		LOG_ERROR("libwebsocket_client_connect(): %s(%d)\n",
+		log_error("libwebsocket_client_connect(): %s(%d)",
 							strerror(err), err);
 		return -err;
 	}

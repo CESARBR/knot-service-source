@@ -18,7 +18,7 @@ src_knotd_SOURCES = src/main.c \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
 			src/proto.h src/node.h \
-			src/log.h \
+			src/log.c src/log.h \
 			$(modules_sources)
 
 src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
@@ -31,7 +31,7 @@ tools_ktool_LDFLAGS = $(AM_LDFLAGS)
 tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@
 
 unit_ktest_SOURCES = unit/ktest.c 			\
-			src/log.h
+			src/log.c src/log.h
 
 unit_ktest_LDADD = @GLIB_LIBS@
 unit_ktest_LDFLAGS = $(AM_LDFLAGS)
