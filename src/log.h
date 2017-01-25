@@ -26,7 +26,7 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-void log_init(const char *ident);
+void log_init(const char *ident, int detach);
 void log_close(void);
 
 void log_info(const char *format, ...) __attribute__((format(printf, 1, 2)));

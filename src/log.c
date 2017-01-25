@@ -71,7 +71,7 @@ void log_dbg(const char *format, ...)
 	va_end(ap);
 }
 
-void log_init(const char *ident)
+void log_init(const char *ident, int detach)
 {
 	int option = LOG_NDELAY | LOG_PID | LOG_PERROR;
 

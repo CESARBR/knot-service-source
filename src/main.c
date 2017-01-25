@@ -56,6 +56,7 @@ static const char *opt_host = NULL;
 /* Default is websockets */
 static const char *opt_proto = "http";
 static const char *opt_tty = NULL;
+static gboolean opt_detach = TRUE;
 
 static void sig_term(int sig)
 {
@@ -73,6 +74,9 @@ static GOptionEntry options[] = {
 					"protocol", "eg: http or ws" },
 	{ "tty", 't', 0, G_OPTION_ARG_STRING, &opt_tty,
 					"TTY", "eg: /dev/ttyUSB0" },
+	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
+					G_OPTION_ARG_NONE, &opt_detach,
+					"Logging in foreground" },
 	{ NULL },
 };
 
@@ -151,14 +155,11 @@ int main(int argc, char *argv[])
 	int inotifyFD, wd;
 	guint watch_id;
 
-	log_init("knotd");
-	log_info("KNOT Gateway");
-
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
 
 	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		log_error("Invalid arguments: %s\n", gerr->message);
+		g_printerr("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
 		g_option_context_free(context);
 		log_close();
@@ -168,7 +169,7 @@ int main(int argc, char *argv[])
 	g_option_context_free(context);
 
 	if (!opt_cfg) {
-		log_error("Missing KNOT configuration file!\n");
+		g_printerr("Missing KNOT configuration file!\n");
 		log_close();
 		return EXIT_FAILURE;
 	}
@@ -199,6 +200,9 @@ int main(int argc, char *argv[])
 		g_free(settings.host);
 		settings.host = g_strdup(opt_host);
 	}
+
+	log_init("knotd", opt_detach);
+	log_info("KNOT Gateway");
 
 	err = manager_start(&settings);
 	if (err < 0) {
@@ -241,6 +245,13 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 
 	main_loop = g_main_loop_new(NULL, FALSE);
+
+	if (opt_detach) {
+		if (daemon(0, 0)) {
+			log_error("Can't start daemon!");
+			goto failure;
+		}
+	}
 
 	g_main_loop_run(main_loop);
 
