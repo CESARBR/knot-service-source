@@ -64,7 +64,7 @@ static void sig_term(int sig)
 }
 
 static GOptionEntry options[] = {
-	{ "config", 'f', 0, G_OPTION_ARG_STRING, &opt_cfg,
+	{ "config", 'c', 0, G_OPTION_ARG_STRING, &opt_cfg,
 					"configuration file path", NULL },
 	{ "host", 'h', 0, G_OPTION_ARG_STRING, &opt_host,
 					"host", "Cloud server URL" },
