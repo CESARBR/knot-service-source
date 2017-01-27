@@ -939,6 +939,20 @@ static int8_t msg_register(int sock, int proto_sock,
 	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct proto_watch *proto_watch;
 
+	/*
+	 * Due to radio packet loss the thing retransmits register requests if a
+	 * response does not arrives in 20 seconds, if this device was
+	 * previously added we just send the uuid/token again.
+	 */
+	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	if (trust) {
+		strcpy(krsp->uuid, trust->uuid);
+		strcpy(krsp->token, trust->token);
+		krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+
+		return KNOT_SUCCESS;
+	}
+
 	if (kreq->devName[0] == '\0') {
 		log_error("Empty device name!");
 		return KNOT_REGISTER_INVALID_DEVICENAME;
