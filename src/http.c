@@ -539,7 +539,7 @@ static gboolean proto_poll(gpointer user_data)
 /*
  * Watch or poll the cloud to changes in the device.
  */
-unsigned int proto_register_watch(int proto_sock, const char *uuid,
+static unsigned int proto_register_watch(int proto_sock, const char *uuid,
 				const char *token, void (*proto_watch_cb)
 				(json_raw_t, void *), void *user_data)
 {
@@ -578,4 +578,5 @@ struct proto_ops proto_http = {
 	.data = http_data,
 	.fetch = http_fetch,
 	.setdata = http_setdata,
+	.async = proto_register_watch
 };

@@ -57,14 +57,15 @@ struct proto_ops {
 							json_raw_t *json);
 	int (*setdata) (int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json);
-};
-
-/*
- * Watch that polls or monitors the cloud to check if "CONFIG" changed or
- * "SET DATA".
- */
-unsigned int proto_register_watch(int proto_sock, const char *uuid,
+	/*
+	 * Watch that polls or monitors the cloud to check if "CONFIG" changed
+	 * or "SET DATA" or "GET DATA".
+	 */
+	unsigned int (*async) (int proto_sock, const char *uuid,
 				const char *token, void (*proto_watch_cb)
 				(json_raw_t, void *), void *user_data);
+
+
+};
 
 void proto_unregister_watch(unsigned int source_id);

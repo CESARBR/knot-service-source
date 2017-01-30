@@ -1015,7 +1015,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	g_io_channel_unref(io);
 
 	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto_register_watch(proto_sock, trust->uuid,
+	proto_watch->id = proto_ops->async(proto_sock, trust->uuid,
 				trust->token, proto_watch_cb, proto_watch);
 	proto_watch->node_io = g_io_channel_ref(io);
 
@@ -1094,8 +1094,8 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 
 	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto_register_watch(proto_sock, trust->uuid,
-				trust->token, proto_watch_cb, proto_watch);
+	proto_watch->id = proto_ops->async(proto_sock,
+			trust->uuid, trust->token, proto_watch_cb, proto_watch);
 	proto_watch->node_io = g_io_channel_ref(io);
 
 	/* Add a watch to remove source when cloud disconnects */
