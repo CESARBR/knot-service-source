@@ -443,9 +443,17 @@ static int http_probe(const char *host, unsigned int port)
 	device_uri = g_strdup_printf("%s/devices", host_uri);
 	data_uri = g_strdup_printf("%s/data", host_uri);
 
-	hostent = gethostbyname(host_uri);
+	/*
+	 * TODO: gethostbyname() is obslote. Need to change it.
+	 * From man gethostbyname :
+	 * DESCRIPTION
+	 * The gethostbyname*(), gethostbyaddr*(), herror(), and hstrerror()
+	 * functions are obsolete.  Applications should  use  getaddrinfo(3),
+	 * getnameinfo(3), and gai_strerror(3) instead.
+	 */
+	hostent = gethostbyname(host);
 	if  (hostent == NULL) {
-		err = errno;
+		err = h_errno;
 		log_error("gethostbyname(%s): %s (%d)", host_uri,
 						       strerror(err), err);
 		return -err;
