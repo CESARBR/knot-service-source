@@ -38,12 +38,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+ #include <inttypes.h>
 
 #include <glib.h>
 
 #include "log.h"
 #include "node.h"
 #include "serial.h"
+
+#define __STDC_FORMAT_MACROS
 
 static gint tty_watch;
 
@@ -223,7 +226,7 @@ static int serial_accept(int srv_sockfd)
 		return -err;
 	}
 
-	log_info("New thing accept(%d) pipeid:%ld", sv[0], pipeid);
+	log_info("New thing accept(%d) pipeid: %" PRIu64, sv[0], pipeid);
 
 	pipepair = g_new0(struct pipe_pair, 1);
 	pipepair->sock = sv[1];

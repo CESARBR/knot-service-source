@@ -222,7 +222,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
-		log_error("KNOT IoT proto error: %s(%ld)",
+		log_error("KNOT IoT proto error: %s(%zd)",
 						strerror(-olen), -olen);
 		return TRUE;
 	}
@@ -233,7 +233,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	/* Response from the gateway: error or response for the given command */
 	sentbytes = ops->send(sock, opdu, olen);
 	if (sentbytes < 0)
-		log_error("node_ops: %s(%ld)",
+		log_error("node_ops: %s(%zd)",
 					strerror(-sentbytes), -sentbytes);
 
 	return TRUE;
