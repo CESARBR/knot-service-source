@@ -1000,8 +1000,6 @@ static int8_t msg_register(int sock, int proto_sock,
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	free(json.data);
-
 	log_info("UUID: %s, TOKEN: %s", uuid, token);
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
@@ -1014,6 +1012,21 @@ static int8_t msg_register(int sock, int proto_sock,
 
 	strcpy(krsp->uuid, uuid);
 	strcpy(krsp->token, token);
+
+	err = proto_ops->signin(proto_sock, uuid, token, &json);
+
+	if (!json.data) {
+		trust_free(trust);
+		return KNOT_CLOUD_FAILURE;
+	}
+
+	free(json.data);
+
+	if (err < 0) {
+		log_error("register_signin(): %s(%d)", strerror(-err), -err);
+		trust_free(trust);
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
 
 	/* Payload length includes the result, UUID and TOKEN */
 	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
