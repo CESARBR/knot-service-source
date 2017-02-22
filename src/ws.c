@@ -953,6 +953,9 @@ static int ws_probe(const char *host, unsigned int port)
 
 	memset(&i, 0, sizeof(i));
 
+	host_address = g_strdup(host);
+	host_port = port;
+
 	i.port = CONTEXT_PORT_NO_LISTEN;
 	i.gid = -1;
 	i.uid = -1;
@@ -980,6 +983,7 @@ static void ws_remove(void)
 	g_hash_table_foreach(wstable, session_data_free, NULL);
 	g_hash_table_destroy(wstable);
 	lws_context_destroy(context);
+	g_free(host_address);
 }
 
 /*
