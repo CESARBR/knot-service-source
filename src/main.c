@@ -54,7 +54,7 @@ static const char *opt_cfg = "/etc/knot/gatewayConfig.json";
 static unsigned int opt_port = 0;
 static const char *opt_host = NULL;
 /* Default is websockets */
-static const char *opt_proto = "http";
+static const char *opt_proto = "ws";
 static const char *opt_tty = NULL;
 static gboolean opt_detach = TRUE;
 
