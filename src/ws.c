@@ -589,48 +589,6 @@ done:
 	return err;
 }
 
-static int send_identity(void)
-{
-	int err = -ECONNREFUSED;
-	GSList *entry;
-	struct lws *ws;
-
-	/*
-	 * Part of the connection establishment process is to identify yourself
-	 * an identity msg with an empty json will generate a new uuid/token
-	 * a possible FIXME is to authenticate the owner (GW)
-	 */
-	psd->len = snprintf((char *) psd->buffer + LWS_PRE, MAX_PAYLOAD,
-							"42[\"identity\",{}]");
-
-	entry = g_slist_nth_data(wsis, psd->index);
-	if (!entry)
-		return err;
-
-	ws = (struct lws *)entry;
-	lws_callback_on_writable(ws);
-	/*
-	 * After receiving an identify request and sending an identity response
-	 * the cloud will send a ready or notReady back which will be mapped
-	 * to ready or connection_error respectively.
-	 */
-	while (!ready && !client_connection_error)
-		lws_service(context, SERVICE_TIMEOUT);
-
-	if (client_connection_error)
-		goto done;
-
-	err = 0;
-done:
-	ready = FALSE;
-	connected = TRUE;
-	client_connection_error = FALSE;
-	connection_error = FALSE;
-	got_response = FALSE;
-
-	return err;
-}
-
 static void handle_cloud_response(const char *resp, struct lws *wsi)
 {
 	int packet_type, offset = 0, len = strlen(resp);
@@ -745,7 +703,6 @@ static int callback_lws_http(struct lws *wsi,
 		break;
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
 		log_info("LWS_CALLBACK_CLIENT_ESTABLISHED");
-		connected = TRUE;
 		break;
 	case LWS_CALLBACK_CLOSED:
 		log_info("LWS_CALLBACK_CLOSED FOR WSI %p", wsi);
@@ -929,15 +886,6 @@ static int ws_connect(void)
 	sock = lws_get_socket_fd((struct lws *)entry);
 	gettimeofday(&psd->interval, NULL);
 	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), psd);
-
-	connected = FALSE;
-	client_connection_error = FALSE;
-	connection_error = FALSE;
-	got_response = FALSE;
-
-	err = send_identity();
-	if (err < 0)
-		return err;
 
 	connected = FALSE;
 	client_connection_error = FALSE;
