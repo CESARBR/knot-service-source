@@ -251,19 +251,20 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
 		return FALSE;
 
-	srv_sock = g_io_channel_unix_get_fd(io);
-
-	sockfd = ops->accept(srv_sock);
-	if (sockfd < 0) {
-		log_error("%p accept(): %s(%d)", ops,
-					strerror(-sockfd), -sockfd);
-		return FALSE;
-	}
-
 	/* FIXME: Stop knotd if cloud if not available */
 	proto_sock = proto_ops[proto_index]->connect();
 	if (proto_sock < 0) {
 		log_info("Can't connect to cloud service!");
+		return FALSE;
+	}
+
+	srv_sock = g_io_channel_unix_get_fd(io);
+
+	sockfd = ops->accept(srv_sock);
+	if (sockfd < 0) {
+		proto_ops[proto_index]->close(proto_sock);
+		log_error("%p accept(): %s(%d)", ops,
+					strerror(-sockfd), -sockfd);
 		return FALSE;
 	}
 
