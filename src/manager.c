@@ -255,7 +255,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	proto_sock = proto_ops[proto_index]->connect();
 	if (proto_sock < 0) {
 		log_info("Can't connect to cloud service!");
-		return FALSE;
+		return TRUE;
 	}
 
 	srv_sock = g_io_channel_unix_get_fd(io);
@@ -265,7 +265,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		proto_ops[proto_index]->close(proto_sock);
 		log_error("%p accept(): %s(%d)", ops,
 					strerror(-sockfd), -sockfd);
-		return FALSE;
+		return TRUE;
 	}
 
 	node_io = g_io_channel_unix_new(sockfd);
