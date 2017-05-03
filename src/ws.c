@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <errno.h>
+#include <string.h>
 
 #include <libwebsockets.h>
 
@@ -36,7 +37,8 @@
 
 #include <json-c/json.h>
 
-#include "log.h"
+#include <hal/linux_log.h>
+
 #include "proto.h"
 
 #define MAX_PAYLOAD		4096
@@ -176,7 +178,7 @@ static int handle_response(json_raw_t *json)
 
 	json->data = (char *) realloc(json->data, json->size + realsize);
 	if (json->data == NULL) {
-		log_error("Not enough memory");
+		hal_log_error("Not enough memory");
 		return -ENOMEM;
 	}
 
@@ -235,10 +237,10 @@ static void ws_close(int sock)
 	lws_service(context, SERVICE_TIMEOUT);
 
 	if (g_slist_remove(wsis, &psd->index) == NULL)
-		log_error("Removing wsi: no wsi found for sock %d", sock);
+		hal_log_error("Removing wsi: no wsi found for sock %d", sock);
 
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock))) {
-		log_error("Removing key: sock %d not found!", sock);
+		hal_log_error("Removing key: sock %d not found!", sock);
 		return;
 	}
 	g_free(psd->json);
@@ -266,7 +268,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 
 	if (entry->data == NULL) {
 		err = -EBADF;
-		log_error("Not found");
+		hal_log_error("Not found");
 		goto done;
 	}
 	/*
@@ -291,7 +293,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	 * won't be overwritten.
 	 */
 	lws_callback_on_writable(entry->data);
-	log_info("JSON TX: %s", jobjstring);
+	hal_log_info("JSON TX: %s", jobjstring);
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
@@ -322,7 +324,7 @@ static int ws_device(int sock, const char *uuid,
 	jarray = json_object_new_array();
 
 	if (!jobj || !jarray) {
-		log_error("JSON: no memory");
+		hal_log_error("JSON: no memory");
 		err = -ENOMEM;
 		return err;
 	}
@@ -335,13 +337,13 @@ static int ws_device(int sock, const char *uuid,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	log_info("TX JSON %s", jobjstring);
+	hal_log_info("TX JSON %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
-		log_error("Not found");
+		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -381,7 +383,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	jarray = json_object_new_array();
 
 	if (!jobj || !jarray) {
-		log_error("JSON: no memory");
+		hal_log_error("JSON: no memory");
 		err = -ENOMEM;
 		return err;
 	}
@@ -395,13 +397,13 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	log_info("TX JSON %s", jobjstring);
+	hal_log_info("TX JSON %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
-		log_error("Not found");
+		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -443,7 +445,7 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	jarray = json_object_new_array();
 
 	if (!jobj || !jarray) {
-		log_error("JSON: no memory");
+		hal_log_error("JSON: no memory");
 		return -ENOMEM;
 	}
 
@@ -457,13 +459,13 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	log_info("TX JSON %s", jobjstring);
+	hal_log_info("TX JSON %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
-		log_error("Not found");
+		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -518,7 +520,7 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 	if (entry->data == NULL) {
-		log_error("Not found");
+		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -526,7 +528,7 @@ static int ws_update(int sock, const char *uuid, const char *token,
 						MESSAGE_PREFIX, jobjstr);
 	lws_callback_on_writable(entry->data);
 
-	log_info("JSON TX: %s", jobjstr);
+	hal_log_info("JSON TX: %s", jobjstr);
 
 	lws_service(context, SERVICE_TIMEOUT);
 
@@ -568,7 +570,7 @@ static int ws_data(int sock, const char *uuid, const char *token,
 
 	entry = g_slist_nth(wsis, psd->index);
 	if (entry->data == NULL) {
-		log_error("Not found");
+		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
@@ -621,7 +623,7 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 		/* TODO */
 		break;
 	case EIO_MSG:
-		log_info("JSON_RX %d = %s", packet_type, resp);
+		hal_log_info("JSON_RX %d = %s", packet_type, resp);
 		if (!strcmp(resp, IDENTIFY_REQUEST))
 			connected = TRUE;
 		else if (!strncmp(resp, READY_RESPONSE, READY_RESPONSE_LEN))
@@ -660,7 +662,7 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 			json.data = (char *) realloc(json.data,
 							json.size + realsize);
 			if (json.data == NULL) {
-				log_error("Not enough memory");
+				hal_log_error("Not enough memory");
 				break;
 			}
 
@@ -693,19 +695,19 @@ static int callback_lws_http(struct lws *wsi,
 {
 	switch (reason) {
 	case LWS_CALLBACK_ESTABLISHED:
-		log_info("LWS_CALLBACK_ESTABLISHED");
+		hal_log_info("LWS_CALLBACK_ESTABLISHED");
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-		log_info("LWS_CALLBACK_CLIENT_CONNECTION_ERROR");
+		hal_log_info("LWS_CALLBACK_CLIENT_CONNECTION_ERROR");
 		client_connection_error = TRUE;
 		break;
 	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
 		break;
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-		log_info("LWS_CALLBACK_CLIENT_ESTABLISHED");
+		hal_log_info("LWS_CALLBACK_CLIENT_ESTABLISHED");
 		break;
 	case LWS_CALLBACK_CLOSED:
-		log_info("LWS_CALLBACK_CLOSED FOR WSI %p", wsi);
+		hal_log_info("LWS_CALLBACK_CLOSED FOR WSI %p", wsi);
 		wsi = NULL;
 		/* FIXME: Needed? connection_error = TRUE; */
 		break;
@@ -734,7 +736,7 @@ static int callback_lws_http(struct lws *wsi,
 		 * a cleaner log.
 		 */
 		if (l > 1)
-			log_info("Wrote (%d) bytes", l);
+			hal_log_info("Wrote (%d) bytes", l);
 
 		/* Enable RX when after message is successfully sent */
 		if (l < 0) {
@@ -825,7 +827,7 @@ static int ws_connect(void)
 	snprintf(ads_port, sizeof(ads_port) - 1, "%s:%u", host_address,
 								host_port);
 
-	log_info("Connecting to %s...", ads_port);
+	hal_log_info("Connecting to %s...", ads_port);
 
 	psd = g_try_new0(struct per_session_data_ws, 1);
 
@@ -863,7 +865,7 @@ static int ws_connect(void)
 	entry = g_slist_nth_data(wsis, psd->index);
 	if (entry == NULL) {
 		err = errno;
-		log_error("libwebsocket_client_connect(): %s(%d)",
+		hal_log_error("libwebsocket_client_connect(): %s(%d)",
 							strerror(err), err);
 		return -err;
 	}

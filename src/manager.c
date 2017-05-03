@@ -43,7 +43,8 @@
 
 #include <knot_protocol.h>
 
-#include "log.h"
+#include <hal/linux_log.h>
+
 #include "node.h"
 #include "proto.h"
 #include "serial.h"
@@ -191,7 +192,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
 	if (recvbytes < 0) {
 		err = errno;
-		log_error("readv(): %s(%d)", strerror(err), err);
+		hal_log_error("readv(): %s(%d)", strerror(err), err);
 		return TRUE;
 	}
 
@@ -199,12 +200,12 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		proto_sock = proto_ops[proto_index]->connect();
 		if (proto_sock < 0) {
 			/* TODO:  missing reply an error */
-			log_info("Can't connect to cloud service!");
+			hal_log_info("Can't connect to cloud service!");
 			session->node_id = 0;
 			return FALSE;
 		}
 
-		log_info("Connected to cloud service!");
+		hal_log_info("Connected to cloud service!");
 
 		session->proto_io = g_io_channel_unix_new(proto_sock);
 
@@ -222,7 +223,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
-		log_error("KNOT IoT proto error: %s(%zd)",
+		hal_log_error("KNOT IoT proto error: %s(%zd)",
 						strerror(-olen), -olen);
 		return TRUE;
 	}
@@ -233,7 +234,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	/* Response from the gateway: error or response for the given command */
 	sentbytes = ops->send(sock, opdu, olen);
 	if (sentbytes < 0)
-		log_error("node_ops: %s(%zd)",
+		hal_log_error("node_ops: %s(%zd)",
 					strerror(-sentbytes), -sentbytes);
 
 	return TRUE;
@@ -254,7 +255,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	/* FIXME: Stop knotd if cloud if not available */
 	proto_sock = proto_ops[proto_index]->connect();
 	if (proto_sock < 0) {
-		log_info("Can't connect to cloud service!");
+		hal_log_info("Can't connect to cloud service!");
 		return TRUE;
 	}
 
@@ -263,7 +264,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	sockfd = ops->accept(srv_sock);
 	if (sockfd < 0) {
 		proto_ops[proto_index]->close(proto_sock);
-		log_error("%p accept(): %s(%d)", ops,
+		hal_log_error("%p accept(): %s(%d)", ops,
 					strerror(-sockfd), -sockfd);
 		return TRUE;
 	}
@@ -295,7 +296,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	/* TODO: Create refcount */
 	session->ops = ops;
 
-	log_info("node:%p proto:%p", node_io, proto_io);
+	hal_log_info("node:%p proto:%p", node_io, proto_io);
 
 	session_list = g_slist_prepend(session_list, session);
 
@@ -332,7 +333,7 @@ int manager_start(const struct settings *settings)
 		if (proto_ops[i]->probe(settings->host, settings->port) < 0)
 			return -EIO;
 
-		log_info("proto_ops(%p): %s", proto_ops[i],
+		hal_log_info("proto_ops(%p): %s", proto_ops[i],
 							proto_ops[i]->name);
 		proto_index = i;
 	}
@@ -357,7 +358,7 @@ int manager_start(const struct settings *settings)
 		sock = node_ops[i]->listen();
 		if (sock < 0) {
 			err = sock;
-			log_error("%p listen(): %s(%d)", node_ops[i],
+			hal_log_error("%p listen(): %s(%d)", node_ops[i],
 						strerror(-err), -err);
 			node_ops[i]->remove();
 			continue;
@@ -372,7 +373,7 @@ int manager_start(const struct settings *settings)
 								node_ops[i]);
 		g_io_channel_unref(server_io);
 
-		log_info("node_ops(%p): (%s) watch: %d", node_ops[i],
+		hal_log_info("node_ops(%p): (%s) watch: %d", node_ops[i],
 					node_ops[i]->name, server_watch_id);
 
 		server_watch = g_slist_prepend(server_watch,
@@ -401,7 +402,7 @@ void manager_stop(void)
 		server_watch_id = GPOINTER_TO_UINT(list->data);
 		g_source_remove(server_watch_id);
 
-		log_info("Removed watch: %d", server_watch_id);
+		hal_log_info("Removed watch: %d", server_watch_id);
 	}
 
 	g_slist_free(server_watch);

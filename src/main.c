@@ -36,7 +36,7 @@
 #include <sys/inotify.h>
 #include <json-c/json.h>
 
-#include "log.h"
+#include <hal/linux_log.h>
 #include "settings.h"
 #include "manager.h"
 
@@ -130,11 +130,11 @@ static gboolean inotify_cb(GIOChannel *gio, GIOCondition condition,
 
 	numRead = read(inotifyFD, buf, BUF_LEN);
 	if (numRead == -1) {
-		log_error("Error read from inotify fd");
+		hal_log_error("Error read from inotify fd");
 		return FALSE;
 	}
 
-	log_info("Read %ld bytes from inotify fd", (long) numRead);
+	hal_log_info("Read %ld bytes from inotify fd", (long) numRead);
 
 	/* Process the events in buffer returned by read() */
 
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 		g_printerr("Invalid arguments: %s\n", gerr->message);
 		g_error_free(gerr);
 		g_option_context_free(context);
-		log_close();
+		hal_log_close();
 		return EXIT_FAILURE;
 	}
 
@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
 
 	if (!opt_cfg) {
 		g_printerr("Missing KNOT configuration file!\n");
-		log_close();
+		hal_log_close();
 		return EXIT_FAILURE;
 	}
 
@@ -201,12 +201,12 @@ int main(int argc, char *argv[])
 		settings.host = g_strdup(opt_host);
 	}
 
-	log_init("knotd", opt_detach);
-	log_info("KNOT Gateway");
+	hal_log_init("knotd", opt_detach);
+	hal_log_info("KNOT Gateway");
 
 	err = manager_start(&settings);
 	if (err < 0) {
-		log_error("start(): %s (%d)", strerror(-err), -err);
+		hal_log_error("start(): %s (%d)", strerror(-err), -err);
 		goto failure;
 	}
 
@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
 	err = setuid(65534);
 	if (err != 0) {
 		manager_stop();
-		log_error("Set uid to nobody failed.  %s(%d). Exiting ...",
+		hal_log_error("Set uid to nobody failed.  %s(%d). Exiting ...",
 							strerror(errno), errno);
 		goto failure;
 	}
@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
 	if (wd == -1) {
 		manager_stop();
 		close(inotifyFD);
-		log_error("inotify_add_watch(): %s", opt_cfg);
+		hal_log_error("inotify_add_watch(): %s", opt_cfg);
 		goto failure;
 	}
 	/* Setting gio channel to watch inotify fd */
@@ -248,7 +248,7 @@ int main(int argc, char *argv[])
 
 	if (opt_detach) {
 		if (daemon(0, 0)) {
-			log_error("Can't start daemon!");
+			hal_log_error("Can't start daemon!");
 			goto failure;
 		}
 	}
@@ -265,8 +265,8 @@ int main(int argc, char *argv[])
 	g_free(settings.host);
 	g_free(settings.uuid);
 
-	log_info("Exiting");
-	log_close();
+	hal_log_info("Exiting");
+	hal_log_close();
 
 	return EXIT_SUCCESS;
 
@@ -274,6 +274,6 @@ failure:
 	g_free(settings.host);
 	g_free(settings.uuid);
 
-	log_close();
+	hal_log_close();
 	return EXIT_FAILURE;
 }

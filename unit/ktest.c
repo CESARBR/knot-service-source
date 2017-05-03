@@ -39,7 +39,7 @@
 #include <knot_protocol.h>
 #include <knot_types.h>
 
-#include "src/log.h"
+#include <hal/linux_log.h>
 
 /* Abstract unit socket namespace */
 #define KNOT_UNIX_SOCKET			"knot"
@@ -58,7 +58,7 @@ static int unix_connect(void)
 	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
 		err = errno;
-		log_error(" >socket failure: %s (%d)", strerror(err), err);
+		hal_log_error(" >socket failure: %s (%d)", strerror(err), err);
 		return -err;
 	}
 
@@ -69,7 +69,7 @@ static int unix_connect(void)
 
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		err = errno;
-		log_error("connect(): %s (%d)", strerror(err), err);
+		hal_log_error("connect(): %s (%d)", strerror(err), err);
 		close(sock);
 		return -err;
 	}
@@ -97,14 +97,14 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	nbytes = write(sockfd, kmsg, len);
 	if (nbytes < 0) {
 		err = errno;
-		log_error("write(): %s(%d)", strerror(err), err);
+		hal_log_error("write(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
 	nbytes = read(sockfd, kresp, sizeof(knot_msg));
 	if (nbytes < 0) {
 		err = errno;
-		log_error("read(): %s (%d)", strerror(err), err);
+		hal_log_error("read(): %s (%d)", strerror(err), err);
 		return -err;
 	}
 
@@ -196,7 +196,7 @@ static void register_test_valid_devname(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 
-	log_info("UUID: %s", kresp.cred.uuid);
+	hal_log_info("UUID: %s", kresp.cred.uuid);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 }
 

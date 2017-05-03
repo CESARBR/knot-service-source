@@ -42,7 +42,8 @@
 
 #include <glib.h>
 
-#include "log.h"
+#include <hal/linux_log.h>
+
 #include "node.h"
 #include "serial.h"
 
@@ -116,7 +117,8 @@ static gboolean tty_data_watch(GIOChannel *io, GIOCondition cond,
 		/* New pipe: trigger accept */
 		if (write(srvfd, &pipeid, sizeof(pipeid)) < 0) {
 			err = errno;
-			log_error("serial: write(): %s(%d)", strerror(err), err);
+			hal_log_error("serial: write(): %s(%d)", strerror(err),
+									err);
 		}
 	} else {
 		/* Existent pipe: forward data */
@@ -126,7 +128,8 @@ static gboolean tty_data_watch(GIOChannel *io, GIOCondition cond,
 		pipepair = list->data;
 		if (write(pipepair->sock, &buffer[6], size) < 0) {
 			err = errno;
-			log_error("serial: write(): %s(%d)", strerror(err), err);
+			hal_log_error("serial: write(): %s(%d)", strerror(err),
+									err);
 		}
 	}
 
@@ -140,7 +143,7 @@ static int serial_probe(void)
 
 	if (stat(serial_opts.tty, &st) < 0) {
 		err = errno;
-		log_error("serial stat(): %s(%d)", strerror(err), err);
+		hal_log_error("serial stat(): %s(%d)", strerror(err), err);
 	}
 
 	return -err;
@@ -216,17 +219,17 @@ static int serial_accept(int srv_sockfd)
 
 	if (read(srv_sockfd, &pipeid, sizeof(pipeid)) < 0) {
 		err = errno;
-		log_error("serial: accept(): %s(%d)", strerror(err), err);
+		hal_log_error("serial: accept(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
 	if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv) < 0) {
 		err = errno;
-		log_error("serial: socketpair(): %s(%d)", strerror(err), err);
+		hal_log_error("serial: socketpair(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
-	log_info("New thing accept(%d) pipeid: %" PRIu64, sv[0], pipeid);
+	hal_log_info("New thing accept(%d) pipeid: %" PRIu64, sv[0], pipeid);
 
 	pipepair = g_new0(struct pipe_pair, 1);
 	pipepair->sock = sv[1];

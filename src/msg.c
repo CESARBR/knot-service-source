@@ -41,8 +41,9 @@
 
 #include <unistd.h>
 
+#include <hal/linux_log.h>
+
 #include "proto.h"
-#include "log.h"
 #include "msg.h"
 
 struct config {
@@ -653,23 +654,23 @@ static int8_t msg_unregister(int sock, int proto_sock,
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	/* 36 octets */
 	if (kreq->hdr.payload_len != 0) {
-		log_error("Wrong payload length!");
+		hal_log_error("Wrong payload length!");
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
 
-	log_info("rmnode: %.36s", trust->uuid);
+	hal_log_info("rmnode: %.36s", trust->uuid);
 
 	err = proto_ops->rmnode(proto_sock, trust->uuid, trust->token, &jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
-		log_error("rmnode() failed %s (%d)", strerror(-err), -err);
+		hal_log_error("rmnode() failed %s (%d)", strerror(-err), -err);
 		goto done;
 	}
 
@@ -695,7 +696,7 @@ static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
 	}
@@ -725,7 +726,7 @@ static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result)
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
 	}
@@ -844,7 +845,7 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
 	}
@@ -853,7 +854,7 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 
 	/* config_is_valid() returns 0 if SUCCESS */
 	if (config_is_valid(trust->config_tmp)) {
-		log_error("Invalid config message");
+		hal_log_error("Invalid config message");
 		g_slist_free_full(trust->config_tmp, config_free);
 		trust->config_tmp = NULL;
 		/*
@@ -887,7 +888,7 @@ static int fw_push(int sock, knot_msg *kmsg)
 							sizeof(kmsg->hdr));
 	if (nbytes < 0) {
 		err = errno;
-		log_error("node_ops: %s(%d)", strerror(err), err);
+		hal_log_error("node_ops: %s(%d)", strerror(err), err);
 		return -err;
 	}
 
@@ -917,7 +918,7 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 	while (tmp) {
 		result = fw_push(sock, tmp->data);
 		if (result)
-			log_error("KNOT SEND ERROR");
+			hal_log_error("KNOT SEND ERROR");
 		tmp = g_slist_next(tmp);
 	}
 	g_slist_free_full(list, g_free);
@@ -954,7 +955,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	}
 
 	if (kreq->devName[0] == '\0') {
-		log_error("Empty device name!");
+		hal_log_error("Empty device name!");
 		return KNOT_REGISTER_INVALID_DEVICENAME;
 	}
 
@@ -970,7 +971,7 @@ static int8_t msg_register(int sock, int proto_sock,
 
 	jobj = json_object_new_object();
 	if (!jobj) {
-		log_error("JSON: no memory");
+		hal_log_error("JSON: no memory");
 		return KNOT_ERROR_UNKNOWN;
 	}
 
@@ -989,23 +990,23 @@ static int8_t msg_register(int sock, int proto_sock,
 	json_object_put(jobj);
 
 	if (err < 0) {
-		log_error("manager mknode: %s(%d)", strerror(-err), -err);
+		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
 		free(json.data);
 		return KNOT_CLOUD_FAILURE;
 	}
 
 	if (parse_device_info(json.data, &uuid, &token) < 0) {
-		log_error("Unexpected response!");
+		hal_log_error("Unexpected response!");
 		free(json.data);
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	log_info("UUID: %s, TOKEN: %s", uuid, token);
+	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
 	if (strlen(uuid) != KNOT_PROTOCOL_UUID_LEN ||
 				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN) {
-		log_error("Invalid UUID or token!");
+		hal_log_error("Invalid UUID or token!");
 		result = KNOT_CLOUD_FAILURE;
 		goto done;
 	}
@@ -1023,7 +1024,8 @@ static int8_t msg_register(int sock, int proto_sock,
 	free(json.data);
 
 	if (err < 0) {
-		log_error("register_signin(): %s(%d)", strerror(-err), -err);
+		hal_log_error("register_signin(): %s(%d)", strerror(-err),
+									-err);
 		trust_free(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
@@ -1073,7 +1075,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	int err;
 
 	if (g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock))) {
-		log_info("Authenticated already");
+		hal_log_info("Authenticated already");
 		return KNOT_SUCCESS;
 	}
 
@@ -1098,13 +1100,13 @@ static int8_t msg_auth(int sock, int proto_sock,
 	free(json.data);
 
 	if (err < 0) {
-		log_error("signin(): %s(%d)", strerror(-err), -err);
+		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
 		trust_free(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	if (config_is_valid(trust->config_tmp)) {
-		log_error("Invalid config message");
+		hal_log_error("Invalid config message");
 		g_slist_free_full(trust->config_tmp, config_free);
 		trust->config_tmp = NULL;
 	} else {
@@ -1150,7 +1152,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -1217,7 +1219,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	if (err < 0) {
 		g_slist_free_full(trust->schema_tmp, g_free);
 		trust->schema_tmp = NULL;
-		log_error("manager schema(): %s(%d)", strerror(-err), -err);
+		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
 
@@ -1246,7 +1248,7 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 	err = proto_ops->fetch(proto_sock, uuid, token, &json);
 
 	if (err < 0) {
-		log_error("signin(): %s(%d)", strerror(-err), -err);
+		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
 		goto done;
 	}
 
@@ -1338,7 +1340,7 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -1347,7 +1349,8 @@ static int8_t msg_data(int sock, int proto_sock,
 	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
 								sensor_id_cmp);
 	if (!list) {
-		log_info("sensor_id(0x%02x): data type mismatch!", sensor_id);
+		hal_log_info("sensor_id(0x%02x): data type mismatch!",
+								sensor_id);
 		return KNOT_INVALID_DATA;
 	}
 
@@ -1356,12 +1359,12 @@ static int8_t msg_data(int sock, int proto_sock,
 	err = knot_schema_is_valid(schema->values.type_id,
 				schema->values.value_type, schema->values.unit);
 	if (err) {
-		log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
+		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
-	log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
+	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 				schema->values.unit, schema->values.value_type);
 
 	jobj = json_object_new_object();
@@ -1398,7 +1401,7 @@ static int8_t msg_data(int sock, int proto_sock,
 
 	jobjstr = json_object_to_json_string(jobj);
 
-	log_info("JSON: %s", jobjstr);
+	hal_log_info("JSON: %s", jobjstr);
 
 	memset(&json, 0, sizeof(json));
 	err = proto_ops->data(proto_sock, trust->uuid, trust->token,
@@ -1409,7 +1412,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	json_object_put(jobj);
 
 	if (err < 0) {
-		log_error("manager data(): %s(%d)", strerror(-err), -err);
+		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
 
@@ -1428,7 +1431,7 @@ static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 	sensor_id = rsp->sensor_id;
@@ -1439,7 +1442,7 @@ static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
 			break;
 		}
 	}
-	log_info("THING %s received config for sensor %d", trust->uuid,
+	hal_log_info("THING %s received config for sensor %d", trust->uuid,
 								sensor_id);
 	return KNOT_SUCCESS;
 }
@@ -1462,7 +1465,7 @@ static void update_device_setdata(const struct proto_ops *proto_ops,
 	err = proto_ops->fetch(proto_sock, uuid, token, &json);
 
 	if (err < 0) {
-		log_error("signin(): %s(%d)", strerror(-err), -err);
+		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
 		goto done;
 	}
 
@@ -1553,7 +1556,7 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
 	if (!trust) {
-		log_info("Permission denied!");
+		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -1562,7 +1565,8 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
 								sensor_id_cmp);
 	if (!list) {
-		log_info("sensor_id(0x%02x): data type mismatch!", sensor_id);
+		hal_log_info("sensor_id(0x%02x): data type mismatch!",
+								sensor_id);
 		return KNOT_INVALID_DATA;
 	}
 
@@ -1571,12 +1575,12 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 	err = knot_schema_is_valid(schema->values.type_id,
 				schema->values.value_type, schema->values.unit);
 	if (err) {
-		log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
+		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
-	log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
+	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 				schema->values.unit, schema->values.value_type);
 
 	/* Fetches the 'devices' db */
@@ -1626,11 +1630,11 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 	json_object_put(jobj);
 
 	if (err < 0) {
-		log_error("manager data(): %s(%d)", strerror(-err), -err);
+		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	log_info("THING %s updated data for sensor %d", trust->uuid,
+	hal_log_info("THING %s updated data for sensor %d", trust->uuid,
 								sensor_id);
 
 	return KNOT_SUCCESS;
@@ -1650,7 +1654,7 @@ ssize_t msg_process(int sock, int proto_sock,
 
 	/* Verify if output PDU has a min length */
 	if (omtu < sizeof(knot_msg)) {
-		log_error("Output PDU: invalid PDU length");
+		hal_log_error("Output PDU: invalid PDU length");
 		return -EINVAL;
 	}
 
@@ -1659,17 +1663,17 @@ ssize_t msg_process(int sock, int proto_sock,
 
 	/* At least header should be received */
 	if (ilen < sizeof(knot_msg_header)) {
-		log_error("KNOT PDU: invalid minimum length");
+		hal_log_error("KNOT PDU: invalid minimum length");
 		goto done;
 	}
 
 	/* Checking PDU length consistency */
 	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
-		log_error("KNOT PDU: length mismatch");
+		hal_log_error("KNOT PDU: length mismatch");
 		goto done;
 	}
 
-	log_info("KNOT OP: 0x%02X LEN: %02x",
+	hal_log_info("KNOT OP: 0x%02X LEN: %02x",
 				kreq->hdr.type, kreq->hdr.payload_len);
 
 	switch (kreq->hdr.type) {

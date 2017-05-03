@@ -43,7 +43,8 @@
 
 #include <json-c/json.h>
 
-#include "log.h"
+#include <hal/linux_log.h>
+
 #include "proto.h"
 
 #define CURL_OP_TIMEOUT					30	/* 30 seconds */
@@ -133,7 +134,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 
 	json->data = (char *) realloc(json->data, json->size + realsize + 1);
 	if (json->data == NULL) {
-		log_error("Not enough memory");
+		hal_log_error("Not enough memory");
 		return 0;
 	}
 
@@ -172,7 +173,7 @@ static int check_json(const char *json_str, json_raw_t *json)
 
 	json->data = (char *) realloc(json->data, realsize);
 	if (json->data == NULL) {
-		log_error("Not enough memory");
+		hal_log_error("Not enough memory");
 		return -ENOMEM;
 	}
 
@@ -199,15 +200,15 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	size_t i;
 
 	if (!request || !fetch) {
-		log_error("Invalid argument!");
+		hal_log_error("Invalid argument!");
 		return -EINVAL;
 	}
 
-	log_info("action: %s", action);
+	hal_log_info("action: %s", action);
 
 	ch = curl_easy_init();
 	if (ch == NULL) {
-		log_error("curl_easy_init(): init failed");
+		hal_log_error("curl_easy_init(): init failed");
 		return -ENOMEM;
 	}
 
@@ -225,7 +226,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	curl_easy_setopt(ch, CURLOPT_URL, action);
 
-	log_info("HTTP(%s): %s", upcase_request, action);
+	hal_log_info("HTTP(%s): %s", upcase_request, action);
 
 	if (uuid && token) {
 
@@ -235,7 +236,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 		snprintf(token_hdr, sizeof(token_hdr), "%s%s",
 					MESHBLU_AUTH_TOKEN, token);
 		headers = curl_slist_append(headers, token_hdr);
-		log_info(" AUTH: %s\n       %s", uuid, token);
+		hal_log_info(" AUTH: %s\n       %s", uuid, token);
 	}
 
 	if (json) {
@@ -245,7 +246,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 					    "Content-Type: application/json");
 		headers = curl_slist_append(headers, "charsets: utf-8");
 		curl_easy_setopt(ch, CURLOPT_POSTFIELDS, json);
-		log_info(" JSON TX: %s", json);
+		hal_log_info(" JSON TX: %s", json);
 	}
 
 	if (headers)
@@ -275,7 +276,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 
 	if (rcode != CURLE_OK) {
 		curl_easy_cleanup(ch);
-		log_error("curl_easy_perform(): %s(%d)",
+		hal_log_error("curl_easy_perform(): %s(%d)",
 					curl_easy_strerror(rcode), rcode);
 		return -EIO;
 	}
@@ -285,17 +286,17 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	curl_easy_cleanup(ch);
 
 	if (rcode != CURLE_OK) {
-		log_error("curl_easy_getinfo(): %s(%d)",
+		hal_log_error("curl_easy_getinfo(): %s(%d)",
 					curl_easy_strerror(rcode), rcode);
 		return -EIO;
 	}
 
 	if (fetch->data)
-		log_info(" JSON RX: %s", fetch->data);
+		hal_log_info(" JSON RX: %s", fetch->data);
 	else
-		log_info(" JSON RX: Empty");
+		hal_log_info(" JSON RX: Empty");
 
-	log_info("HTTP: %ld", ehttp);
+	hal_log_info("HTTP: %ld", ehttp);
 
 	return http2errno(ehttp);
 }
@@ -312,7 +313,7 @@ static int http_connect(void)
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock == -1) {
 		err = errno;
-		log_error("Meshblu socket(): %s(%d)", strerror(err), err);
+		hal_log_error("Meshblu socket(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
@@ -323,7 +324,7 @@ static int http_connect(void)
 
 	if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0) {
 		err = errno;
-		log_error("Meshblu connect(): %s(%d)", strerror(err), err);
+		hal_log_error("Meshblu connect(): %s(%d)", strerror(err), err);
 
 		close(sock);
 		return -err;
@@ -454,14 +455,14 @@ static int http_probe(const char *host, unsigned int port)
 	hostent = gethostbyname(host);
 	if  (hostent == NULL) {
 		err = h_errno;
-		log_error("gethostbyname(%s): %s (%d)", host_uri,
+		hal_log_error("gethostbyname(%s): %s (%d)", host_uri,
 						       strerror(err), err);
 		return -err;
 	}
 
 	host_addr.s_addr = *((unsigned long *) hostent->h_addr_list[0]);
 
-	log_info("Meshblu IP: %s", inet_ntoa(host_addr));
+	hal_log_info("Meshblu IP: %s", inet_ntoa(host_addr));
 
 	return 0;
 }
@@ -533,7 +534,7 @@ static gboolean proto_poll(gpointer user_data)
 	 * msg.c.
 	 */
 	if (result) {
-		log_error("signin(): %s(%d)", strerror(-result), -result);
+		hal_log_error("signin(): %s(%d)", strerror(-result), -result);
 		return TRUE;
 	}
 
