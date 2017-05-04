@@ -95,7 +95,10 @@ extern struct node_ops serial_ops;
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
+#if 0
+	// Remove temporarly: causing excessive interruptions
 	&serial_ops,
+#endif
 	NULL
 };
 
