@@ -67,6 +67,7 @@ static gboolean opt_cfg = FALSE;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
 static gboolean opt_unsubs = FALSE;
+static gboolean opt_con = FALSE;
 
 static GMainLoop *main_loop;
 
@@ -861,6 +862,11 @@ static int cmd_config(void)
 	return 0;
 }
 
+static int cmd_connect(void)
+{
+	return -ENOSYS;
+}
+
 /*
  * 'token' and 'uuid' are returned by registration process. Later a
  * command line prompt may be displayed to the user allowing an
@@ -915,6 +921,13 @@ static GOptionEntry commands[] = {
 	{ "config", 0, 0, G_OPTION_ARG_NONE, &opt_cfg,
 	"Listen for config file. " \
 	"Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]",
+				NULL },
+	{ "connect", 0, 0, G_OPTION_ARG_NONE, &opt_con,
+	"Comprehensive of add, schema and config. "\
+	"If uuid and token are given, authenticates it. " \
+	"Otherwise, register a new device. " \
+	"Eg: ./ktool --connect -j=value [-u=value | -t=value |-U=value | " \
+	"-T=value]",
 				NULL },
 	{ NULL },
 };
@@ -1016,6 +1029,9 @@ int main(int argc, char *argv[])
 	} else if (opt_cfg) {
 		printf("Configuration files...\n");
 		err = cmd_config();
+	} else if (opt_con) {
+		printf("Connecting to Gateway\n");
+		err = cmd_connect();
 	}
 
 	if (err < 0) {
