@@ -44,7 +44,7 @@ PKG_CHECK_MODULES(JSON, json-c,
 AC_SUBST(JSON_CFLAGS)
 AC_SUBST(JSON_LIBS)
 
-PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets = 2.1.1],
+PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets = 2.1.0],
   [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
   [websockets="no"])
 AC_SUBST(WEBSOCKETS_CFLAGS)
