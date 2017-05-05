@@ -117,6 +117,12 @@ static int unix_connect(const char *opt_unix)
 	/* Abstract namespace: first character must be null */
 	strncpy(addr.sun_path + 1, opt_unix, strlen(opt_unix));
 
+	/*
+	 * FIXME:
+	 * Is it necessary to close the socket when error happens
+	 * knot-hal/src/nrfd/manager.c does not close, which one
+	 * is better?
+	 */
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
 		err = -errno;
 		close(sock);
