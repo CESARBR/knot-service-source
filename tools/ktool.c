@@ -864,7 +864,27 @@ static int cmd_config(void)
 
 static int cmd_connect(void)
 {
-	return -ENOSYS;
+	int err;
+
+	/* If uuid and token are given, register. Otherwise, authenticates */
+	if (opt_uuid && opt_token) {
+		err = authenticate(opt_uuid, opt_token);
+		if (err) {
+			printf("Error authenticating\n");
+			return -EINVAL;
+		}
+	} else {
+		err = cmd_register();
+		if (err) {
+			printf("Error registering\n");
+			return -EINVAL;
+		}
+	}
+
+	/* TODO: Send schema */
+	/* TODO: Listen for messages from GW */
+
+	return 0;
 }
 
 /*
