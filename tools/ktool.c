@@ -756,8 +756,11 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	int err, sock;
 	struct json_object *jobj;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)){
+		printf("Socket closed");
 		return FALSE;
+	}
+
 	sock = g_io_channel_unix_get_fd(io);
 
 
@@ -894,7 +897,10 @@ static int cmd_connect(void)
 
 	cmd_schema(FALSE);
 
-	/* TODO: Listen for messages from GW */
+	/*
+	 * The listener is started when the ktool starts.
+	 * No need to do anything.
+	 */
 
 	return 0;
 }
