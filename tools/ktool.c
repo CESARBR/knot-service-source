@@ -605,12 +605,19 @@ static int cmd_unregister(void)
 	return 0;
 }
 
-static int cmd_schema(void)
+static int cmd_schema(gboolean auth)
 {
 	struct json_object *jobj;
 	struct schema schema;
 	struct stat sb;
 	int err;
+
+	/*
+	 * Checks if the device needs to be authenticated or already is
+	 * (e.g when calling from cmd_connect)
+	 */
+	if(!auth)
+		goto done;
 
 	if (!opt_uuid) {
 		printf("Device's UUID missing!\n");
@@ -622,10 +629,14 @@ static int cmd_schema(void)
 	 * block sequential to allow testing sending schema without
 	 * previous authentication.
 	 */
+
+
 	if (opt_token) {
 		printf("Authenticating ...\n");
 		err = authenticate(opt_uuid, opt_token);
 	}
+
+done:
 	/*
 	 * In order to allow a more flexible way to manage schemas, ktool
 	 * receives a JSON file and convert it to KNOT protocol format.
@@ -881,7 +892,8 @@ static int cmd_connect(void)
 		}
 	}
 
-	/* TODO: Send schema */
+	cmd_schema(FALSE);
+
 	/* TODO: Listen for messages from GW */
 
 	return 0;
@@ -1030,7 +1042,7 @@ int main(int argc, char *argv[])
 
 	if (opt_schema) {
 		printf("Registering JSON schema for a device ...\n");
-		err = cmd_schema();
+		err = cmd_schema(TRUE);
 	} else if (opt_data) {
 		printf("Setting data for a device ...\n");
 		err = cmd_data();
