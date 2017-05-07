@@ -912,7 +912,7 @@ static GOptionEntry commands[] = {
 	{ "unsubscribe", 0, 0, G_OPTION_ARG_NONE, &opt_unsubs,
 		"Unsubscribe for messages",
 				NULL },
-	{ "config", 'c', 0, G_OPTION_ARG_NONE, &opt_cfg,
+	{ "config", 0, 0, G_OPTION_ARG_NONE, &opt_cfg,
 	"Listen for config file. " \
 	"Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]",
 				NULL },
