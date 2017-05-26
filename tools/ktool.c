@@ -756,8 +756,8 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	int err, sock;
 	struct json_object *jobj;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)){
-		printf("Socket closed");
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+		g_main_loop_quit(main_loop);
 		return FALSE;
 	}
 
