@@ -746,6 +746,23 @@ static int cmd_unsubscribe(void)
 	return -ENOSYS;
 }
 
+static gboolean send_config(gpointer user_data)
+{
+	struct json_object *jobj;
+
+	printf ("Sending config \n");
+
+	jobj = json_object_from_file("json/data-temperature.json");
+	if (!jobj) {
+		printf("json file(%s): failed to read from file!\n", opt_json);
+		return FALSE;
+	}
+	json_object_foreach(jobj, print_json_value, NULL);
+	write_knot_data(jobj);
+	json_object_put(jobj);
+
+	return TRUE;
+}
 
 static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
@@ -790,6 +807,11 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 			printf("node_ops: %s(%d)\n", strerror(err), err);
 			return TRUE;
 		}
+		/*
+		 * For testing purposes, assuming the config is to send data
+		 * each 10 seconds.
+		 */
+		g_timeout_add_seconds(10, send_config,NULL);
 		break;
 	case KNOT_MSG_SET_DATA:
 		printf("sensor_id: %d\n", recv.data.sensor_id);
