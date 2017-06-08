@@ -1016,17 +1016,14 @@ static int8_t msg_register(int sock, int proto_sock,
 
 	err = proto_ops->signin(proto_sock, uuid, token, &json);
 
-	if (!json.data) {
-		trust_free(trust);
+	if (!json.data)
 		return KNOT_CLOUD_FAILURE;
-	}
 
 	free(json.data);
 
 	if (err < 0) {
 		hal_log_error("register_signin(): %s(%d)", strerror(-err),
 									-err);
-		trust_free(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
