@@ -236,7 +236,7 @@ static void ws_close(int sock)
 	lws_callback_on_writable(ws);
 	lws_service(context, SERVICE_TIMEOUT);
 
-	if (g_slist_remove(wsis, &psd->index) == NULL)
+	if (g_slist_remove(wsis, entry) == NULL)
 		hal_log_error("Removing wsi: no wsi found for sock %d", sock);
 
 	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock))) {
