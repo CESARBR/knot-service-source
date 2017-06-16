@@ -56,14 +56,13 @@
 #define OPERATION_PREFIX	420
 #define MESSAGE_PREFIX		42
 
-struct lws_context *context;
+static struct lws_context *context;
 static GHashTable *wstable;
 static gboolean got_response = FALSE;
 static gboolean connection_error = FALSE;
 static gboolean connected = FALSE;
 static gboolean client_connection_error = FALSE;
 static gboolean ready = FALSE;
-struct lws_client_connect_info info;
 static char *host_address = "localhost";
 static int host_port = 3000;
 static GSList *wsis = NULL;
