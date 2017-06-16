@@ -817,10 +817,9 @@ static int ws_connect(void)
 {
 	struct lws_client_connect_info info;
 	struct lws *ws;
-	int err, sock;
+	int sock;
 	static char ads_port[300];
 	gboolean use_ssl = FALSE; /* wss */
-	GSList *entry;
 
 	memset(&info, 0, sizeof(info));
 	snprintf(ads_port, sizeof(ads_port) - 1, "%s:%u", host_address,
@@ -853,21 +852,8 @@ static int ws_connect(void)
 	 * are: fd <-> psd->index <-> wsi (wsis at psd->index)
 	 */
 	ws = lws_client_connect_via_info(&info);
-	wsis = g_slist_append(wsis, ws);
 
 	psd->index = conn_index++;
-
-	/*
-	 * Once we start a connection request, check if the wsi was allocated
-	 * Successfully.
-	 */
-	entry = g_slist_nth_data(wsis, psd->index);
-	if (entry == NULL) {
-		err = errno;
-		hal_log_error("libwebsocket_client_connect(): %s(%d)",
-							strerror(err), err);
-		return -err;
-	}
 
 	/*
 	 * Connect via info is a non blocking method, it returns a websocket
@@ -880,11 +866,14 @@ static int ws_connect(void)
 
 	if (client_connection_error) {
 		g_free(psd);
+		/* TODO: ws leaking */
 		return -ECONNREFUSED;
 	}
 
+	wsis = g_slist_append(wsis, ws);
+
 	/* Map ws to a unique int */
-	sock = lws_get_socket_fd((struct lws *)entry);
+	sock = lws_get_socket_fd((struct lws *) ws);
 	gettimeofday(&psd->interval, NULL);
 	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), psd);
 
