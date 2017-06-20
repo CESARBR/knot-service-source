@@ -57,6 +57,7 @@ static const char *opt_host = NULL;
 static const char *opt_proto = "ws";
 static const char *opt_tty = NULL;
 static gboolean opt_detach = TRUE;
+static gboolean opt_disable_nobody = TRUE;
 
 static void sig_term(int sig)
 {
@@ -77,6 +78,10 @@ static GOptionEntry options[] = {
 	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
 					G_OPTION_ARG_NONE, &opt_detach,
 					"Logging in foreground" },
+	{ "disable-nobody", 'b', G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE,
+					&opt_disable_nobody, "disable-nobody",
+					"Disable set uid to nobody" },
+
 	{ NULL },
 };
 
@@ -211,13 +216,16 @@ int main(int argc, char *argv[])
 	}
 
 	/* Set user id to nobody */
-	err = setuid(65534);
-	if (err != 0) {
-		manager_stop();
-		hal_log_error("Set uid to nobody failed.  %s(%d). Exiting ...",
-							strerror(errno), errno);
-		goto failure;
+	if (opt_disable_nobody) {
+		err = setuid(65534);
+		if (err != 0) {
+			manager_stop();
+			hal_log_error("Set uid to nobody failed.  " \
+				"%s(%d). Exiting ...", strerror(errno), errno);
+			goto failure;
+		}
 	}
+
 	/*
 	 * TODO: implement a robust & clean way to reload settings
 	 * instead of force quitting when configuration file changes.
