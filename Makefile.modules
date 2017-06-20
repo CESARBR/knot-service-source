@@ -1,6 +1,7 @@
 # Target: Raspberry and x86
 # Similar to RH_TCP. Use unix socket instead of real hw
 modules_sources += src/unix.c
+modules_sources += src/tcp.c
 
 # Target: x86
 # Serial proxy. Using an Arduino acting like a SPI <-> Serial

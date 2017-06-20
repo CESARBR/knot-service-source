@@ -91,10 +91,12 @@ static int proto_index = 0;
  * plugin mechanism.
  */
 extern struct node_ops unix_ops;
+extern struct node_ops tcp_ops;
 extern struct node_ops serial_ops;
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
+	&tcp_ops,
 #if 0
 	// Remove temporarly: causing excessive interruptions
 	&serial_ops,
