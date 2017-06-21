@@ -292,7 +292,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	 * won't be overwritten.
 	 */
 	lws_callback_on_writable(entry->data);
-	hal_log_info("JSON TX: %s", jobjstring);
+	hal_log_info("WS JSON TX: %s", jobjstring);
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
@@ -336,7 +336,7 @@ static int ws_device(int sock, const char *uuid,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	hal_log_info("TX JSON %s", jobjstring);
+	hal_log_info("WS JSON TX %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
@@ -396,7 +396,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	hal_log_info("TX JSON %s", jobjstring);
+	hal_log_info("WS TX JSON %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
@@ -458,7 +458,7 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 
 	jobjstring = json_object_to_json_string(jarray);
 
-	hal_log_info("TX JSON %s", jobjstring);
+	hal_log_info("WS JSON TX %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
@@ -527,7 +527,7 @@ static int ws_update(int sock, const char *uuid, const char *token,
 						MESSAGE_PREFIX, jobjstr);
 	lws_callback_on_writable(entry->data);
 
-	hal_log_info("JSON TX: %s", jobjstr);
+	hal_log_info("WS JSON TX: %s", jobjstr);
 
 	lws_service(context, SERVICE_TIMEOUT);
 
@@ -622,7 +622,7 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 		/* TODO */
 		break;
 	case EIO_MSG:
-		hal_log_info("JSON_RX %d = %s", packet_type, resp);
+		hal_log_info("WS JSON_RX %d = %s", packet_type, resp);
 		if (!strcmp(resp, IDENTIFY_REQUEST))
 			connected = TRUE;
 		else if (!strncmp(resp, READY_RESPONSE, READY_RESPONSE_LEN))
@@ -735,7 +735,7 @@ static int callback_lws_http(struct lws *wsi,
 		 * a cleaner log.
 		 */
 		if (l > 1)
-			hal_log_info("Wrote (%d) bytes", l);
+			hal_log_info("WS TX%d bytes", l);
 
 		/* Enable RX when after message is successfully sent */
 		if (l < 0) {
