@@ -195,10 +195,10 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	sock = g_io_channel_unix_get_fd(io);
 
 	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
-	if (recvbytes < 0) {
+	if (recvbytes <= 0) {
 		err = errno;
 		hal_log_error("readv(): %s(%d)", strerror(err), err);
-		return TRUE;
+		return FALSE;
 	}
 
 	if (!session->proto_io) {
@@ -230,13 +230,14 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		/* Server didn't reply any error */
 		hal_log_error("KNOT IoT proto error: %s(%zd)",
 						strerror(-olen), -olen);
-		return TRUE;
+		return FALSE;
 	}
 	/* If there are no octets to be sent */
 	if (!olen)
 		return TRUE;
 
 	/* Response from the gateway: error or response for the given command */
+
 	sentbytes = ops->send(sock, opdu, olen);
 	if (sentbytes < 0)
 		hal_log_error("node_ops: %s(%zd)",

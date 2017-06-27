@@ -1661,13 +1661,13 @@ ssize_t msg_process(int sock, int proto_sock,
 	/* At least header should be received */
 	if (ilen < sizeof(knot_msg_header)) {
 		hal_log_error("KNOT PDU: invalid minimum length");
-		goto done;
+		return -EINVAL;
 	}
 
 	/* Checking PDU length consistency */
 	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
 		hal_log_error("KNOT PDU: length mismatch");
-		goto done;
+		return -EINVAL;
 	}
 
 	hal_log_info("KNOT OP: 0x%02X LEN: %02x",
@@ -1715,7 +1715,6 @@ ssize_t msg_process(int sock, int proto_sock,
 		break;
 	}
 
-done:
 	krsp->hdr.type = rtype;
 
 	krsp->action.result = result;
