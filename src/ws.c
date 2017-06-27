@@ -114,18 +114,19 @@ static struct per_session_data_ws *psd;
 static void send_ping(gpointer key, gpointer value, gpointer user_data)
 {
 	struct timeval *timenow = user_data;
+	struct per_session_data_ws *p;
 	GSList *entry;
 	struct lws *ws;
 
-	psd = (struct per_session_data_ws *) value;
-	if (timenow->tv_sec - psd->interval.tv_sec > 10) {
-		gettimeofday(&psd->interval, NULL);
-		g_hash_table_replace(wstable, key, psd);
+	p = (struct per_session_data_ws *) value;
+	if (timenow->tv_sec - p->interval.tv_sec > 10) {
+		gettimeofday(&p->interval, NULL);
+
 		/* Send EIO_PING and expects EIO_PONG */
-		psd->len = snprintf((char *) psd->buffer + LWS_PRE,
+		p->len = snprintf((char *) p->buffer + LWS_PRE,
 						MAX_PAYLOAD, "%d", EIO_PING);
 
-		entry = g_slist_nth(wsis, psd->index);
+		entry = g_slist_nth(wsis, p->index);
 		ws = entry->data;
 
 		lws_callback_on_writable(ws);
@@ -135,14 +136,13 @@ static void send_ping(gpointer key, gpointer value, gpointer user_data)
 
 static gboolean timeout_ws(gpointer user_data)
 {
-	struct per_session_data_ws *old_psd = psd;
 	struct timeval timenow;
 
 	gettimeofday(&timenow, NULL);
 	lws_service(context, SERVICE_TIMEOUT);
 	/* check if some socket needs to send ping */
 	g_hash_table_foreach(wstable, send_ping, &timenow);
-	psd = old_psd;
+
 	return TRUE;
 }
 
