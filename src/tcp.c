@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <hal/linux_log.h>
 
@@ -50,17 +51,29 @@ static void tcp_remove(void)
 
 static int tcp_listen(void)
 {
-	int err, sock, reuse = 1;
+	int err, sock, enable = 1;
 	struct sockaddr_in addr;
 
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0)
 		return -errno;
 
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse,
-						sizeof(reuse))==-1) {
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable,
+						sizeof(enable)) == -1) {
 		err = errno;
-		hal_log_error("tcp setsockopt(): %s(%d)", strerror(err), err);
+		hal_log_error("tcp setsockopt(SO_REUSEADDR): %s(%d)",
+							strerror(err), err);
+		close(sock);
+		return -err;
+	}
+
+	if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &enable,
+						sizeof(enable)) == -1) {
+		err = errno;
+		hal_log_error("tcp setsockopt(TCP_NODELAY): %s(%d)",
+							strerror(err), err);
+		close(sock);
+		return -err;
 	}
 
 	memset(&addr,0,sizeof(addr));
