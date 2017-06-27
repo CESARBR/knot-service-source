@@ -33,6 +33,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include <hal/linux_log.h>
+
 #include "node.h"
 
 static int tcp_probe(void)
@@ -48,12 +50,18 @@ static void tcp_remove(void)
 
 static int tcp_listen(void)
 {
-	int err, sock;
+	int err, sock, reuse = 1;
 	struct sockaddr_in addr;
 
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0)
 		return -errno;
+
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse,
+						sizeof(reuse))==-1) {
+		err = errno;
+		hal_log_error("tcp setsockopt(): %s(%d)", strerror(err), err);
+	}
 
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
