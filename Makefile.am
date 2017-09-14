@@ -4,7 +4,6 @@ include_HEADERS =
 modules_sources =
 modules_ldadd =
 modules_cflags =
-INCLUDES =
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
