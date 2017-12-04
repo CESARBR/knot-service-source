@@ -114,15 +114,18 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 static void register_test_missing_devname(void)
 {
 	knot_msg kmsg, kresp;
-	ssize_t size;
+	ssize_t size, plen;
 
 	memset(&kmsg, 0, sizeof(knot_msg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	/* Sending register message with missing parameters. */
 
-	kmsg.hdr.payload_len = 0;
-	size = do_request(&kmsg, sizeof(kmsg.reg.hdr), &kresp);
+	kmsg.reg.id = 0x0123456789abcdef;
+	kmsg.hdr.payload_len = sizeof(kmsg.reg.id); /* No device name */
+
+	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
+	size = do_request(&kmsg, plen, &kresp);
 
 	/* Response consistency */
 	g_assert(size == sizeof(kresp.action));
@@ -141,7 +144,8 @@ static void register_test_empty_devname(void)
 	memset(&kmsg, 0, sizeof(knot_msg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
-	kmsg.hdr.payload_len = 1;
+	kmsg.hdr.payload_len = sizeof(kmsg.reg.id) + 1;
+	kmsg.reg.id = 0x0123456789abcdef;
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
 	size = do_request(&kmsg, plen, &kresp);
@@ -165,6 +169,7 @@ static void register_test_invalid_payload_len(void)
 
 	/* One additional octet: larger than expected msg length  */
 	kmsg.hdr.payload_len = sizeof(kmsg.reg) - sizeof(kmsg.hdr) + 1;
+	kmsg.reg.id = 0x0123456789abcdef;
 	size = do_request(&kmsg, sizeof(kmsg.reg), &kresp);
 
 	/* Response consistency */
@@ -187,6 +192,7 @@ static void register_test_valid_devname(void)
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
+	kmsg.reg.id = 0x0123456789abcdef;
 	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;

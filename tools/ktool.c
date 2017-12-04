@@ -529,10 +529,11 @@ static int cmd_register(void)
 
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_REGISTER_REQ;
-	msg.hdr.payload_len = len;
+	msg.hdr.payload_len = len + sizeof(msg.id);
+	msg.id = 0x0123456789abcdef;
 	strncpy(msg.devName, devname, len);
 
-	nbytes = write(sock, &msg, sizeof(msg.hdr) + len);
+	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
 		err = errno;
 		printf("writev(): %s(%d)\n", strerror(err), err);

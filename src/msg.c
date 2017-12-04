@@ -54,6 +54,9 @@ struct config {
 };
 
 struct trust {
+	gint refs;
+	uint64_t id;			/* Session identification */
+	gint regto;			/* Registration timeout */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
 	GSList *schema;			/* knot_schema accepted by cloud */
@@ -69,8 +72,15 @@ struct proto_watch {
 	GIOChannel *node_io;
 };
 
-/* Maps sockets to sessions  */
+/* Maps sockets to sessions: online devices only.  */
 static GHashTable *trust_list;
+
+/*
+ * Temporary cache. Maps id to previously registered
+ * credential. Vulnerable if identity is cloned between
+ * register response and schema registration.
+ */
+static GSList *stash_list = NULL;
 
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 
@@ -82,14 +92,43 @@ static void config_free(gpointer mem)
 	g_free(cfg);
 }
 
-static void trust_free(struct trust *trust)
+static struct trust *trust_ref(struct trust *trust)
 {
+	g_atomic_int_inc(&trust->refs);
+
+	return trust;
+}
+
+static void trust_unref(struct trust *trust)
+{
+	if (!g_atomic_int_dec_and_test(&trust->refs))
+		return;
+
+	if (trust->regto) {
+		g_source_remove(trust->regto);
+		trust->regto = 0;
+	}
+
 	g_free(trust->uuid);
 	g_free(trust->token);
 	g_slist_free_full(trust->schema, g_free);
 	g_slist_free_full(trust->schema_tmp, g_free);
 	g_slist_free_full(trust->config, config_free);
 	g_free(trust);
+}
+
+static gpointer stash_list_lookup(uint64_t id)
+{
+	GSList *l;
+	struct trust *trust;
+
+	for (l = stash_list; l; l = g_slist_next(l)) {
+		trust = l->data;
+		if (trust->id == id)
+			return trust;
+	}
+
+	return NULL;
 }
 
 static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
@@ -109,8 +148,22 @@ static gboolean proto_hup_cb(GIOChannel *io, GIOCondition cond,
 
 	if (proto_watch->id > 0)
 		g_source_remove(proto_watch->id);
+
 	g_io_channel_unref(proto_watch->node_io);
 	g_free(proto_watch);
+
+	return FALSE;
+}
+
+static gboolean stash_timeout(gpointer user_data)
+{
+	struct trust *trust = user_data;
+
+	stash_list = g_slist_remove(stash_list, user_data);
+
+	hal_log_info("Register attempt expired: (id 0x%" PRIx64 ")", trust->id);
+
+	trust->regto = 0;
 
 	return FALSE;
 }
@@ -941,15 +994,35 @@ static int8_t msg_register(int sock, int proto_sock,
 	struct proto_watch *proto_watch;
 
 	/*
-	 * Due to radio packet loss the thing retransmits register requests if a
-	 * response does not arrives in 20 seconds, if this device was
+	 * Due to radio packet loss, peer may re-transmits register request
+	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
+	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, sock);
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
-	if (trust) {
+	if (trust && kreq->id == trust->id) {
+		hal_log_info("Register: trusted device");
 		strcpy(krsp->uuid, trust->uuid);
 		strcpy(krsp->token, trust->token);
 		krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+
+		return KNOT_SUCCESS;
+	}
+
+	/*
+	 * After re-connection, repeated registration may arrive. Meaning
+	 * that peer didn't receive previously registered credentials. 'trust'
+	 * will be removed automatically from stash list at timeout.
+	 */
+	trust = stash_list_lookup(kreq->id);
+	if (trust) {
+		hal_log_info("Register: cached device");
+		strcpy(krsp->uuid, trust->uuid);
+		strcpy(krsp->token, trust->token);
+		krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+
+		g_hash_table_replace(trust_list, GINT_TO_POINTER(sock),
+							trust_ref(trust));
 
 		return KNOT_SUCCESS;
 	}
@@ -965,7 +1038,8 @@ static int8_t msg_register(int sock, int proto_sock,
 	 */
 	memset(thing_name, 0, sizeof(thing_name));
 
-	len = MIN(kreq->hdr.payload_len, KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
+	len = MIN(kreq->hdr.payload_len - sizeof(kreq->id),
+		  KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
 
 	strncpy(thing_name, kreq->devName, len);
 
@@ -1033,8 +1107,15 @@ static int8_t msg_register(int sock, int proto_sock,
 	trust = g_new0(struct trust, 1);
 	trust->uuid = uuid;
 	trust->token = token;
+	trust->id = kreq->id;
 
-	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock), trust);
+	stash_list = g_slist_append(stash_list, trust_ref(trust));
+	trust->regto = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT,
+						  60, stash_timeout, trust,
+						  (GDestroyNotify) trust_unref);
+
+	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock),
+							trust_ref(trust));
 	/* Add a watch to remove the credential when the client disconnects */
 	io = g_io_channel_unix_new(sock);
 	g_io_add_watch(io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, node_hup_cb, NULL);
@@ -1087,7 +1168,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	err = proto_ops->signin(proto_sock, trust->uuid, trust->token, &json);
 
 	if (!json.data) {
-		trust_free(trust);
+		trust_unref(trust);
 		return KNOT_SCHEMA_EMPTY;
 	}
 
@@ -1098,7 +1179,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 
 	if (err < 0) {
 		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
-		trust_free(trust);
+		trust_unref(trust);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -1151,6 +1232,13 @@ static int8_t msg_schema(int sock, int proto_sock,
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	/* For security reason, remove from stash avoiding clonning attack */
+	if (trust->regto) {
+		stash_list = g_slist_remove(stash_list, trust);
+		g_source_remove(trust->regto);
+		trust->regto = 0;
 	}
 
 	/*
@@ -1729,12 +1817,12 @@ int msg_start(const char *uuid)
 	strncpy(owner_uuid, uuid, sizeof(owner_uuid));
 
 	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-					NULL, (GDestroyNotify) trust_free);
-
+				      NULL, (GDestroyNotify) trust_unref);
 	return 0;
 }
 
 void msg_stop(void)
 {
 	g_hash_table_destroy(trust_list);
+	g_slist_free_full(stash_list, (GDestroyNotify) trust_unref);
 }
