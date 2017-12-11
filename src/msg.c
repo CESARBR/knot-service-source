@@ -25,9 +25,14 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef  _GNU_SOURCE
+#define  _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <errno.h>
+
+#include <sys/socket.h>
 
 #include <math.h>
 #include <stdlib.h>
@@ -55,6 +60,7 @@ struct config {
 
 struct trust {
 	gint refs;
+	pid_t	pid;			/* Peer PID */
 	uint64_t id;			/* Session identification */
 	gint regto;			/* Registration timeout */
 	char *uuid;			/* Device UUID */
@@ -992,6 +998,22 @@ static int8_t msg_register(int sock, int proto_sock,
 	int8_t result;
 	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct proto_watch *proto_watch;
+	socklen_t sklen;
+	struct ucred cred;
+
+	/*
+	 * Credential (Process ID) verification will work for unix socket
+	 * only. For other socket types additional authentication mechanism
+	 * will be required.
+	 */
+	memset(&cred, 0, sizeof(cred));
+	sklen = sizeof(cred);
+	if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &cred, &sklen) == -1) {
+		err = errno;
+		hal_log_error("getsockopt(%d): %s(%d)", sock,
+						strerror(err), err);
+	} else
+		hal_log_info("sock:%d, pid:%ld", sock, (long int) cred.pid);
 
 	/*
 	 * Due to radio packet loss, peer may re-transmits register request
@@ -1000,7 +1022,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	 */
 	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, sock);
 	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
-	if (trust && kreq->id == trust->id) {
+	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
 		hal_log_info("Register: trusted device");
 		strcpy(krsp->uuid, trust->uuid);
 		strcpy(krsp->token, trust->token);
@@ -1015,7 +1037,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	 * will be removed automatically from stash list at timeout.
 	 */
 	trust = stash_list_lookup(kreq->id);
-	if (trust) {
+	if (trust && trust->pid == cred.pid) {
 		hal_log_info("Register: cached device");
 		strcpy(krsp->uuid, trust->uuid);
 		strcpy(krsp->token, trust->token);
@@ -1108,6 +1130,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	trust->uuid = uuid;
 	trust->token = token;
 	trust->id = kreq->id;
+	trust->pid = (cred.pid ? : INT32_MAX);
 
 	stash_list = g_slist_append(stash_list, trust_ref(trust));
 	trust->regto = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT,
