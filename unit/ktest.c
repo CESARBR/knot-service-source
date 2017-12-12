@@ -49,6 +49,8 @@
 
 static int sockfd;
 static char uuid128[KNOT_PROTOCOL_UUID_LEN];
+static knot_msg kmsg;
+static knot_msg kresp;
 
 static int unix_connect(void)
 {
@@ -113,10 +115,9 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 
 static void register_test_missing_devname(void)
 {
-	knot_msg kmsg, kresp;
 	ssize_t size, plen;
 
-	memset(&kmsg, 0, sizeof(knot_msg));
+	memset(&kmsg, 0, sizeof(kmsg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	/* Sending register message with missing parameters. */
@@ -138,10 +139,9 @@ static void register_test_missing_devname(void)
 
 static void register_test_empty_devname(void)
 {
-	knot_msg kmsg, kresp;
 	ssize_t size, plen;
 
-	memset(&kmsg, 0, sizeof(knot_msg));
+	memset(&kmsg, 0, sizeof(kmsg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	kmsg.hdr.payload_len = sizeof(kmsg.reg.id) + 1;
@@ -161,10 +161,9 @@ static void register_test_empty_devname(void)
 #if 0
 static void register_test_invalid_payload_len(void)
 {
-	knot_msg kmsg, kresp;
 	ssize_t size;
 
-	memset(&kmsg, 0, sizeof(knot_msg));
+	memset(&kmsg, 0, sizeof(kmsg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	/* One additional octet: larger than expected msg length  */
@@ -183,11 +182,10 @@ static void register_test_invalid_payload_len(void)
 #endif
 static void register_test_valid_devname(void)
 {
-	knot_msg kmsg, kresp;
 	ssize_t size, plen;
 
 	memset(&kresp, 0, sizeof(kresp));
-	memset(&kmsg, 0, sizeof(knot_msg));
+	memset(&kmsg, 0, sizeof(kmsg));
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	/* Copying name to registration message */
@@ -212,8 +210,6 @@ static void register_test_valid_devname(void)
 #if 0
 static void unregister_test_invalid_payload_len0(void)
 {
-	knot_msg kmsg, kresp;
-
 	memset(&kresp, 0, sizeof(kresp));
 	memset(&kmsg, 0, sizeof(kmsg));
 	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
@@ -232,8 +228,6 @@ static void unregister_test_invalid_payload_len0(void)
 
 static void unregister_test_invalid_large_payload(void)
 {
-	knot_msg kmsg, kresp;
-
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
 	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
@@ -253,8 +247,6 @@ static void unregister_test_invalid_large_payload(void)
 
 static void unregister_test_valid_device(void)
 {
-	knot_msg kmsg, kresp;
-
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
 	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
