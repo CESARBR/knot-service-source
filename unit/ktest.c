@@ -207,6 +207,32 @@ static void register_test_valid_devname(void)
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 }
 
+static void register_repeated_attempt(void)
+{
+	ssize_t size, plen;
+	knot_msg kresp2;
+
+	memset(&kresp2, 0, sizeof(kresp2));
+	memset(&kmsg, 0, sizeof(kmsg));
+	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+
+	/* Copying name to registration message */
+	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
+	kmsg.reg.id = 0x0123456789abcdef;
+	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
+
+	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
+	size = do_request(&kmsg, plen, &kresp2);
+
+	/* Response consistency */
+	g_assert(size == sizeof(kresp2.cred));
+
+	/* Response opcode & result */
+	g_assert(kresp2.hdr.type == KNOT_MSG_REGISTER_RESP);
+	g_assert(kresp2.action.result == KNOT_SUCCESS);
+	g_assert_cmpmem(&kresp, size, &kresp2, size);
+}
+
 #if 0
 static void unregister_test_invalid_payload_len0(void)
 {
@@ -286,6 +312,8 @@ int main(int argc, char *argv[])
 	g_test_add_func("/4/connect", connection_test);
 	g_test_add_func("/4/register_valid_devname",
 				register_test_valid_devname);
+	g_test_add_func("/4/register_repeated_attempt",
+				register_repeated_attempt);
 	g_test_add_func("/4/close", close_test);
 #if 0
 	g_test_add_func("/5/connect", connection_test);
