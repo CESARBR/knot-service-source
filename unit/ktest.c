@@ -203,6 +203,7 @@ static void register_test_valid_devname(void)
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 }
 
+#if 0
 static void unregister_test_invalid_payload_len0(void)
 {
 	knot_msg kmsg, kresp;
@@ -259,6 +260,7 @@ static void unregister_test_valid_device(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 }
+#endif
 
 /* Register and run all tests */
 int main(int argc, char *argv[])
@@ -287,7 +289,7 @@ int main(int argc, char *argv[])
 	g_test_add_func("/4/register_valid_devname",
 				register_test_valid_devname);
 	g_test_add_func("/4/close", close_test);
-
+#if 0
 	g_test_add_func("/5/connect", connection_test);
 	g_test_add_func("/5/unregister_invalid_payload_len0",
 				unregister_test_invalid_payload_len0);
@@ -303,5 +305,6 @@ int main(int argc, char *argv[])
 				unregister_test_valid_device);
 	g_test_add_func("/7/close", close_test);
 
+#endif
 	return g_test_run();
 }
