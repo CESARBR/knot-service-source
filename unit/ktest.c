@@ -154,7 +154,7 @@ static void register_test_empty_devname(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
-
+#if 0
 static void register_test_invalid_payload_len(void)
 {
 	knot_msg kmsg, kresp;
@@ -175,7 +175,7 @@ static void register_test_invalid_payload_len(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
-
+#endif
 static void register_test_valid_devname(void)
 {
 	knot_msg kmsg, kresp;
@@ -277,12 +277,12 @@ int main(int argc, char *argv[])
 	g_test_add_func("/2/register_empty_devname",
 				register_test_empty_devname);
 	g_test_add_func("/2/close", close_test);
-
+#if 0
 	g_test_add_func("/3/connect", connection_test);
 	g_test_add_func("/3/register_invalid_payload_len",
 				register_test_invalid_payload_len);
 	g_test_add_func("/3/close", close_test);
-
+#endif
 	g_test_add_func("/4/connect", connection_test);
 	g_test_add_func("/4/register_valid_devname",
 				register_test_valid_devname);
