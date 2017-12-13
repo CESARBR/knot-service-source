@@ -260,10 +260,6 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	/* FIXME: Stop knotd if cloud if not available */
 	proto_sock = proto_ops[proto_index]->connect();
-	if (proto_sock < 0) {
-		hal_log_info("Can't connect to cloud service!");
-		return TRUE;
-	}
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
@@ -272,6 +268,14 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		proto_ops[proto_index]->close(proto_sock);
 		hal_log_error("%p accept(): %s(%d)", ops,
 					strerror(-sockfd), -sockfd);
+		return TRUE;
+	}
+
+	/* Disconnect peer if fog/cloud is down */
+	if (proto_sock < 0) {
+		hal_log_info("Cloud connect(): %s(%d)",
+			     strerror(-proto_sock), -proto_sock);
+		close(sockfd);
 		return TRUE;
 	}
 
