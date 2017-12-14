@@ -186,28 +186,7 @@ static void register_empty_devname_test(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
-#if 0
-static void register_invalid_payload_len_test(void)
-{
-	ssize_t size;
 
-	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
-
-	/* One additional octet: larger than expected msg length  */
-	kmsg.hdr.payload_len = sizeof(kmsg.reg) - sizeof(kmsg.hdr) + 1;
-	kmsg.reg.id = 0x0123456789abcdef;
-	size = do_request(&kmsg, sizeof(kmsg.reg), &kresp);
-
-	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-
-	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
-}
-#endif
 static void register_valid_devname_test(void)
 {
 	ssize_t size, plen;
@@ -389,13 +368,6 @@ int main(int argc, char *argv[])
 				register_empty_devname_test);
 	g_test_add_func("/4/tcp_close", tcp_close_test);
 
-
-#if 0
-	g_test_add_func("/5/unix_connect", unix_connect_test);
-	g_test_add_func("/5/register_invalid_payload_len",
-				register_invalid_payload_len_test);
-	g_test_add_func("/5/unix_close", unix_close_test);
-#endif
 	g_test_add_func("/6/unix_connect", unix_connect_test);
 	g_test_add_func("/6/register_valid_devname",
 				register_valid_devname_test);
