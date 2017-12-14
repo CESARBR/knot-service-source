@@ -141,7 +141,7 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	return nbytes;
 }
 
-static void register_test_missing_devname(void)
+static void register_missing_devname_test(void)
 {
 	ssize_t size, plen;
 
@@ -165,7 +165,7 @@ static void register_test_missing_devname(void)
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
 
-static void register_test_empty_devname(void)
+static void register_empty_devname_test(void)
 {
 	ssize_t size, plen;
 
@@ -187,7 +187,7 @@ static void register_test_empty_devname(void)
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
 #if 0
-static void register_test_invalid_payload_len(void)
+static void register_invalid_payload_len_test(void)
 {
 	ssize_t size;
 
@@ -208,7 +208,7 @@ static void register_test_invalid_payload_len(void)
 	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
 }
 #endif
-static void register_test_valid_devname(void)
+static void register_valid_devname_test(void)
 {
 	ssize_t size, plen;
 
@@ -235,7 +235,7 @@ static void register_test_valid_devname(void)
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 }
 
-static void register_repeated_attempt(void)
+static void register_repeated_attempt_test(void)
 {
 	ssize_t size, plen;
 	knot_msg kresp2;
@@ -297,7 +297,7 @@ static void register_new_id(void)
 }
 
 #if 0
-static void unregister_test_invalid_payload_len0(void)
+static void unregister_invalid_payload_len0_test(void)
 {
 	memset(&kresp, 0, sizeof(kresp));
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -317,7 +317,7 @@ static void unregister_test_invalid_payload_len0(void)
 #endif
 
 #if 0
-static void unregister_test_invalid_large_payload(void)
+static void unregister_invalid_large_payload_test(void)
 {
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
@@ -336,7 +336,7 @@ static void unregister_test_invalid_large_payload(void)
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
 
-static void unregister_test_valid_device(void)
+static void unregister_valid_device_test(void)
 {
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
@@ -373,7 +373,7 @@ int main(int argc, char *argv[])
 
 	g_test_add_func("/1/unix_connect", unix_connect_test);
 	g_test_add_func("/1/register_missing_devname",
-				register_test_missing_devname);
+				register_missing_devname_test);
 	g_test_add_func("/1/unix_close", unix_close_test);
 
 	g_test_add_func("/2/tcp_connect", tcp_connect_test);
@@ -381,43 +381,43 @@ int main(int argc, char *argv[])
 
 	g_test_add_func("/3/unix_connect", unix_connect_test);
 	g_test_add_func("/3/register_empty_devname",
-				register_test_empty_devname);
+				register_empty_devname_test);
 	g_test_add_func("/3/unix_close", unix_close_test);
 
 	g_test_add_func("/4/tcp_connect", tcp_connect_test);
 	g_test_add_func("/4/tcp_register_empty_devname",
-				register_test_empty_devname);
+				register_empty_devname_test);
 	g_test_add_func("/4/tcp_close", tcp_close_test);
 
 
 #if 0
 	g_test_add_func("/5/unix_connect", unix_connect_test);
 	g_test_add_func("/5/register_invalid_payload_len",
-				register_test_invalid_payload_len);
+				register_invalid_payload_len_test);
 	g_test_add_func("/5/unix_close", unix_close_test);
 #endif
 	g_test_add_func("/6/unix_connect", unix_connect_test);
 	g_test_add_func("/6/register_valid_devname",
-				register_test_valid_devname);
+				register_valid_devname_test);
 	g_test_add_func("/6/register_repeated_attempt",
-				register_repeated_attempt);
+				register_repeated_attempt_test);
 	g_test_add_func("/6/register_new_id",
 				register_new_id);
 	g_test_add_func("/6/unix_close", unix_close_test);
 #if 0
 	g_test_add_func("/7/unix_connect", unix_connect_test);
 	g_test_add_func("/7/unregister_invalid_payload_len0",
-				unregister_test_invalid_payload_len0);
+				unregister_invalid_payload_len0_test);
 	g_test_add_func("/7/unix_close", unix_close_test);
 
 	g_test_add_func("/8/unix_connect", unix_connect_test);
-	g_test_add_func("/8/unregister_test_invalid_large_payload",
-				unregister_test_invalid_large_payload);
+	g_test_add_func("/8/unregister_invalid_large_payload",
+				unregister_invalid_large_payload_test);
 	g_test_add_func("/8/unix_close", unix_close_test);
 
 	g_test_add_func("/9/unix_connect", unix_connect_test);
-	g_test_add_func("/9/unregister_test_valid_device",
-				unregister_test_valid_device);
+	g_test_add_func("/9/unregister_valid_device",
+				unregister_valid_device_test);
 	g_test_add_func("/9/unix_close", unix_close_test);
 #endif
 
