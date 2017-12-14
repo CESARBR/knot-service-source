@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <netinet/in.h>
 
 #include <glib.h>
 
@@ -51,6 +52,33 @@ static int sockfd;
 static char uuid128[KNOT_PROTOCOL_UUID_LEN];
 static knot_msg kmsg;
 static knot_msg kresp;
+
+static int tcp_connect(void)
+{
+	struct sockaddr_in addr;
+	int err, sock;
+
+	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sock < 0) {
+		err = errno;
+		hal_log_error("tcp socket(): %s (%d)", strerror(err), err);
+		return -err;
+	}
+
+	memset(&addr,0,sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port = htons(8081);
+
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		hal_log_error("tcp connect(): %s (%d)", strerror(err), err);
+		close(sock);
+		return -err;
+	}
+
+	return sock;
+}
 
 static int unix_connect(void)
 {
@@ -286,7 +314,9 @@ static void unregister_test_invalid_payload_len0(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_INVALID_DATA);
 }
+#endif
 
+#if 0
 static void unregister_test_invalid_large_payload(void)
 {
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -321,6 +351,18 @@ static void unregister_test_valid_device(void)
 }
 #endif
 
+static void tcp_connect_test(void)
+{
+	sockfd = tcp_connect();
+	g_assert(sockfd > 0);
+}
+
+static void tcp_close_test(void)
+{
+	g_assert(close(sockfd) == 0);
+	sockfd = -1;
+}
+
 /* Register and run all tests */
 int main(int argc, char *argv[])
 {
@@ -334,40 +376,42 @@ int main(int argc, char *argv[])
 				register_test_missing_devname);
 	g_test_add_func("/1/close", close_test);
 
-	g_test_add_func("/2/connect", connection_test);
-	g_test_add_func("/2/register_empty_devname",
-				register_test_empty_devname);
-	g_test_add_func("/2/close", close_test);
-#if 0
+	g_test_add_func("/2/tcp_connect", tcp_connect_test);
+	g_test_add_func("/2/tcp_close", tcp_close_test);
+
 	g_test_add_func("/3/connect", connection_test);
-	g_test_add_func("/3/register_invalid_payload_len",
-				register_test_invalid_payload_len);
+	g_test_add_func("/3/register_empty_devname",
+				register_test_empty_devname);
 	g_test_add_func("/3/close", close_test);
-#endif
-	g_test_add_func("/4/connect", connection_test);
-	g_test_add_func("/4/register_valid_devname",
-				register_test_valid_devname);
-	g_test_add_func("/4/register_repeated_attempt",
-				register_repeated_attempt);
-	g_test_add_func("/4/register_new_id",
-				register_new_id);
-	g_test_add_func("/4/close", close_test);
 #if 0
+	g_test_add_func("/4/connect", connection_test);
+	g_test_add_func("/4/register_invalid_payload_len",
+				register_test_invalid_payload_len);
+	g_test_add_func("/4/close", close_test);
+#endif
 	g_test_add_func("/5/connect", connection_test);
-	g_test_add_func("/5/unregister_invalid_payload_len0",
-				unregister_test_invalid_payload_len0);
+	g_test_add_func("/5/register_valid_devname",
+				register_test_valid_devname);
+	g_test_add_func("/5/register_repeated_attempt",
+				register_repeated_attempt);
+	g_test_add_func("/5/register_new_id",
+				register_new_id);
 	g_test_add_func("/5/close", close_test);
-
+#if 0
 	g_test_add_func("/6/connect", connection_test);
-	g_test_add_func("/6/unregister_test_invalid_large_payload",
-				unregister_test_invalid_large_payload);
+	g_test_add_func("/6/unregister_invalid_payload_len0",
+				unregister_test_invalid_payload_len0);
 	g_test_add_func("/6/close", close_test);
-
 	g_test_add_func("/7/connect", connection_test);
-	g_test_add_func("/7/unregister_test_valid_device",
-				unregister_test_valid_device);
+	g_test_add_func("/7/unregister_test_invalid_large_payload",
+				unregister_test_invalid_large_payload);
 	g_test_add_func("/7/close", close_test);
 
+	g_test_add_func("/8/connect", connection_test);
+	g_test_add_func("/8/unregister_test_valid_device",
+				unregister_test_valid_device);
+	g_test_add_func("/8/close", close_test);
 #endif
+
 	return g_test_run();
 }
