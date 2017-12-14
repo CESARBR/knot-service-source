@@ -984,9 +984,9 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 }
 
 static int8_t msg_register(int sock, int proto_sock,
-					const struct proto_ops *proto_ops,
-					const knot_msg_register *kreq,
-					knot_msg_credential *krsp)
+			   const struct proto_ops *proto_ops,
+			   const knot_msg_register *kreq, size_t ilen,
+			   knot_msg_credential *krsp)
 {
 	GIOChannel *io, *proto_io;
 	struct trust *trust;
@@ -1000,6 +1000,12 @@ static int8_t msg_register(int sock, int proto_sock,
 	struct proto_watch *proto_watch;
 	socklen_t sklen;
 	struct ucred cred;
+
+	/* Min PDU len containing at least one char representing name */
+	if (ilen <= (sizeof(kreq->hdr) + sizeof(kreq->id))) {
+		hal_log_error("Missing device name!");
+		return KNOT_REGISTER_INVALID_DEVICENAME;
+	}
 
 	/*
 	 * Credential (Process ID) verification will work for unix socket
@@ -1788,7 +1794,7 @@ ssize_t msg_process(int sock, int proto_sock,
 	case KNOT_MSG_REGISTER_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(sock, proto_sock, proto_ops,
-						&kreq->reg, &krsp->cred);
+				      &kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
