@@ -383,6 +383,13 @@ int main(int argc, char *argv[])
 	g_test_add_func("/3/register_empty_devname",
 				register_test_empty_devname);
 	g_test_add_func("/3/close", close_test);
+
+	g_test_add_func("/4/tcp_connect", tcp_connect_test);
+	g_test_add_func("/4/tcp_register_empty_devname",
+				register_test_empty_devname);
+	g_test_add_func("/4/tcp_close", tcp_close_test);
+
+
 #if 0
 	g_test_add_func("/4/connect", connection_test);
 	g_test_add_func("/4/register_invalid_payload_len",
