@@ -50,6 +50,7 @@
 
 static int sockfd;
 static char uuid128[KNOT_PROTOCOL_UUID_LEN];
+static char token[KNOT_PROTOCOL_TOKEN_LEN];
 static knot_msg kmsg;
 static knot_msg kresp;
 
@@ -141,6 +142,28 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	return nbytes;
 }
 
+static void authenticate_test(void)
+{
+	ssize_t size;
+
+	memset(&kmsg, 0, sizeof(kmsg));
+	kmsg.hdr.type = KNOT_MSG_AUTH_REQ;
+
+	memcpy(kmsg.auth.uuid, uuid128, sizeof(kmsg.auth.uuid));
+	memcpy(kmsg.auth.token, token, sizeof(kmsg.auth.token));
+
+	kmsg.hdr.payload_len = sizeof(kmsg.auth) - sizeof(kmsg.hdr);
+	size = do_request(&kmsg, sizeof(kmsg.auth), &kresp);
+
+	/* Response consistency */
+	g_assert(size == sizeof(kresp.action));
+	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+
+	/* Response opcode & result */
+	g_assert(kresp.hdr.type == KNOT_MSG_AUTH_RESP);
+	g_assert(kresp.action.result == KNOT_SUCCESS);
+}
+
 static void register_missing_devname_test(void)
 {
 	ssize_t size, plen;
@@ -210,8 +233,9 @@ static void register_valid_devname_test(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 
-	hal_log_info("UUID: %s", kresp.cred.uuid);
+	g_message("UUID: %s token:%s", kresp.cred.uuid, kresp.cred.token);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
+	memcpy(token, kresp.cred.token, sizeof(kresp.cred.token));
 }
 
 static void register_repeated_attempt_test(void)
@@ -275,46 +299,6 @@ static void register_new_id(void)
 	g_assert(ret != 0);
 }
 
-#if 0
-static void unregister_invalid_payload_len0_test(void)
-{
-	memset(&kresp, 0, sizeof(kresp));
-	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
-
-	/*
-	 * Sending: payload_len == 0
-	 * Expected: 'KNOT_INVALID_DATA'
-	 */
-	kmsg.hdr.payload_len = 0;
-	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
-							sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_INVALID_DATA);
-}
-#endif
-
-#if 0
-static void unregister_invalid_large_payload_test(void)
-{
-	memset(&kmsg, 0, sizeof(kmsg));
-	memset(&kresp, 0, sizeof(kresp));
-	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
-
-	/*
-	 * Sending: payload_len == sizeof(kmsg.unreg) - sizeof(kmsg.hdr) + 1
-	 * Expected: 'KNOT_INVALID_DATA'
-	 */
-
-	kmsg.hdr.payload_len = sizeof(kmsg.unreg) - sizeof(kmsg.hdr) + 1;
-	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
-							sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_INVALID_DATA);
-}
-
 static void unregister_valid_device_test(void)
 {
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -328,7 +312,6 @@ static void unregister_valid_device_test(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 }
-#endif
 
 static void tcp_connect_test(void)
 {
@@ -376,22 +359,13 @@ int main(int argc, char *argv[])
 	g_test_add_func("/6/register_new_id",
 				register_new_id);
 	g_test_add_func("/6/unix_close", unix_close_test);
-#if 0
+
 	g_test_add_func("/7/unix_connect", unix_connect_test);
-	g_test_add_func("/7/unregister_invalid_payload_len0",
-				unregister_invalid_payload_len0_test);
-	g_test_add_func("/7/unix_close", unix_close_test);
-
-	g_test_add_func("/8/unix_connect", unix_connect_test);
-	g_test_add_func("/8/unregister_invalid_large_payload",
-				unregister_invalid_large_payload_test);
-	g_test_add_func("/8/unix_close", unix_close_test);
-
-	g_test_add_func("/9/unix_connect", unix_connect_test);
-	g_test_add_func("/9/unregister_valid_device",
+	g_test_add_func("/7/authenticate",
+				authenticate_test);
+	g_test_add_func("/7/unregister_valid_device",
 				unregister_valid_device_test);
-	g_test_add_func("/9/unix_close", unix_close_test);
-#endif
+	g_test_add_func("/7/unix_close", unix_close_test);
 
 	return g_test_run();
 }
