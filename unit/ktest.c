@@ -107,13 +107,13 @@ static int unix_connect(void)
 	return sock;
 }
 
-static void connection_test(void)
+static void unix_connect_test(void)
 {
 	sockfd = unix_connect();
 	g_assert(sockfd > 0);
 }
 
-static void close_test(void)
+static void unix_close_test(void)
 {
 	g_assert(close(sockfd) == 0);
 	sockfd = -1;
@@ -371,18 +371,18 @@ int main(int argc, char *argv[])
 
 	g_test_init (&argc, &argv, NULL);
 
-	g_test_add_func("/1/connect", connection_test);
+	g_test_add_func("/1/unix_connect", unix_connect_test);
 	g_test_add_func("/1/register_missing_devname",
 				register_test_missing_devname);
-	g_test_add_func("/1/close", close_test);
+	g_test_add_func("/1/unix_close", unix_close_test);
 
 	g_test_add_func("/2/tcp_connect", tcp_connect_test);
 	g_test_add_func("/2/tcp_close", tcp_close_test);
 
-	g_test_add_func("/3/connect", connection_test);
+	g_test_add_func("/3/unix_connect", unix_connect_test);
 	g_test_add_func("/3/register_empty_devname",
 				register_test_empty_devname);
-	g_test_add_func("/3/close", close_test);
+	g_test_add_func("/3/unix_close", unix_close_test);
 
 	g_test_add_func("/4/tcp_connect", tcp_connect_test);
 	g_test_add_func("/4/tcp_register_empty_devname",
@@ -391,33 +391,34 @@ int main(int argc, char *argv[])
 
 
 #if 0
-	g_test_add_func("/4/connect", connection_test);
-	g_test_add_func("/4/register_invalid_payload_len",
+	g_test_add_func("/5/unix_connect", unix_connect_test);
+	g_test_add_func("/5/register_invalid_payload_len",
 				register_test_invalid_payload_len);
-	g_test_add_func("/4/close", close_test);
+	g_test_add_func("/5/unix_close", unix_close_test);
 #endif
-	g_test_add_func("/5/connect", connection_test);
-	g_test_add_func("/5/register_valid_devname",
+	g_test_add_func("/6/unix_connect", unix_connect_test);
+	g_test_add_func("/6/register_valid_devname",
 				register_test_valid_devname);
-	g_test_add_func("/5/register_repeated_attempt",
+	g_test_add_func("/6/register_repeated_attempt",
 				register_repeated_attempt);
-	g_test_add_func("/5/register_new_id",
+	g_test_add_func("/6/register_new_id",
 				register_new_id);
-	g_test_add_func("/5/close", close_test);
+	g_test_add_func("/6/unix_close", unix_close_test);
 #if 0
-	g_test_add_func("/6/connect", connection_test);
-	g_test_add_func("/6/unregister_invalid_payload_len0",
+	g_test_add_func("/7/unix_connect", unix_connect_test);
+	g_test_add_func("/7/unregister_invalid_payload_len0",
 				unregister_test_invalid_payload_len0);
-	g_test_add_func("/6/close", close_test);
-	g_test_add_func("/7/connect", connection_test);
-	g_test_add_func("/7/unregister_test_invalid_large_payload",
-				unregister_test_invalid_large_payload);
-	g_test_add_func("/7/close", close_test);
+	g_test_add_func("/7/unix_close", unix_close_test);
 
-	g_test_add_func("/8/connect", connection_test);
-	g_test_add_func("/8/unregister_test_valid_device",
+	g_test_add_func("/8/unix_connect", unix_connect_test);
+	g_test_add_func("/8/unregister_test_invalid_large_payload",
+				unregister_test_invalid_large_payload);
+	g_test_add_func("/8/unix_close", unix_close_test);
+
+	g_test_add_func("/9/unix_connect", unix_connect_test);
+	g_test_add_func("/9/unregister_test_valid_device",
 				unregister_test_valid_device);
-	g_test_add_func("/8/close", close_test);
+	g_test_add_func("/9/unix_close", unix_close_test);
 #endif
 
 	return g_test_run();
