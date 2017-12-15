@@ -390,5 +390,12 @@ int main(int argc, char *argv[])
 				unregister_valid_device_test);
 	g_test_add_func("/8/unix_close", unix_close_test);
 
+	g_test_add_func("/9/tcp_connect", unix_connect_test);
+	g_test_add_func("/9/register_valid_devname",
+				register_valid_devname_test);
+	g_test_add_func("/9/unregister_valid_device",
+				unregister_valid_device_test);
+	g_test_add_func("/9/tcp_close", unix_close_test);
+
 	return g_test_run();
 }
