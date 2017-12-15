@@ -234,7 +234,7 @@ static void register_valid_devname_test(void)
 	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp.action.result == KNOT_SUCCESS);
 
-	g_message("UUID: %s token:%s", kresp.cred.uuid, kresp.cred.token);
+	g_message("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 	memcpy(token, kresp.cred.token, sizeof(kresp.cred.token));
 }
@@ -265,6 +265,8 @@ static void register_repeated_attempt_test(void)
 	g_assert(kresp2.hdr.type == KNOT_MSG_REGISTER_RESP);
 	g_assert(kresp2.action.result == KNOT_SUCCESS);
 	g_assert_cmpmem(&kresp, size, &kresp2, size);
+
+	g_message("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
 }
 
 static void register_new_id(void)
@@ -300,6 +302,8 @@ static void register_new_id(void)
 	/* Compare with the first received response */
 	ret = memcmp(&kresp, &kresp2, size);
 	g_assert(ret != 0);
+
+	g_message("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
 }
 
 static void unregister_valid_device_test(void)
