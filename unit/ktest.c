@@ -353,6 +353,11 @@ int main(int argc, char *argv[])
 				register_empty_devname_test);
 	g_test_add_func("/4/tcp_close", tcp_close_test);
 
+	g_test_add_func("/5/tcp_connect", tcp_connect_test);
+	g_test_add_func("/5/tcp_register_empty_devname",
+				register_empty_devname_test);
+	g_test_add_func("/5/tcp_close", tcp_close_test);
+
 	g_test_add_func("/6/unix_connect", unix_connect_test);
 	g_test_add_func("/6/register_valid_devname",
 				register_valid_devname_test);
