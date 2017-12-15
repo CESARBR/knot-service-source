@@ -48,6 +48,7 @@
 /* device name for the register */
 #define	KTEST_DEVICE_NAME			"ktest_unit_test"
 
+static uint64_t reg_id = 0x0123456789abcdef;
 static int sockfd;
 static char uuid128[KNOT_PROTOCOL_UUID_LEN];
 static char token[KNOT_PROTOCOL_TOKEN_LEN];
@@ -173,7 +174,7 @@ static void register_missing_devname_test(void)
 
 	/* Sending register message with missing parameters. */
 
-	kmsg.reg.id = 0x0123456789abcdef;
+	kmsg.reg.id = ++reg_id;
 	kmsg.hdr.payload_len = sizeof(kmsg.reg.id); /* No device name */
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
@@ -196,7 +197,7 @@ static void register_empty_devname_test(void)
 	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
 
 	kmsg.hdr.payload_len = sizeof(kmsg.reg.id) + 1;
-	kmsg.reg.id = 0x0123456789abcdef;
+	kmsg.reg.id = ++reg_id;
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
 	size = do_request(&kmsg, plen, &kresp);
@@ -220,7 +221,7 @@ static void register_valid_devname_test(void)
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
-	kmsg.reg.id = 0x0123456789abcdef;
+	kmsg.reg.id = ++reg_id;
 	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
@@ -249,7 +250,9 @@ static void register_repeated_attempt_test(void)
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
-	kmsg.reg.id = 0x0123456789abcdef;
+
+	/* Do not increment: Use latest registered id  */
+	kmsg.reg.id = reg_id;
 	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
@@ -281,7 +284,7 @@ static void register_new_id(void)
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
-	kmsg.reg.id = 0xdeafbeef89abcdef;
+	kmsg.reg.id = ++reg_id;
 	strcpy(kmsg.reg.devName, KTEST_DEVICE_NAME);
 
 	plen = sizeof(kmsg.reg.hdr) + kmsg.hdr.payload_len;
@@ -367,12 +370,21 @@ int main(int argc, char *argv[])
 				register_new_id);
 	g_test_add_func("/6/unix_close", unix_close_test);
 
-	g_test_add_func("/7/unix_connect", unix_connect_test);
-	g_test_add_func("/7/authenticate",
+	g_test_add_func("/7/tcp_connect", unix_connect_test);
+	g_test_add_func("/7/register_valid_devname",
+				register_valid_devname_test);
+	g_test_add_func("/7/register_repeated_attempt",
+				register_repeated_attempt_test);
+	g_test_add_func("/7/register_new_id",
+				register_new_id);
+	g_test_add_func("/7/tcp_close", unix_close_test);
+
+	g_test_add_func("/8/unix_connect", unix_connect_test);
+	g_test_add_func("/8/authenticate",
 				authenticate_test);
-	g_test_add_func("/7/unregister_valid_device",
+	g_test_add_func("/8/unregister_valid_device",
 				unregister_valid_device_test);
-	g_test_add_func("/7/unix_close", unix_close_test);
+	g_test_add_func("/8/unix_close", unix_close_test);
 
 	return g_test_run();
 }
