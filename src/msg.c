@@ -115,8 +115,7 @@ static void trust_unref(struct trust *trust)
 }
 
 static int8_t msg_unregister(int sock, int proto_sock,
-					const struct proto_ops *proto_ops,
-					const knot_msg_unregister *kreq)
+					const struct proto_ops *proto_ops)
 {
 	const struct trust *trust;
 	json_raw_t jbuf = { NULL, 0 };
@@ -127,13 +126,6 @@ static int8_t msg_unregister(int sock, int proto_sock,
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
-	}
-
-	/* 36 octets */
-	if (kreq->hdr.payload_len != 0) {
-		hal_log_error("Wrong payload length!");
-		result = KNOT_INVALID_DATA;
-		goto done;
 	}
 
 	hal_log_info("rmnode: %.36s", trust->uuid);
@@ -160,7 +152,6 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
 	struct trust *trust = user_data;
-	knot_msg_unregister kreq;
 	int sock, proto_sock;
 
 	sock = g_io_channel_unix_get_fd(io);
@@ -171,10 +162,9 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 
 	/* Zombie device: registration not complete */
 	if (trust->rollback) {
-		memset(&kreq, 0, sizeof(kreq));
 		proto_sock = g_io_channel_unix_get_fd(trust->proto_io);
 		if (msg_unregister(sock, proto_sock,
-			   trust->proto_ops, &kreq) != KNOT_SUCCESS) {
+					trust->proto_ops) != KNOT_SUCCESS) {
 			hal_log_info("Rollback failed UUID: %s", trust->uuid);
 		}
 	}
@@ -1767,8 +1757,7 @@ ssize_t msg_process(int sock, int proto_sock,
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
-		result = msg_unregister(sock, proto_sock, proto_ops,
-								&kreq->unreg);
+		result = msg_unregister(sock, proto_sock, proto_ops);
 		rtype = KNOT_MSG_UNREGISTER_RESP;
 		break;
 	case KNOT_MSG_DATA:
