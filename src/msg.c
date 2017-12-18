@@ -83,6 +83,9 @@ struct proto_watch {
 /* Maps sockets to sessions: online devices only.  */
 static GHashTable *trust_list;
 
+/* IoT protocol: http or ws */
+static struct proto_ops *proto;
+
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 
 static void config_free(gpointer mem)
@@ -114,8 +117,7 @@ static void trust_unref(struct trust *trust)
 	g_free(trust);
 }
 
-static int8_t msg_unregister(int sock, int proto_sock,
-					const struct proto_ops *proto_ops)
+static int8_t msg_unregister(int sock, int proto_sock)
 {
 	const struct trust *trust;
 	json_raw_t jbuf = { NULL, 0 };
@@ -130,7 +132,7 @@ static int8_t msg_unregister(int sock, int proto_sock,
 
 	hal_log_info("rmnode: %.36s", trust->uuid);
 
-	err = proto_ops->rmnode(proto_sock, trust->uuid, trust->token, &jbuf);
+	err = proto->rmnode(proto_sock, trust->uuid, trust->token, &jbuf);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
 		hal_log_error("rmnode() failed %s (%d)", strerror(-err), -err);
@@ -163,8 +165,7 @@ static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
 	/* Zombie device: registration not complete */
 	if (trust->rollback) {
 		proto_sock = g_io_channel_unix_get_fd(trust->proto_io);
-		if (msg_unregister(sock, proto_sock,
-					trust->proto_ops) != KNOT_SUCCESS) {
+		if (msg_unregister(sock, proto_sock) != KNOT_SUCCESS) {
 			hal_log_info("Rollback failed UUID: %s", trust->uuid);
 		}
 	}
@@ -958,7 +959,6 @@ static void proto_watch_cb(json_raw_t json, void *user_data)
 }
 
 static int8_t msg_register(int sock, int proto_sock,
-			   const struct proto_ops *proto_ops,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
@@ -1043,7 +1043,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	jobjstring = json_object_to_json_string(jobj);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->mknode(proto_sock, jobjstring, &json);
+	err = proto->mknode(proto_sock, jobjstring, &json);
 
 	json_object_put(jobj);
 
@@ -1072,7 +1072,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	strcpy(krsp->uuid, uuid);
 	strcpy(krsp->token, token);
 
-	err = proto_ops->signin(proto_sock, uuid, token, &json);
+	err = proto->signin(proto_sock, uuid, token, &json);
 
 	if (!json.data)
 		return KNOT_CLOUD_FAILURE;
@@ -1094,7 +1094,6 @@ static int8_t msg_register(int sock, int proto_sock,
 	trust->id = kreq->id;
 	trust->pid = (cred.pid ? : INT32_MAX);
 	trust->rollback = TRUE;
-	trust->proto_ops = proto_ops; /* TODO: missing ref control */
 
 	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock),
 							trust_ref(trust));
@@ -1107,7 +1106,7 @@ static int8_t msg_register(int sock, int proto_sock,
 	g_io_channel_unref(io);
 
 	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto_ops->async(proto_sock, trust->uuid,
+	proto_watch->id = proto->async(proto_sock, trust->uuid,
 				trust->token, proto_watch_cb, proto_watch);
 	proto_watch->node_io = g_io_channel_ref(io);
 
@@ -1126,7 +1125,6 @@ done:
 }
 
 static int8_t msg_auth(int sock, int proto_sock,
-				const struct proto_ops *proto_ops,
 				const knot_msg_authentication *kmauth)
 {
 	GIOChannel *io;
@@ -1148,7 +1146,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	 */
 	trust->uuid = g_strndup(kmauth->uuid, sizeof(kmauth->uuid));
 	trust->token = g_strndup(kmauth->token, sizeof(kmauth->token));
-	err = proto_ops->signin(proto_sock, trust->uuid, trust->token, &json);
+	err = proto->signin(proto_sock, trust->uuid, trust->token, &json);
 
 	if (!json.data) {
 		trust_unref(trust);
@@ -1176,7 +1174,6 @@ static int8_t msg_auth(int sock, int proto_sock,
 	}
 
 	trust->rollback = FALSE;
-	trust->proto_ops = proto_ops; /* TODO: missing ref control */
 
 	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock),
 							trust_ref(trust));
@@ -1190,7 +1187,7 @@ static int8_t msg_auth(int sock, int proto_sock,
 	g_io_channel_unref(io);
 
 	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto_ops->async(proto_sock,
+	proto_watch->id = proto->async(proto_sock,
 			trust->uuid, trust->token, proto_watch_cb, proto_watch);
 	proto_watch->node_io = g_io_channel_ref(io);
 
@@ -1203,7 +1200,6 @@ static int8_t msg_auth(int sock, int proto_sock,
 }
 
 static int8_t msg_schema(int sock, int proto_sock,
-				const struct proto_ops *proto_ops,
 				const knot_msg_schema *kmsch, gboolean eof)
 {
 	const knot_msg_schema *schema = kmsch;
@@ -1282,7 +1278,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 	jobjstr = json_object_to_json_string(schemajobj);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->schema(proto_sock, trust->uuid, trust->token,
+	err = proto->schema(proto_sock, trust->uuid, trust->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -1307,8 +1303,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 /*
  * Updates de 'devices' db, removing the sensor_id that just sent the data
  */
-static void update_device_getdata(const struct proto_ops *proto_ops,
-					int proto_sock, char *uuid, char *token,
+static void update_device_getdata(int proto_sock, char *uuid, char *token,
 					uint8_t sensor_id)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
@@ -1318,8 +1313,7 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 	int i, err;
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->fetch(proto_sock, uuid, token, &json);
-
+	err = proto->fetch(proto_sock, uuid, token, &json);
 	if (err < 0) {
 		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
 		goto done;
@@ -1378,7 +1372,7 @@ static void update_device_getdata(const struct proto_ops *proto_ops,
 	json_object_object_add(setdatajobj, "get_data", json_object_get(ajobj));
 	jobjstr = json_object_to_json_string(setdatajobj);
 
-	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
+	err = proto->setdata(proto_sock, uuid, token, jobjstr, &json);
 
 done:
 	if (jobj)
@@ -1391,7 +1385,6 @@ done:
 }
 
 static int8_t msg_data(int sock, int proto_sock,
-					const struct proto_ops *proto_ops,
 					const knot_msg_data *kmdata)
 {
 	/*
@@ -1477,7 +1470,7 @@ static int8_t msg_data(int sock, int proto_sock,
 	hal_log_info("JSON: %s", jobjstr);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->data(proto_sock, trust->uuid, trust->token,
+	err = proto->data(proto_sock, trust->uuid, trust->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -1489,8 +1482,7 @@ static int8_t msg_data(int sock, int proto_sock,
 		return KNOT_CLOUD_FAILURE;
 	}
 
-	update_device_getdata(proto_ops, proto_sock, trust->uuid, trust->token,
-								sensor_id);
+	update_device_getdata(proto_sock, trust->uuid, trust->token, sensor_id);
 
 	return KNOT_SUCCESS;
 }
@@ -1524,8 +1516,7 @@ static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
  * Updates de 'devices' db, removing the sensor_id that was acknowledged by the
  * THING.
  */
-static void update_device_setdata(const struct proto_ops *proto_ops,
-					int proto_sock, char *uuid, char *token,
+static void update_device_setdata(int proto_sock, char *uuid, char *token,
 					uint8_t sensor_id)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
@@ -1535,7 +1526,7 @@ static void update_device_setdata(const struct proto_ops *proto_ops,
 	int i, err;
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->fetch(proto_sock, uuid, token, &json);
+	err = proto->fetch(proto_sock, uuid, token, &json);
 
 	if (err < 0) {
 		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
@@ -1590,7 +1581,7 @@ static void update_device_setdata(const struct proto_ops *proto_ops,
 	json_object_object_add(setdatajobj, "set_data", json_object_get(ajobj));
 	jobjstr = json_object_to_json_string(setdatajobj);
 
-	err = proto_ops->setdata(proto_sock, uuid, token, jobjstr, &json);
+	err = proto->setdata(proto_sock, uuid, token, jobjstr, &json);
 
 done:
 	if (jobj)
@@ -1607,7 +1598,6 @@ done:
  * the 'devices' database.
  */
 static int8_t msg_setdata_resp(int sock, int proto_sock,
-					const struct proto_ops *proto_ops,
 					const knot_msg_data *kmdata)
 {
 	/*
@@ -1657,7 +1647,7 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 				schema->values.unit, schema->values.value_type);
 
 	/* Fetches the 'devices' db */
-	update_device_setdata(proto_ops, proto_sock, trust->uuid, trust->token,
+	update_device_setdata(proto_sock, trust->uuid, trust->token,
 								sensor_id);
 
 	jobj = json_object_new_object();
@@ -1695,7 +1685,7 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 	jobjstr = json_object_to_json_string(jobj);
 
 	memset(&json, 0, sizeof(json));
-	err = proto_ops->data(proto_sock, trust->uuid, trust->token,
+	err = proto->data(proto_sock, trust->uuid, trust->token,
 							jobjstr, &json);
 	if (json.data)
 		free(json.data);
@@ -1715,7 +1705,6 @@ static int8_t msg_setdata_resp(int sock, int proto_sock,
 
 
 ssize_t msg_process(int sock, int proto_sock,
-				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
 				void *opdu, size_t omtu)
 {
@@ -1752,27 +1741,26 @@ ssize_t msg_process(int sock, int proto_sock,
 	switch (kreq->hdr.type) {
 	case KNOT_MSG_REGISTER_REQ:
 		/* Payload length is set by the caller */
-		result = msg_register(sock, proto_sock, proto_ops,
+		result = msg_register(sock, proto_sock,
 				      &kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
-		result = msg_unregister(sock, proto_sock, proto_ops);
+		result = msg_unregister(sock, proto_sock);
 		rtype = KNOT_MSG_UNREGISTER_RESP;
 		break;
 	case KNOT_MSG_DATA:
-		result = msg_data(sock, proto_sock, proto_ops, &kreq->data);
+		result = msg_data(sock, proto_sock, &kreq->data);
 		rtype = KNOT_MSG_DATA_RESP;
 		break;
 	case KNOT_MSG_AUTH_REQ:
-		result = msg_auth(sock, proto_sock, proto_ops, &kreq->auth);
+		result = msg_auth(sock, proto_sock, &kreq->auth);
 		rtype = KNOT_MSG_AUTH_RESP;
 		break;
 	case KNOT_MSG_SCHEMA:
 	case KNOT_MSG_SCHEMA_END:
 		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? TRUE : FALSE;
-		result = msg_schema(sock, proto_sock, proto_ops, &kreq->schema,
-									eof);
+		result = msg_schema(sock, proto_sock, &kreq->schema, eof);
 		rtype = KNOT_MSG_SCHEMA_RESP;
 		if (eof)
 			rtype = KNOT_MSG_SCHEMA_END_RESP;
@@ -1782,8 +1770,7 @@ ssize_t msg_process(int sock, int proto_sock,
 		/* No octets to be transmitted */
 		return 0;
 	case KNOT_MSG_DATA_RESP:
-		result = msg_setdata_resp(sock, proto_sock, proto_ops,
-								&kreq->data);
+		result = msg_setdata_resp(sock, proto_sock, &kreq->data);
 		return 0;
 	default:
 		/* TODO: reply unknown command */
@@ -1798,10 +1785,11 @@ ssize_t msg_process(int sock, int proto_sock,
 	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
 }
 
-int msg_start(const char *uuid)
+int msg_start(const char *uuid, struct proto_ops *proto_ops)
 {
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, uuid, sizeof(owner_uuid));
+	proto = proto_ops;
 
 	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 				      NULL, (GDestroyNotify) trust_unref);

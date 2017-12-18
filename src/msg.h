@@ -26,10 +26,9 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int msg_start(const char *uuid);
+int msg_start(const char *uuid, struct proto_ops *proto_ops);
 void msg_stop(void);
 
 ssize_t msg_process(int sock, int proto_sock,
-				const struct proto_ops *proto_ops,
 				const void *ipdu, size_t ilen,
 				void *opdu, size_t olen);

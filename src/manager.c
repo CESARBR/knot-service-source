@@ -71,6 +71,7 @@ extern struct proto_ops proto_http;
 extern struct proto_ops proto_ws;
 #endif
 
+static struct proto_ops *proto; /* Selected IoT protocol */
 static struct proto_ops *proto_ops[] = {
 	&proto_http,
 #ifdef HAVE_WEBSOCKETS
@@ -78,13 +79,6 @@ static struct proto_ops *proto_ops[] = {
 #endif
 	NULL
 };
-
-/*
- * Select default IoT protocol index. TODO: Later it can
- * be member of 'session' struct, allowing nodes to select
- * dynamically the wanted IoT protocol at run time.
- */
-static int proto_index = 0;
 
 /* TODO: After adding buildroot, investigate if it is possible
  * to add macros for conditional builds, or a dynamic builtin
@@ -186,7 +180,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		if (cond & G_IO_HUP && session->proto_io) {
 			proto_sock =
 				g_io_channel_unix_get_fd(session->proto_io);
-			proto_ops[proto_index]->close(proto_sock);
+			proto->close(proto_sock);
 		}
 		session->node_id = 0;
 		return FALSE;
@@ -202,7 +196,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	}
 
 	if (!session->proto_io) {
-		proto_sock = proto_ops[proto_index]->connect();
+		proto_sock = proto->connect();
 		if (proto_sock < 0) {
 			/* TODO:  missing reply an error */
 			hal_log_info("Can't connect to cloud service!");
@@ -223,7 +217,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	} else
 		proto_sock = g_io_channel_unix_get_fd(session->proto_io);
 
-	olen = msg_process(sock, proto_sock, proto_ops[proto_index], ipdu,
+	olen = msg_process(sock, proto_sock, ipdu,
 					recvbytes, opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {
@@ -259,13 +253,13 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 
 	/* FIXME: Stop knotd if cloud if not available */
-	proto_sock = proto_ops[proto_index]->connect();
+	proto_sock = proto->connect();
 
 	srv_sock = g_io_channel_unix_get_fd(io);
 
 	sockfd = ops->accept(srv_sock);
 	if (sockfd < 0) {
-		proto_ops[proto_index]->close(proto_sock);
+		proto->close(proto_sock);
 		hal_log_error("%p accept(): %s(%d)", ops,
 					strerror(-sockfd), -sockfd);
 		return TRUE;
@@ -324,11 +318,6 @@ int manager_start(const struct settings *settings)
 	if (settings->tty)
 		serial_load_config(settings->tty);
 
-	/* Starting msg layer */
-	err = msg_start(settings->uuid);
-	if (err < 0)
-		return err;
-
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
 	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
@@ -340,13 +329,20 @@ int manager_start(const struct settings *settings)
 		if (strcmp(settings->proto, proto_ops[i]->name) != 0)
 			continue;
 
-		if (proto_ops[i]->probe(settings->host, settings->port) < 0)
-			return -EIO;
-
-		hal_log_info("proto_ops(%p): %s", proto_ops[i],
-							proto_ops[i]->name);
-		proto_index = i;
+		proto = proto_ops[i];
 	}
+
+	/* Starting msg layer */
+	err = msg_start(settings->uuid, proto);
+	if (err < 0)
+		return err;
+
+	if (proto->probe(settings->host, settings->port) < 0) {
+		msg_stop();
+		return -EIO;
+	}
+
+	hal_log_info("proto_ops: %s", proto->name);
 
 	/*
 	 * Probing all access technologies: nRF24L01, BTLE, TCP, Unix
@@ -406,7 +402,7 @@ void manager_stop(void)
 	for (i = 0; node_ops[i]; i++)
 		node_ops[i]->remove();
 
-	proto_ops[proto_index]->remove();
+	proto->remove();
 
 	for (list = server_watch; list; list = g_slist_next(list)) {
 		server_watch_id = GPOINTER_TO_UINT(list->data);
