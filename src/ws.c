@@ -229,6 +229,8 @@ static void ws_close(int sock)
 	 * and free them.
 	 */
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return;
 
 	entry = g_slist_nth(wsis, psd->index);
 	ws = entry->data;
@@ -253,6 +255,10 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	const char *jobjstring;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_tokener_parse(device_json);
 	if (jobj == NULL)
 		return -EINVAL;
@@ -262,9 +268,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	json_object_array_add(jarray, jobj);
 	jobjstring = json_object_to_json_string(jarray);
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
-
 	if (entry->data == NULL) {
 		err = -EBADF;
 		hal_log_error("Not found");
@@ -319,6 +323,10 @@ static int ws_device(int sock, const char *uuid,
 	json_object *jobj, *jarray;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
 
@@ -338,7 +346,6 @@ static int ws_device(int sock, const char *uuid,
 
 	hal_log_info("WS JSON TX %s", jobjstring);
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
@@ -378,6 +385,10 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	json_object *jobj, *jarray;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
 
@@ -398,7 +409,6 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	hal_log_info("WS TX JSON %s", jobjstring);
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
@@ -440,6 +450,10 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	json_object *jobj, *jarray;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
 
@@ -459,10 +473,6 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	jobjstring = json_object_to_json_string(jarray);
 
 	hal_log_info("WS JSON TX %s", jobjstring);
-
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
-	if (!psd)
-		return -EINVAL;
 
 	entry = g_slist_nth(wsis, psd->index);
 
@@ -507,6 +517,10 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	const char *jobjstr;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_tokener_parse(jreq);
 	if (jobj == NULL)
 		return -EINVAL;
@@ -519,7 +533,6 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	json_object_array_add(jarray, jobj);
 	jobjstr = json_object_to_json_string(jarray);
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	entry = g_slist_nth(wsis, psd->index);
 	if (entry->data == NULL) {
 		hal_log_error("Not found");
@@ -557,6 +570,10 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	const char *jobjstr;
 	GSList *entry;
 
+	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	jobj = json_tokener_parse(jreq);
 	if (jobj == NULL)
 		return -EINVAL;
@@ -567,8 +584,6 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	json_object_object_add(jobj, "token", json_object_new_string(token));
 	json_object_array_add(jmsg, jobj);
 	jobjstr = json_object_to_json_string(jmsg);
-
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 
 	entry = g_slist_nth(wsis, psd->index);
 	if (entry->data == NULL) {
@@ -941,6 +956,8 @@ static unsigned int proto_register_watch(int proto_sock, const char *uuid,
 	struct per_session_data_ws *value;
 
 	value = g_hash_table_lookup(wstable, GINT_TO_POINTER(proto_sock));
+	if (!value)
+		return -EINVAL;
 
 	data = &value->data;
 	data->watch_cb = proto_watch_cb;
