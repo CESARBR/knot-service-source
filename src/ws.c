@@ -461,6 +461,9 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	hal_log_info("WS JSON TX %s", jobjstring);
 
 	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	if (!psd)
+		return -EINVAL;
+
 	entry = g_slist_nth(wsis, psd->index);
 
 	if (entry->data == NULL) {
