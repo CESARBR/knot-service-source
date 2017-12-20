@@ -39,6 +39,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include <glib.h>
+
 #include <hal/linux_log.h>
 
 #include "manager.h"
@@ -48,10 +50,61 @@
 
 static int sock4 = -1;
 static int sock6 = -1;
+static gint io6_watch = -1;
+static gint io4_watch = -1;
 
-static int inet4_start(void)
+static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
 {
 	struct sockaddr_in addr4;
+	char buffer[1280];
+	socklen_t addrlen;
+	ssize_t len;
+	int sock;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+		return FALSE;
+
+	sock = g_io_channel_unix_get_fd(io);
+
+	addrlen = sizeof(addr4);
+	memset(&addr4, 0, sizeof(addr4));
+	len = recvfrom(sock, buffer, sizeof(buffer), 0,
+		       (struct sockaddr *) &addr4, &addrlen);
+
+	hal_log_info("IPv4 recvfrom: %zu", len);
+
+	return TRUE;
+}
+
+static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct sockaddr_in6 addr6;
+	char buffer[1280];
+	socklen_t addrlen;
+	ssize_t len;
+	int sock;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+		return FALSE;
+
+	sock = g_io_channel_unix_get_fd(io);
+
+	addrlen = sizeof(addr6);
+	memset(&addr6, 0, sizeof(addr6));
+	len = recvfrom(sock, buffer, sizeof(buffer), 0,
+		       (struct sockaddr *) &addr6, &addrlen);
+
+	hal_log_info("IPv6 recvfrom: %zu", len);
+
+	return TRUE;
+}
+static int inet4_start(void)
+{
+	GIOCondition cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
+	struct sockaddr_in addr4;
+	GIOChannel *io4;
 	int on = 1;
 	int err;
 
@@ -80,6 +133,11 @@ static int inet4_start(void)
 		goto fail;
 	}
 
+	io4 = g_io_channel_unix_new(sock4);
+	io4_watch = g_io_add_watch_full(io4, G_PRIORITY_DEFAULT,
+				  cond, read_inet4_cb, NULL, NULL);
+	g_io_channel_unref(io4);
+
 	return 0;
 
 fail:
@@ -92,11 +150,16 @@ static void inet4_stop(void)
 {
 	if (sock4 >= 0)
 		close(sock4);
+
+	if (io4_watch > 0)
+		g_source_remove(io4_watch);
 }
 
 static int inet6_start(void)
 {
+	GIOCondition cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in6 addr6;
+	GIOChannel *io6;
 	int on = 1;
 	int err;
 
@@ -125,6 +188,11 @@ static int inet6_start(void)
 		goto fail;
 	}
 
+	io6 = g_io_channel_unix_new(sock6);
+	io6_watch = g_io_add_watch_full(io6, G_PRIORITY_DEFAULT,
+				  cond, read_inet6_cb, NULL, NULL);
+	g_io_channel_unref(io6);
+
 	return 0;
 
 fail:
@@ -137,8 +205,11 @@ static void inet6_stop(void)
 {
 	if (sock6 >= 0)
 		close(sock6);
-}
 
+	if (io6_watch > 0)
+		g_source_remove(io6_watch);
+
+}
 
 int manager_start(void)
 {
