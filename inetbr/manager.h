@@ -26,5 +26,5 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int manager_start(void);
+int manager_start(int port4, int port6);
 void manager_stop(void);

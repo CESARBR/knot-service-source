@@ -43,6 +43,8 @@
 #include "manager.h"
 
 static gboolean opt_detach = TRUE;
+static int opt_port4 = 8084;
+static int opt_port6 = 8086;
 
 static GMainLoop *main_loop;
 
@@ -55,6 +57,10 @@ static GOptionEntry options[] = {
 	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
 					G_OPTION_ARG_NONE, &opt_detach,
 					"Logging in foreground" },
+	{ "port4", 'p', 0, G_OPTION_ARG_INT, &opt_port4,
+			"IPv4 port", "localhost IPv4 port. Default 8084" },
+	{ "port6", 'P', 0, G_OPTION_ARG_INT, &opt_port6,
+			"IPv6 port", "localhost IPv6 port. Default 8086" },
 	{ NULL },
 };
 
@@ -80,7 +86,7 @@ int main(int argc, char *argv[])
 
 	g_option_context_free(context);
 
-	err = manager_start();
+	err = manager_start(opt_port4, opt_port6);
 	if (err < 0) {
 		g_error("%s(%d)", strerror(-err), -err);
 		return EXIT_FAILURE;

@@ -45,9 +45,6 @@
 
 #include "manager.h"
 
-#define SERVER_PORT_IPV4		8084
-#define SERVER_PORT_IPV6		8086
-
 static gint io6_watch = -1;
 static gint io4_watch = -1;
 
@@ -98,7 +95,7 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 
 	return TRUE;
 }
-static int inet4_start(void)
+static int inet4_start(int port4)
 {
 	GIOCondition cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in addr4;
@@ -123,7 +120,7 @@ static int inet4_start(void)
 
 	memset(&addr4, 0, sizeof(addr4));
 	addr4.sin_family = AF_INET;
-	addr4.sin_port = htons(SERVER_PORT_IPV4);
+	addr4.sin_port = htons(port4);
 	addr4.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind(sock, (struct sockaddr *) &addr4, sizeof(addr4)) < 0) {
@@ -152,7 +149,7 @@ static void inet4_stop(void)
 		g_source_remove(io4_watch);
 }
 
-static int inet6_start(void)
+static int inet6_start(int port6)
 {
 	GIOCondition cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in6 addr6;
@@ -177,7 +174,7 @@ static int inet6_start(void)
 
 	memset(&addr6, 0, sizeof(addr6));
 	addr6.sin6_family = AF_INET6;
-	addr6.sin6_port = htons(SERVER_PORT_IPV6);
+	addr6.sin6_port = htons(port6);
 	addr6.sin6_addr = in6addr_any;
 
 	if (bind(sock, (struct sockaddr *) &addr6, sizeof(addr6)) < 0) {
@@ -206,15 +203,15 @@ static void inet6_stop(void)
 		g_source_remove(io6_watch);
 }
 
-int manager_start(void)
+int manager_start(int port4, int port6)
 {
 	int ret;
 
-	ret = inet4_start();
+	ret = inet4_start(port4);
 	if (ret < 0)
 		return ret;
 
-	ret = inet6_start();
+	ret = inet6_start(port6);
 	if (ret < 0)
 		inet4_stop();
 
