@@ -23,7 +23,8 @@ src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
-inetbr_inetbrd_SOURCES = inetbr/main.c
+inetbr_inetbrd_SOURCES = inetbr/main.c \
+			inetbr/manager.c
 
 inetbr_inetbrd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
