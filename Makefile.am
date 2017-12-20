@@ -8,7 +8,7 @@ modules_cflags =
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
-bin_PROGRAMS = src/knotd
+bin_PROGRAMS = src/knotd inetbr/inetbrd
 noinst_PROGRAMS = tools/ktool unit/ktest
 
 include Makefile.modules
@@ -22,6 +22,12 @@ src_knotd_SOURCES = src/main.c \
 src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
+
+inetbr_inetbrd_SOURCES = inetbr/main.c
+
+inetbr_inetbrd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
+inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
+inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
 tools_ktool_SOURCES = tools/ktool.c
 tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@
@@ -41,4 +47,4 @@ MAINTAINERCLEANFILES = Makefile.in \
 	ltmain.sh depcomp compile missing install-sh
 
 clean-local:
-	$(RM) -r src/knotd tools/ktool unit/ktest
+	$(RM) -r src/knotd inetbr/inetbrd tools/ktool unit/ktest
