@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
@@ -53,6 +54,7 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 {
 	struct sockaddr_in addr4;
 	char buffer[1280];
+	char ipv4_str[INET_ADDRSTRLEN];
 	socklen_t addrlen;
 	ssize_t len;
 	int sock;
@@ -67,7 +69,8 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 	len = recvfrom(sock, buffer, sizeof(buffer), 0,
 		       (struct sockaddr *) &addr4, &addrlen);
 
-	hal_log_info("IPv4 recvfrom: %zu", len);
+	inet_ntop(AF_INET, &(addr4.sin_addr), ipv4_str, INET_ADDRSTRLEN);
+	hal_log_info("IPv4 recvfrom: %s(%zu)", ipv4_str, len);
 
 	return TRUE;
 }
@@ -77,6 +80,7 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 {
 	struct sockaddr_in6 addr6;
 	char buffer[1280];
+	char ipv6_str[INET6_ADDRSTRLEN];
 	socklen_t addrlen;
 	ssize_t len;
 	int sock;
@@ -91,7 +95,8 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 	len = recvfrom(sock, buffer, sizeof(buffer), 0,
 		       (struct sockaddr *) &addr6, &addrlen);
 
-	hal_log_info("IPv6 recvfrom: %zu", len);
+	inet_ntop(AF_INET6, &(addr6.sin6_addr), ipv6_str, INET6_ADDRSTRLEN);
+	hal_log_info("IPv6 recvfrom: %s (%zu)", ipv6_str, len);
 
 	return TRUE;
 }
