@@ -48,8 +48,6 @@
 #define SERVER_PORT_IPV4		8084
 #define SERVER_PORT_IPV6		8086
 
-static int sock4 = -1;
-static int sock6 = -1;
 static gint io6_watch = -1;
 static gint io4_watch = -1;
 
@@ -107,15 +105,16 @@ static int inet4_start(void)
 	GIOChannel *io4;
 	int on = 1;
 	int err;
+	int sock;
 
-	sock4 = socket(AF_INET, SOCK_DGRAM, 0);
-	if (sock4 < 0) {
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0) {
 		err = errno;
 		hal_log_error("socket IPv4(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
-	if (setsockopt(sock4, SOL_SOCKET, SO_REUSEADDR,
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
 					(char *) &on, sizeof(on)) < 0) {
 		err = errno;
 		hal_log_error("setsockopt IPv4(): %s(%d)", strerror(err), err);
@@ -127,13 +126,14 @@ static int inet4_start(void)
 	addr4.sin_port = htons(SERVER_PORT_IPV4);
 	addr4.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	if (bind(sock4, (struct sockaddr *) &addr4, sizeof(addr4)) < 0) {
+	if (bind(sock, (struct sockaddr *) &addr4, sizeof(addr4)) < 0) {
 		err = errno;
 		hal_log_error("bind IPv4(): %s(%d)", strerror(err), err);
 		goto fail;
 	}
 
-	io4 = g_io_channel_unix_new(sock4);
+	io4 = g_io_channel_unix_new(sock);
+	g_io_channel_set_close_on_unref(io4, TRUE);
 	io4_watch = g_io_add_watch_full(io4, G_PRIORITY_DEFAULT,
 				  cond, read_inet4_cb, NULL, NULL);
 	g_io_channel_unref(io4);
@@ -141,16 +141,13 @@ static int inet4_start(void)
 	return 0;
 
 fail:
-	close (sock4);
+	close (sock);
 
 	return -err;
 }
 
 static void inet4_stop(void)
 {
-	if (sock4 >= 0)
-		close(sock4);
-
 	if (io4_watch > 0)
 		g_source_remove(io4_watch);
 }
@@ -162,15 +159,16 @@ static int inet6_start(void)
 	GIOChannel *io6;
 	int on = 1;
 	int err;
+	int sock;
 
-	sock6 = socket(AF_INET6, SOCK_DGRAM, 0);
-	if (sock6 < 0) {
+	sock = socket(AF_INET6, SOCK_DGRAM, 0);
+	if (sock < 0) {
 		err = errno;
 		hal_log_error("socket IPv6(): %s(%d)", strerror(err), err);
 		return -err;
 	}
 
-	if (setsockopt(sock6, SOL_SOCKET, SO_REUSEADDR,
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
 					(char *) &on, sizeof(on)) < 0) {
 		err = errno;
 		hal_log_error("setsockopt IPv6(): %s(%d)", strerror(err), err);
@@ -182,13 +180,14 @@ static int inet6_start(void)
 	addr6.sin6_port = htons(SERVER_PORT_IPV6);
 	addr6.sin6_addr = in6addr_any;
 
-	if (bind(sock6, (struct sockaddr *) &addr6, sizeof(addr6)) < 0) {
+	if (bind(sock, (struct sockaddr *) &addr6, sizeof(addr6)) < 0) {
 		err = errno;
 		hal_log_error("bind IPv6(): %s(%d)", strerror(err), err);
 		goto fail;
 	}
 
-	io6 = g_io_channel_unix_new(sock6);
+	io6 = g_io_channel_unix_new(sock);
+	g_io_channel_set_close_on_unref(io6, TRUE);
 	io6_watch = g_io_add_watch_full(io6, G_PRIORITY_DEFAULT,
 				  cond, read_inet6_cb, NULL, NULL);
 	g_io_channel_unref(io6);
@@ -196,19 +195,15 @@ static int inet6_start(void)
 	return 0;
 
 fail:
-	close(sock6);
+	close(sock);
 
 	return -err;
 }
 
 static void inet6_stop(void)
 {
-	if (sock6 >= 0)
-		close(sock6);
-
 	if (io6_watch > 0)
 		g_source_remove(io6_watch);
-
 }
 
 int manager_start(void)
