@@ -9,7 +9,7 @@ AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
 bin_PROGRAMS = src/knotd inetbr/inetbrd
-noinst_PROGRAMS = tools/ktool unit/ktest
+noinst_PROGRAMS = tools/ktool unit/ktest unit/inettest
 
 include Makefile.modules
 
@@ -40,6 +40,12 @@ unit_ktest_SOURCES = unit/ktest.c
 unit_ktest_LDADD = @GLIB_LIBS@
 unit_ktest_LDFLAGS = $(AM_LDFLAGS)
 unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
+
+unit_inettest_SOURCES = unit/inettest.c
+
+unit_inettest_LDADD = @GLIB_LIBS@
+unit_inettest_LDFLAGS = $(AM_LDFLAGS)
+unit_inettest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
 
 DISTCLEANFILES =
 
