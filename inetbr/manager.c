@@ -52,11 +52,21 @@
 
 static gint io6_watch = -1;
 static gint io4_watch = -1;
-static GHashTable *inet_hash = NULL;
+static GHashTable *inet_hash4 = NULL;
+static GHashTable *inet_hash6 = NULL;
 
-struct watch {
-	int id;
-	int sock;
+struct watch4 {
+	int id;				/* glib watch */
+	int sock;			/* Unix socket */
+	int cli_sock;			/* DGRAM socket */
+	struct sockaddr_in addr;
+};
+
+struct watch6 {
+	int id;				/* glib watch */
+	int sock;			/* Unix socket */
+	int cli_sock;			/* DGRAM socket */
+	struct sockaddr_in6 addr;
 };
 
 static int unix_connect(void)
@@ -86,16 +96,26 @@ static int unix_connect(void)
 	return sock;
 }
 
-static void downlink_destroy(gpointer user_data)
+static void downlink4_destroy(gpointer user_data)
 {
-	g_hash_table_remove(inet_hash, user_data);
+	g_hash_table_remove(inet_hash4, user_data);
 
 	g_free(user_data);
 }
 
-static gboolean downlink_cb(GIOChannel *io, GIOCondition cond,
+static void downlink6_destroy(gpointer user_data)
+{
+	g_hash_table_remove(inet_hash6, user_data);
+
+	g_free(user_data);
+}
+
+static gboolean downlink4_cb(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
+	const char *ipv4 = user_data;
+	struct sockaddr_in addr;
+	struct watch4 *watch;
 	char buffer[1280];
 	ssize_t len;
 	int sock, err;
@@ -111,7 +131,51 @@ static gboolean downlink_cb(GIOChannel *io, GIOCondition cond,
 		return TRUE;
 	}
 
-	/* TODO: Route do peer */
+	watch = g_hash_table_lookup(inet_hash4, ipv4);
+	if (!watch)
+		return TRUE;
+
+	memcpy(&addr, &watch->addr, sizeof(addr));
+	if (sendto(watch->cli_sock, buffer, len, 0,
+			(struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		hal_log_error("sendto(%s):  %s(%d)", ipv4, strerror(err), err);
+	}
+
+	return TRUE;
+}
+
+static gboolean downlink6_cb(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	const char *ipv6 = user_data;
+	struct sockaddr_in6 addr;
+	struct watch6 *watch;
+	char buffer[1280];
+	ssize_t len;
+	int sock, err;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+		return FALSE;
+
+	sock = g_io_channel_unix_get_fd(io);
+	len = read(sock, buffer, sizeof(buffer));
+	if (len < 0) {
+		err = errno;
+		hal_log_error("read(): %s(%d)", strerror(err), err);
+		return TRUE;
+	}
+
+	watch = g_hash_table_lookup(inet_hash6, ipv6);
+	if (!watch)
+		return TRUE;
+
+	memcpy(&addr, &watch->addr, sizeof(addr));
+	if (sendto(watch->cli_sock, buffer, len, 0,
+			   (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		hal_log_error("sendto(%s):  %s(%d)", ipv6, strerror(err), err);
+	}
 
 	return TRUE;
 }
@@ -121,7 +185,7 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 {
 	GIOCondition down_cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in addr4;
-	struct watch *watch;
+	struct watch4 *watch;
 	char buffer[1280];
 	char ipv4_str[INET_ADDRSTRLEN];
 	socklen_t addrlen;
@@ -142,7 +206,7 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 
 	inet_ntop(AF_INET, &(addr4.sin_addr), ipv4_str, INET_ADDRSTRLEN);
 
-	watch = g_hash_table_lookup(inet_hash, ipv4_str);
+	watch = g_hash_table_lookup(inet_hash4, ipv4_str);
 	if (watch)
 		sock = watch->sock;
 	else {
@@ -151,23 +215,27 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 		if (sock < 0)
 			return TRUE;
 
-		watch = g_new0(struct watch, 1);
+		watch = g_new0(struct watch4, 1);
 		io = g_io_channel_unix_new(sock);
 		g_io_channel_set_close_on_unref(io, TRUE);
 		watch->sock = sock;
+		watch->cli_sock = cli_sock;
 		watch->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 						 down_cond,
-						 downlink_cb,
+						 downlink4_cb,
 						 g_strdup(ipv4_str),
-						 downlink_destroy);
+						 downlink4_destroy);
 		g_io_channel_unref(io);
 
-		g_hash_table_insert(inet_hash,
+		g_hash_table_insert(inet_hash4,
 				    g_strdup(ipv4_str),
 				    watch);
 	}
 
-	hal_log_info("%s, sock:%d, len:%zu", ipv4_str, sock, len);
+	memcpy(&watch->addr, &addr4, sizeof(watch->addr));
+
+	hal_log_info("%s, watch: %d sock:%d > %d, port:%d, len:%zu",
+		     ipv4_str, watch->id, cli_sock, sock, addr4.sin_port, len);
 
 	len = write(sock, buffer, len);
 	if (len < 0) {
@@ -183,7 +251,7 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 {
 	GIOCondition down_cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in6 addr6;
-	struct watch *watch;
+	struct watch6 *watch;
 	char buffer[1280];
 	char ipv6_str[INET6_ADDRSTRLEN];
 	socklen_t addrlen;
@@ -204,7 +272,7 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 
 	inet_ntop(AF_INET6, &(addr6.sin6_addr), ipv6_str, INET6_ADDRSTRLEN);
 
-	watch = g_hash_table_lookup(inet_hash, ipv6_str);
+	watch = g_hash_table_lookup(inet_hash6, ipv6_str);
 	if (watch)
 		sock = watch->sock;
 	else {
@@ -213,23 +281,27 @@ static gboolean read_inet6_cb(GIOChannel *io, GIOCondition cond,
 		if (sock < 0)
 			return TRUE;
 
-		watch = g_new0(struct watch, 1);
+		watch = g_new0(struct watch6, 1);
 		io = g_io_channel_unix_new(sock);
 		g_io_channel_set_close_on_unref(io, TRUE);
 		watch->sock = sock;
+		watch->cli_sock = cli_sock;
 		watch->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
 						 down_cond,
-						 downlink_cb,
+						 downlink6_cb,
 						 g_strdup(ipv6_str),
-						 downlink_destroy);
+						 downlink6_destroy);
 		g_io_channel_unref(io);
 
-		g_hash_table_insert(inet_hash,
+		g_hash_table_insert(inet_hash6,
 				    g_strdup(ipv6_str),
 				    watch);
 	}
 
-	hal_log_info("%s, sock:%d, len:%zu", ipv6_str, sock, len);
+	memcpy(&watch->addr, &addr6, sizeof(watch->addr));
+
+	hal_log_info("%s, watch: %d sock:%d > %d, port:%d, len:%zu",
+		ipv6_str, watch->id, cli_sock, sock, addr6.sin6_port, len);
 
 	len = write(sock, buffer, len);
 	if (len < 0) {
@@ -360,15 +432,28 @@ int manager_start(int port4, int port6)
 	if (ret < 0)
 		inet4_stop();
 
-	inet_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
+	inet_hash4 = g_hash_table_new_full(g_str_hash, g_str_equal,
+						g_free, g_free);
+
+	inet_hash6 = g_hash_table_new_full(g_str_hash, g_str_equal,
 						g_free, g_free);
 	return ret;
 }
 
-static void remove_downlink_source(gpointer key, gpointer value,
+static void remove_downlink4_source(gpointer key, gpointer value,
 						gpointer user_data)
 {
-	struct watch *watch = value;
+	struct watch4 *watch = value;
+
+	hal_log_info("watch: %d", watch->id);
+	g_source_remove(watch->id);
+}
+
+static void remove_downlink6_source(gpointer key, gpointer value,
+						gpointer user_data)
+{
+	struct watch6 *watch = value;
+	hal_log_info("watch: %d", watch->id);
 
 	g_source_remove(watch->id);
 }
@@ -378,7 +463,9 @@ void manager_stop(void)
 	inet4_stop();
 	inet6_stop();
 
-	g_hash_table_foreach(inet_hash, remove_downlink_source, NULL);
+	g_hash_table_foreach(inet_hash4, remove_downlink4_source, NULL);
+	g_hash_table_foreach(inet_hash6, remove_downlink6_source, NULL);
 
-	g_hash_table_destroy(inet_hash);
+	g_hash_table_destroy(inet_hash4);
+	g_hash_table_destroy(inet_hash6);
 }
