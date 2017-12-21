@@ -24,7 +24,9 @@ src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
-			inetbr/manager.c
+			inetbr/manager.c inetbr/manager.h \
+			inetbr/inet4.c inetbr/inet4.h \
+			inetbr/inet6.c inetbr/inet6.h unix.h
 
 inetbr_inetbrd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)

@@ -25,36 +25,33 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
 
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET	"knot"
 
-#include "inet4.h"
-#include "inet6.h"
-
-#include "manager.h"
-
-int manager_start(int port4, int port6)
+static inline int unix_connect(void)
 {
-	int ret;
+	struct sockaddr_un addr;
+	int err, sock;
 
-	ret = inet4_start(port4);
-	if (ret < 0)
-		return ret;
+	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		err = errno;
+		hal_log_error("unix socket(): %s (%d)", strerror(err), err);
+		return -err;
+	}
 
-	ret = inet6_start(port6);
-	if (ret < 0)
-		inet4_stop();
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strcpy(addr.sun_path + 1, KNOT_UNIX_SOCKET);
 
-	return ret;
-}
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		hal_log_error("unix connect(): %s (%d)", strerror(err), err);
+		close(sock);
+		return -err;
+	}
 
-void manager_stop(void)
-{
-	inet4_stop();
-	inet6_stop();
+	return sock;
 }

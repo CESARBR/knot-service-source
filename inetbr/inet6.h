@@ -25,36 +25,6 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
 
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-
-#include "inet4.h"
-#include "inet6.h"
-
-#include "manager.h"
-
-int manager_start(int port4, int port6)
-{
-	int ret;
-
-	ret = inet4_start(port4);
-	if (ret < 0)
-		return ret;
-
-	ret = inet6_start(port6);
-	if (ret < 0)
-		inet4_stop();
-
-	return ret;
-}
-
-void manager_stop(void)
-{
-	inet4_stop();
-	inet6_stop();
-}
+int inet6_start(int port6);
+void inet6_stop(void);
