@@ -82,6 +82,34 @@ static int tcp_connect(void)
 	return sock;
 }
 
+static int tcp6_connect(void)
+{
+	struct sockaddr_in6 addr;
+	int err, sock;
+
+	sock = socket(PF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	if (sock < 0) {
+		err = errno;
+		hal_log_error("tcp6 socket(): %s (%d)", strerror(err), err);
+		return -err;
+	}
+
+	memset(&addr,0,sizeof(addr));
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons(8086);
+
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		err = errno;
+		hal_log_error("tcp6 connect(): %s (%d)", strerror(err), err);
+		close(sock);
+		return -err;
+	}
+
+	return sock;
+}
+
+
 static int unix_connect(void)
 {
 	struct sockaddr_un addr;
@@ -326,6 +354,12 @@ static void tcp_connect_test(void)
 	g_assert(sockfd > 0);
 }
 
+static void tcp6_connect_test(void)
+{
+	sockfd = tcp6_connect();
+	g_assert(sockfd > 0);
+}
+
 static void tcp_close_test(void)
 {
 	g_assert(close(sockfd) == 0);
@@ -349,6 +383,10 @@ int main(int argc, char *argv[])
 	g_test_add_func("/2/register_missing_devname",
 				register_missing_devname_test);
 	g_test_add_func("/2/tcp_close", tcp_close_test);
+	g_test_add_func("/2/tcp_connect6", tcp6_connect_test);
+	g_test_add_func("/2/register_missing_devname6",
+				register_missing_devname_test);
+	g_test_add_func("/2/tcp_close6", tcp_close_test);
 
 	g_test_add_func("/3/unix_connect", unix_connect_test);
 	g_test_add_func("/3/register_empty_devname",
@@ -359,11 +397,19 @@ int main(int argc, char *argv[])
 	g_test_add_func("/4/tcp_register_empty_devname",
 				register_empty_devname_test);
 	g_test_add_func("/4/tcp_close", tcp_close_test);
+	g_test_add_func("/4/tcp_connect6", tcp6_connect_test);
+	g_test_add_func("/4/tcp_register_empty_devname6",
+				register_empty_devname_test);
+	g_test_add_func("/4/tcp_close6", tcp_close_test);
 
 	g_test_add_func("/5/tcp_connect", tcp_connect_test);
 	g_test_add_func("/5/tcp_register_empty_devname",
 				register_empty_devname_test);
 	g_test_add_func("/5/tcp_close", tcp_close_test);
+	g_test_add_func("/5/tcp_connect6", tcp6_connect_test);
+	g_test_add_func("/5/tcp_register_empty_devname6",
+				register_empty_devname_test);
+	g_test_add_func("/5/tcp_close6", tcp_close_test);
 
 	g_test_add_func("/6/unix_connect", unix_connect_test);
 	g_test_add_func("/6/register_valid_devname",
