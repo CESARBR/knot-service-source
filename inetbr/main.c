@@ -43,8 +43,8 @@
 #include "manager.h"
 
 static gboolean opt_detach = TRUE;
-static int opt_port4 = 8084;
-static int opt_port6 = 8086;
+static int opt_port4 = 9994;
+static int opt_port6 = 9996;
 
 static GMainLoop *main_loop;
 
@@ -58,9 +58,9 @@ static GOptionEntry options[] = {
 					G_OPTION_ARG_NONE, &opt_detach,
 					"Logging in foreground" },
 	{ "port4", 'p', 0, G_OPTION_ARG_INT, &opt_port4,
-			"IPv4 port", "localhost IPv4 port. Default 8084" },
+			"IPv4 port", "localhost IPv4 port. Default 9994" },
 	{ "port6", 'P', 0, G_OPTION_ARG_INT, &opt_port6,
-			"IPv6 port", "localhost IPv6 port. Default 8086" },
+			"IPv6 port", "localhost IPv6 port. Default 9996" },
 	{ NULL },
 };
 

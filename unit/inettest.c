@@ -66,7 +66,7 @@ static ssize_t do_request4(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(8084);
+	addr.sin_port = htons(9994);
 
 	sentlen = sendto(sockfd, kmsg, len, 0, (struct sockaddr *) &addr,
 							sizeof(addr));
@@ -111,7 +111,7 @@ static ssize_t do_request6(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	memset(&addr,0,sizeof(addr));
 	addr.sin6_family = AF_INET;
 	addr.sin6_addr = in6addr_any;
-	addr.sin6_port = htons(8086);
+	addr.sin6_port = htons(9996);
 
 	sentlen = sendto(sockfd, kmsg, len, 0, (struct sockaddr *) &addr,
 							sizeof(addr));

@@ -79,7 +79,7 @@ static int tcp6_listen(void)
 	memset(&addr,0,sizeof(addr));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
-	addr.sin6_port = htons(8086);
+	addr.sin6_port = htons(9996);
 
 	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
 		err = -errno;

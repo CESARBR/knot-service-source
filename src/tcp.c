@@ -79,7 +79,7 @@ static int tcp_listen(void)
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(8081);
+	addr.sin_port = htons(9994);
 
 	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
 		err = -errno;

@@ -70,7 +70,7 @@ static int tcp_connect(void)
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	addr.sin_port = htons(8081);
+	addr.sin_port = htons(9994);
 
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		err = errno;
@@ -97,7 +97,7 @@ static int tcp6_connect(void)
 	memset(&addr,0,sizeof(addr));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
-	addr.sin6_port = htons(8086);
+	addr.sin6_port = htons(9996);
 
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		err = errno;
