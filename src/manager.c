@@ -86,11 +86,13 @@ static struct proto_ops *proto_ops[] = {
  */
 extern struct node_ops unix_ops;
 extern struct node_ops tcp_ops;
+extern struct node_ops tcp6_ops;
 extern struct node_ops serial_ops;
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
 	&tcp_ops,
+	&tcp6_ops,
 #if 0
 	// Remove temporarly: causing excessive interruptions
 	&serial_ops,
