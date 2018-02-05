@@ -334,6 +334,9 @@ int manager_start(const struct settings *settings)
 		proto = proto_ops[i];
 	}
 
+	if (proto == NULL)
+		return -EINVAL;
+
 	/* Starting msg layer */
 	err = msg_start(settings->uuid, proto);
 	if (err < 0)
