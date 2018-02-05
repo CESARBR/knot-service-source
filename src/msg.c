@@ -1039,6 +1039,8 @@ static int8_t msg_register(int sock, int proto_sock,
 				json_object_new_string(thing_name));
 	json_object_object_add(jobj, "owner",
 				json_object_new_string(owner_uuid));
+	json_object_object_add(jobj, "id",
+				json_object_new_int64(kreq->id));
 
 	jobjstring = json_object_to_json_string(jobj);
 
