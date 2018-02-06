@@ -22,11 +22,14 @@ stamp-h1
 autom4te.cache
 *.patch
 
-src/knotd
+ell
 
+inetbr/inetbrd
+src/knotd
 tools/ktool
 
 unit/ktest
+unit/inettest
 
 cscope.in.out
 cscope.out

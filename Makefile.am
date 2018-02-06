@@ -66,6 +66,7 @@ ell_sources = ell/ell.h ell/private.h ell/missing.h \
 ell_libell_internal_la_SOURCES = $(ell_sources)
 
 src_knotd_SOURCES = src/main.c \
+			src/settings.c src/settings.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
 			src/proto.h src/node.h \

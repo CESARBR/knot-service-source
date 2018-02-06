@@ -31,7 +31,6 @@
 
 #include <glib.h>
 #include <sys/inotify.h>
-#include <json-c/json.h>
 
 #include <ell/ell.h>
 
@@ -43,25 +42,11 @@
 
 static GMainLoop *main_loop;
 
-static struct settings settings;
-
-static const char *opt_cfg = "/etc/knot/gatewayConfig.json";
-/*
- * Settings provided by command line have higher
- * priority than values read from config file.
- */
-static unsigned int opt_port = 0;
-static const char *opt_host = NULL;
-/* Default is websockets */
-static const char *opt_proto = "ws";
-static const char *opt_tty = NULL;
-static gboolean opt_ell = FALSE;
-static gboolean opt_detach = TRUE;
-static gboolean opt_disable_nobody = TRUE;
+static struct settings *settings;
 
 static void sig_term(int sig)
 {
-	if (opt_ell)
+	if (settings->use_ell)
 		l_main_exit();
 	else
 		g_main_loop_quit(main_loop);
@@ -95,70 +80,6 @@ static void signal_handler(struct l_signal *signal, uint32_t signo,
 	}
 }
 
-
-static GOptionEntry options[] = {
-	{ "ell", 'e', 0, G_OPTION_ARG_NONE, &opt_ell,
-					"Use ELL instead of glib" },
-	{ "config", 'c', 0, G_OPTION_ARG_STRING, &opt_cfg,
-					"configuration file path", NULL },
-	{ "host", 'h', 0, G_OPTION_ARG_STRING, &opt_host,
-					"host", "Cloud server URL" },
-	{ "port", 'p', 0, G_OPTION_ARG_INT, &opt_port,
-					"port", "Cloud server port" },
-	{ "proto", 'P', 0, G_OPTION_ARG_STRING, &opt_proto,
-					"protocol", "eg: http or ws" },
-	{ "tty", 't', 0, G_OPTION_ARG_STRING, &opt_tty,
-					"TTY", "eg: /dev/ttyUSB0" },
-	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
-					G_OPTION_ARG_NONE, &opt_detach,
-					"Logging in foreground" },
-	{ "disable-nobody", 'b', G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE,
-					&opt_disable_nobody, "disable-nobody",
-					"Disable set uid to nobody" },
-
-	{ NULL },
-};
-
-static int parse_config(json_object *jobj, struct settings *settings)
-{
-	const char *uuid, *tmp;
-	json_object *obj_cloud, *obj_tmp;
-	int err = -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "cloud", &obj_cloud))
-		goto done;
-
-	if (!json_object_object_get_ex(obj_cloud, "uuid", &obj_tmp))
-		goto done;
-
-	/* UUID is mandatory */
-	uuid = json_object_get_string(obj_tmp);
-	if (!uuid)
-		goto done;
-
-	if (settings->host == NULL) {
-		if (!json_object_object_get_ex(obj_cloud, "serverName",
-								 &obj_tmp))
-			goto done;
-
-		tmp = json_object_get_string(obj_tmp);
-		settings->host = g_strdup(tmp);
-	}
-
-	if (settings->port == 0) {
-		if (!json_object_object_get_ex(obj_cloud, "port", &obj_tmp))
-			goto done;
-
-		settings->port = json_object_get_int(obj_tmp);
-	}
-
-	settings->uuid = g_strdup(uuid);
-
-	err = 0; /* Success */
-done:
-	return err;
-}
-
 static gboolean inotify_cb(GIOChannel *gio, GIOCondition condition,
 								gpointer data)
 {
@@ -186,73 +107,28 @@ static gboolean inotify_cb(GIOChannel *gio, GIOCondition condition,
 
 int main(int argc, char *argv[])
 {
-	GOptionContext *context;
-	GError *gerr = NULL;
 	struct l_signal *sig;
 	int err;
-	json_object *jobj;
 	GIOChannel *inotify_io;
 	int inotifyFD, wd;
 	guint watch_id;
 	sigset_t mask;
 
-	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, options, NULL);
+	err = settings_parse(argc, argv, &settings);
+	if (err)
+		goto fail_settings;
 
-	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		g_printerr("Invalid arguments: %s\n", gerr->message);
-		g_error_free(gerr);
-		g_option_context_free(context);
-		hal_log_close();
-		return EXIT_FAILURE;
-	}
-
-	g_option_context_free(context);
-
-	if (!opt_cfg) {
-		g_printerr("Missing KNOT configuration file!\n");
-		hal_log_close();
-		return EXIT_FAILURE;
-	}
-
-	memset(&settings, 0, sizeof(settings));
-	settings.proto = opt_proto;
-	settings.tty = opt_tty;
-	/*
-	 * Command line options (host and port) have higher priority
-	 * than values read from config file. UUID should
-	 * not be read from command line due security reason.
-	 */
-
-	settings.port = opt_port;
-
-	/* Load data from config file */
-	jobj = json_object_from_file(opt_cfg);
-	if (!jobj)
-		goto failure;
-
-	err = parse_config(jobj, &settings);
-	/* Free mem derived from jobj*/
-	json_object_put(jobj);
-	if (err < 0)
-		goto failure;
-
-	if (opt_host) {
-		g_free(settings.host);
-		settings.host = g_strdup(opt_host);
-	}
-
-	hal_log_init("knotd", opt_detach);
+	hal_log_init("knotd", settings->detach);
 	hal_log_info("KNOT Gateway");
 
-	err = manager_start(&settings);
+	err = manager_start(settings);
 	if (err < 0) {
 		hal_log_error("start(): %s (%d)", strerror(-err), -err);
 		goto failure;
 	}
 
 	/* Set user id to nobody */
-	if (opt_disable_nobody) {
+	if (settings->run_as_nobody) {
 		err = setuid(65534);
 		if (err != 0) {
 			manager_stop();
@@ -270,11 +146,11 @@ int main(int argc, char *argv[])
 	/* Starting inotify */
 	inotifyFD = inotify_init();
 
-	wd = inotify_add_watch(inotifyFD, opt_cfg, IN_MODIFY);
+	wd = inotify_add_watch(inotifyFD, settings->config_path, IN_MODIFY);
 	if (wd == -1) {
 		manager_stop();
 		close(inotifyFD);
-		hal_log_error("inotify_add_watch(): %s", opt_cfg);
+		hal_log_error("inotify_add_watch(): %s", settings->config_path);
 		goto failure;
 	}
 	/* Setting gio channel to watch inotify fd */
@@ -283,20 +159,20 @@ int main(int argc, char *argv[])
 	g_io_channel_set_close_on_unref(inotify_io, TRUE);
 	g_io_channel_unref(inotify_io);
 
-	if (opt_ell) {
+	if (settings->use_ell) {
 		if (!l_main_init())
 			goto failure;
 	} else
 		main_loop = g_main_loop_new(NULL, FALSE);
 
-	if (opt_detach) {
+	if (settings->detach) {
 		if (daemon(0, 0)) {
 			hal_log_error("Can't start daemon!");
 			goto failure;
 		}
 	}
 
-	if (opt_ell) {
+	if (settings->use_ell) {
 		sigemptyset(&mask);
 		sigaddset(&mask, SIGINT);
 		sigaddset(&mask, SIGTERM);
@@ -321,8 +197,7 @@ int main(int argc, char *argv[])
 	inotify_rm_watch(inotifyFD, wd);
 
 	manager_stop();
-	g_free(settings.host);
-	g_free(settings.uuid);
+	settings_free(settings);
 
 	hal_log_info("Exiting");
 	hal_log_close();
@@ -330,12 +205,11 @@ int main(int argc, char *argv[])
 	return EXIT_SUCCESS;
 
 failure:
-	g_free(settings.host);
-	g_free(settings.uuid);
-
 	hal_log_close();
-	if (opt_ell)
+	if (settings->use_ell)
 		l_main_exit();
 
+	settings_free(settings);
+fail_settings:
 	return EXIT_FAILURE;
 }

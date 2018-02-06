@@ -19,10 +19,24 @@
  *
  */
 
+#ifndef __SETTINGS_H__
+#define __SETTINGS_H__
+
 struct settings {
+	int use_ell;
+	const char *config_path;
+
 	char *host;
 	unsigned int port;
 	const char *proto;
 	char *uuid;
 	const char *tty;
+
+	int detach;
+	int run_as_nobody;
 };
+
+int settings_parse(int argc, char *argv[], struct settings **settings);
+void settings_free(struct settings *settings);
+
+#endif /* __SETTINGS_H__ */
