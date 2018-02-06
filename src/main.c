@@ -33,6 +33,8 @@
 #include <sys/inotify.h>
 #include <json-c/json.h>
 
+#include <ell/ell.h>
+
 #include <hal/linux_log.h>
 #include "settings.h"
 #include "manager.h"
@@ -53,15 +55,50 @@ static const char *opt_host = NULL;
 /* Default is websockets */
 static const char *opt_proto = "ws";
 static const char *opt_tty = NULL;
+static gboolean opt_ell = FALSE;
 static gboolean opt_detach = TRUE;
 static gboolean opt_disable_nobody = TRUE;
 
 static void sig_term(int sig)
 {
-	g_main_loop_quit(main_loop);
+	if (opt_ell)
+		l_main_exit();
+	else
+		g_main_loop_quit(main_loop);
 }
 
+static void main_loop_quit(struct l_timeout *timeout, void *user_data)
+{
+	l_main_quit();
+}
+
+static void terminate(void)
+{
+	static bool terminating = false;
+
+	if (terminating)
+		return;
+
+	terminating = true;
+
+	l_timeout_create(1, main_loop_quit, NULL, NULL);
+}
+
+static void signal_handler(struct l_signal *signal, uint32_t signo,
+							void *user_data)
+{
+	switch (signo) {
+	case SIGINT:
+	case SIGTERM:
+		terminate();
+		break;
+	}
+}
+
+
 static GOptionEntry options[] = {
+	{ "ell", 'e', 0, G_OPTION_ARG_NONE, &opt_ell,
+					"Use ELL instead of glib" },
 	{ "config", 'c', 0, G_OPTION_ARG_STRING, &opt_cfg,
 					"configuration file path", NULL },
 	{ "host", 'h', 0, G_OPTION_ARG_STRING, &opt_host,
@@ -151,11 +188,13 @@ int main(int argc, char *argv[])
 {
 	GOptionContext *context;
 	GError *gerr = NULL;
+	struct l_signal *sig;
 	int err;
 	json_object *jobj;
 	GIOChannel *inotify_io;
 	int inotifyFD, wd;
 	guint watch_id;
+	sigset_t mask;
 
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
@@ -244,12 +283,11 @@ int main(int argc, char *argv[])
 	g_io_channel_set_close_on_unref(inotify_io, TRUE);
 	g_io_channel_unref(inotify_io);
 
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-	signal(SIGPIPE, SIG_IGN);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
+	if (opt_ell) {
+		if (!l_main_init())
+			goto failure;
+	} else
+		main_loop = g_main_loop_new(NULL, FALSE);
 
 	if (opt_detach) {
 		if (daemon(0, 0)) {
@@ -258,9 +296,25 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	g_main_loop_run(main_loop);
+	if (opt_ell) {
+		sigemptyset(&mask);
+		sigaddset(&mask, SIGINT);
+		sigaddset(&mask, SIGTERM);
 
-	g_main_loop_unref(main_loop);
+		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
+
+		l_main_run();
+
+		l_signal_remove(sig);
+		l_main_exit();
+	} else {
+		signal(SIGTERM, sig_term);
+		signal(SIGINT, sig_term);
+		signal(SIGPIPE, SIG_IGN);
+
+		g_main_loop_run(main_loop);
+		g_main_loop_unref(main_loop);
+	}
 
 	/* inotify cleanup */
 	g_source_remove(watch_id);
@@ -280,5 +334,8 @@ failure:
 	g_free(settings.uuid);
 
 	hal_log_close();
+	if (opt_ell)
+		l_main_exit();
+
 	return EXIT_FAILURE;
 }
