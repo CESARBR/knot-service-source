@@ -42,6 +42,13 @@ static GMainLoop *main_loop;
 
 static struct settings *settings;
 
+static int run_as_nobody()
+{
+	if (setuid(65534))
+		return -errno;
+	return 0;
+}
+
 static void on_config_modified()
 {
 	hal_log_info("Configuration file modified. Exiting  ...");
@@ -53,6 +60,13 @@ static void on_config_modified()
 		l_main_exit();
 	else
 		g_main_loop_quit(main_loop);
+}
+
+static int detach()
+{
+	if (daemon(0, 0))
+		return -errno;
+	return 0;
 }
 
 static void sig_term(int sig)
@@ -113,11 +127,11 @@ int main(int argc, char *argv[])
 
 	/* Set user id to nobody */
 	if (settings->run_as_nobody) {
-		err = setuid(65534);
-		if (err != 0) {
+		err = run_as_nobody();
+		if (err) {
 			manager_stop();
-			hal_log_error("Set uid to nobody failed.  " \
-				"%s(%d). Exiting ...", strerror(errno), errno);
+			hal_log_error("Failed to run as nobody. " \
+				"%s(%d). Exiting ...", strerror(-err), -err);
 			goto failure;
 		}
 	}
@@ -136,8 +150,10 @@ int main(int argc, char *argv[])
 		main_loop = g_main_loop_new(NULL, FALSE);
 
 	if (settings->detach) {
-		if (daemon(0, 0)) {
-			hal_log_error("Can't start daemon!");
+		err = detach();
+		if (err) {
+			hal_log_error("Failed to detach. " \
+				"%s(%d). Exiting ...", strerror(-err), -err);
 			goto failure;
 		}
 	}
