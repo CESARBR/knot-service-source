@@ -30,19 +30,30 @@
 #include <string.h>
 
 #include <glib.h>
-#include <sys/inotify.h>
 
 #include <ell/ell.h>
 
 #include <hal/linux_log.h>
 #include "settings.h"
 #include "manager.h"
-
-#define BUF_LEN (sizeof(struct inotify_event))
+#include "filewatch.h"
 
 static GMainLoop *main_loop;
 
 static struct settings *settings;
+
+static void on_config_modified()
+{
+	hal_log_info("Configuration file modified. Exiting  ...");
+	/*
+	 * TODO: implement a robust & clean way to reload settings
+	 * instead of force quitting when configuration file changes.
+	 */
+	if (settings->use_ell)
+		l_main_exit();
+	else
+		g_main_loop_quit(main_loop);
+}
 
 static void sig_term(int sig)
 {
@@ -80,39 +91,12 @@ static void signal_handler(struct l_signal *signal, uint32_t signo,
 	}
 }
 
-static gboolean inotify_cb(GIOChannel *gio, GIOCondition condition,
-								gpointer data)
-{
-	int inotifyFD = g_io_channel_unix_get_fd(gio);
-	char buf[BUF_LEN];
-	ssize_t numRead;
-	const struct inotify_event *event;
-
-	numRead = read(inotifyFD, buf, BUF_LEN);
-	if (numRead == -1) {
-		hal_log_error("Error read from inotify fd");
-		return FALSE;
-	}
-
-	hal_log_info("Read %ld bytes from inotify fd", (long) numRead);
-
-	/* Process the events in buffer returned by read() */
-
-	event = (struct inotify_event *) buf;
-	if (event->mask & IN_MODIFY)
-		g_main_loop_quit(main_loop);
-
-	return TRUE;
-}
-
 int main(int argc, char *argv[])
 {
-	struct l_signal *sig;
 	int err;
-	GIOChannel *inotify_io;
-	int inotifyFD, wd;
-	guint watch_id;
+	struct l_signal *sig;
 	sigset_t mask;
+	void *config_watch;
 
 	err = settings_parse(argc, argv, &settings);
 	if (err)
@@ -138,26 +122,12 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	/*
-	 * TODO: implement a robust & clean way to reload settings
-	 * instead of force quitting when configuration file changes.
-	 */
-
-	/* Starting inotify */
-	inotifyFD = inotify_init();
-
-	wd = inotify_add_watch(inotifyFD, settings->config_path, IN_MODIFY);
-	if (wd == -1) {
+	config_watch = file_watch_add(settings->config_path, on_config_modified);
+	if (config_watch == NULL) {
 		manager_stop();
-		close(inotifyFD);
-		hal_log_error("inotify_add_watch(): %s", settings->config_path);
+		hal_log_error("Failed to add configuration file watcher. Exiting ...");
 		goto failure;
 	}
-	/* Setting gio channel to watch inotify fd */
-	inotify_io = g_io_channel_unix_new(inotifyFD);
-	watch_id = g_io_add_watch(inotify_io, G_IO_IN, inotify_cb, NULL);
-	g_io_channel_set_close_on_unref(inotify_io, TRUE);
-	g_io_channel_unref(inotify_io);
 
 	if (settings->use_ell) {
 		if (!l_main_init())
@@ -192,9 +162,7 @@ int main(int argc, char *argv[])
 		g_main_loop_unref(main_loop);
 	}
 
-	/* inotify cleanup */
-	g_source_remove(watch_id);
-	inotify_rm_watch(inotifyFD, wd);
+	file_watch_remove(config_watch);
 
 	manager_stop();
 	settings_free(settings);

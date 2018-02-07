@@ -22,6 +22,8 @@ stamp-h1
 autom4te.cache
 *.patch
 
+.vscode
+
 ell
 
 inetbr/inetbrd
