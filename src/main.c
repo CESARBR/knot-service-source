@@ -107,7 +107,7 @@ static void signal_handler(struct l_signal *signal, uint32_t signo,
 
 int main(int argc, char *argv[])
 {
-	int err;
+	int err = EXIT_FAILURE;
 	struct l_signal *sig;
 	sigset_t mask;
 	void *config_watch;
@@ -120,32 +120,30 @@ int main(int argc, char *argv[])
 	hal_log_info("KNOT Gateway");
 
 	err = manager_start(settings);
-	if (err < 0) {
-		hal_log_error("start(): %s (%d)", strerror(-err), -err);
-		goto failure;
+	if (err) {
+		hal_log_error("Failed to start the manager: %s (%d)", strerror(-err), -err);
+		goto fail_manager;
 	}
 
 	/* Set user id to nobody */
 	if (settings->run_as_nobody) {
 		err = run_as_nobody();
 		if (err) {
-			manager_stop();
 			hal_log_error("Failed to run as nobody. " \
-				"%s(%d). Exiting ...", strerror(-err), -err);
-			goto failure;
+				"%s (%d). Exiting ...", strerror(-err), -err);
+			goto fail_nobody;
 		}
 	}
 
 	config_watch = file_watch_add(settings->config_path, on_config_modified);
 	if (config_watch == NULL) {
-		manager_stop();
 		hal_log_error("Failed to add configuration file watcher. Exiting ...");
-		goto failure;
+		goto fail_config_watch;
 	}
 
 	if (settings->use_ell) {
 		if (!l_main_init())
-			goto failure;
+			goto fail_main_loop;
 	} else
 		main_loop = g_main_loop_new(NULL, FALSE);
 
@@ -153,8 +151,8 @@ int main(int argc, char *argv[])
 		err = detach();
 		if (err) {
 			hal_log_error("Failed to detach. " \
-				"%s(%d). Exiting ...", strerror(-err), -err);
-			goto failure;
+				"%s (%d). Exiting ...", strerror(-err), -err);
+			goto fail_detach;
 		}
 	}
 
@@ -178,22 +176,23 @@ int main(int argc, char *argv[])
 		g_main_loop_unref(main_loop);
 	}
 
-	file_watch_remove(config_watch);
-
-	manager_stop();
-	settings_free(settings);
-
 	hal_log_info("Exiting");
-	hal_log_close();
 
-	return EXIT_SUCCESS;
+	err = EXIT_SUCCESS;
+	goto done;
 
-failure:
-	hal_log_close();
+fail_detach:
 	if (settings->use_ell)
 		l_main_exit();
-
+fail_main_loop:
+done:
+fail_config_watch:
+	file_watch_remove(config_watch);
+fail_nobody:
+	manager_stop();
+fail_manager:
+	hal_log_close();
 	settings_free(settings);
 fail_settings:
-	return EXIT_FAILURE;
+	return err;
 }
