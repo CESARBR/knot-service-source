@@ -19,6 +19,13 @@
  *
  */
 
+#ifndef __PROTO_H__
+#define __PROTO_H__
+
+#include <string.h>
+
+#include "settings.h"
+
 typedef struct {
 	char *data;
 	size_t size;
@@ -57,8 +64,11 @@ struct proto_ops {
 	unsigned int (*async) (int proto_sock, const char *uuid,
 				const char *token, void (*proto_watch_cb)
 				(json_raw_t, void *), void *user_data);
-
-
 };
 
+int proto_start(const struct settings *settings, struct proto_ops **proto_ops);
+void proto_stop(void);
+
 void proto_unregister_watch(unsigned int source_id);
+
+#endif /* __PROTO_H__ */

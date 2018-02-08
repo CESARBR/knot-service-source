@@ -59,19 +59,7 @@ struct session {
 
 static GSList *session_list = NULL;
 
-extern struct proto_ops proto_http;
-#ifdef HAVE_WEBSOCKETS
-extern struct proto_ops proto_ws;
-#endif
-
-static struct proto_ops *proto; /* Selected IoT protocol */
-static struct proto_ops *proto_ops[] = {
-	&proto_http,
-#ifdef HAVE_WEBSOCKETS
-	&proto_ws,
-#endif
-	NULL
-};
+static struct proto_ops *proto; /* Selected protocol */
 
 static void node_io_destroy(gpointer user_data)
 {
@@ -268,43 +256,29 @@ static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 
 int manager_start(const struct settings *settings)
 {
-	int err, i;
+	int err;
 
-	/*
-	 * Selecting meshblu IoT protocols & services: HTTP/REST,
-	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
-	 * implements an abstraction similar to WEB client operations.
-	 * TODO: later support dynamic protocol selection.
-	 */
-
-	for (i = 0; proto_ops[i]; i++) {
-		if (strcmp(settings->proto, proto_ops[i]->name) != 0)
-			continue;
-
-		proto = proto_ops[i];
-	}
-
-	if (proto == NULL)
-		return -EINVAL;
-
-	/* Starting msg layer */
-	err = msg_start(settings->uuid, proto);
+	err = proto_start(settings, &proto);
 	if (err < 0)
-		return err;
-
-	if (proto->probe(settings->host, settings->port) < 0) {
-		msg_stop();
-		return -EIO;
-	}
-
-	hal_log_info("proto_ops: %s", proto->name);
+		goto fail_proto;
 
 	err = node_start(settings->tty, on_accepted_cb);
-	if (err < 0) {
-		msg_stop();
-		proto->remove();
-	}
+	if (err < 0)
+		goto fail_node;
 
+	err = msg_start(settings->uuid, proto);
+	if (err < 0)
+		goto fail_msg;
+
+	err = 0;
+	goto done;
+
+fail_msg:
+	node_stop();
+fail_node:
+	proto_stop();
+fail_proto:
+done:
 	return err;
 }
 
@@ -315,8 +289,7 @@ void manager_stop(void)
 
 	msg_stop();
 	node_stop();
-
-	proto->remove();
+	proto_stop();
 
 	for (list = session_list; list; list = g_slist_next(list)) {
 		session = list->data;

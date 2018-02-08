@@ -70,7 +70,7 @@ src_knotd_SOURCES = src/main.c \
 			src/settings.c src/settings.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
-			src/proto.h \
+			src/proto.c src/proto.h \
 			src/node.c src/node.h \
 			$(modules_sources)
 
