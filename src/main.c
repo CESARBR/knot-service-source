@@ -47,7 +47,7 @@ static void main_loop_quit(struct l_timeout *timeout, void *user_data)
 	l_main_quit();
 }
 
-static void terminate(void)
+static void l_terminate(void)
 {
 	static bool terminating = false;
 
@@ -57,6 +57,69 @@ static void terminate(void)
 	terminating = true;
 
 	l_timeout_create(1, main_loop_quit, NULL, NULL);
+}
+
+static void g_terminate(void)
+{
+	g_main_loop_quit(main_loop);
+}
+
+static bool l_main_loop_init()
+{
+	return l_main_init();
+}
+
+static void g_main_loop_init()
+{
+	main_loop = g_main_loop_new(NULL, FALSE);
+}
+
+static void l_signal_handler(struct l_signal *signal, uint32_t signo,
+							void *user_data)
+{
+	switch (signo) {
+	case SIGINT:
+	case SIGTERM:
+		l_terminate();
+		break;
+	}
+}
+
+static void g_signal_handler(int signo)
+{
+	switch (signo) {
+		case SIGINT:
+		case SIGTERM:
+			g_terminate();
+			break;
+	}
+}
+
+static void l_main_loop_run()
+{
+	struct l_signal *sig;
+	sigset_t mask;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
+
+	sig = l_signal_create(&mask, l_signal_handler, NULL, NULL);
+
+	l_main_run();
+
+	l_signal_remove(sig);
+	l_main_exit();
+}
+
+static void _g_main_loop_run()
+{
+	signal(SIGTERM, g_signal_handler);
+	signal(SIGINT, g_signal_handler);
+	signal(SIGPIPE, SIG_IGN);
+
+	g_main_loop_run(main_loop);
+	g_main_loop_unref(main_loop);
 }
 
 static int run_as_nobody()
@@ -73,7 +136,7 @@ static void l_on_config_modified()
 	 * TODO: implement a robust & clean way to reload settings
 	 * instead of force quitting when configuration file changes.
 	 */
-	terminate();
+	l_terminate();
 }
 
 static void g_on_config_modified()
@@ -83,7 +146,7 @@ static void g_on_config_modified()
 	 * TODO: implement a robust & clean way to reload settings
 	 * instead of force quitting when configuration file changes.
 	 */
-	g_main_loop_quit(main_loop);
+	g_terminate();
 }
 
 static int detach()
@@ -93,30 +156,9 @@ static int detach()
 	return 0;
 }
 
-static void sig_term(int sig)
-{
-	if (settings->use_ell)
-		l_main_exit();
-	else
-		g_main_loop_quit(main_loop);
-}
-
-static void signal_handler(struct l_signal *signal, uint32_t signo,
-							void *user_data)
-{
-	switch (signo) {
-	case SIGINT:
-	case SIGTERM:
-		terminate();
-		break;
-	}
-}
-
 int main(int argc, char *argv[])
 {
 	int err = EXIT_FAILURE;
-	struct l_signal *sig;
-	sigset_t mask;
 	void *config_watch;
 
 	err = settings_parse(argc, argv, &settings);
@@ -143,10 +185,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (settings->use_ell) {
-		if (!l_main_init())
+		if (!l_main_loop_init())
 			goto fail_main_loop;
 	} else
-		main_loop = g_main_loop_new(NULL, FALSE);
+		g_main_loop_init();
 
 	if (settings->use_ell)
 		config_watch = l_file_watch_add(settings->config_path, l_on_config_modified);
@@ -167,23 +209,9 @@ int main(int argc, char *argv[])
 	}
 
 	if (settings->use_ell) {
-		sigemptyset(&mask);
-		sigaddset(&mask, SIGINT);
-		sigaddset(&mask, SIGTERM);
-
-		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
-
-		l_main_run();
-
-		l_signal_remove(sig);
-		l_main_exit();
+		l_main_loop_run();
 	} else {
-		signal(SIGTERM, sig_term);
-		signal(SIGINT, sig_term);
-		signal(SIGPIPE, SIG_IGN);
-
-		g_main_loop_run(main_loop);
-		g_main_loop_unref(main_loop);
+		_g_main_loop_run();
 	}
 
 	hal_log_info("Exiting");
