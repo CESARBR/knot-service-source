@@ -19,6 +19,14 @@
  *
  */
 
+#ifndef __NODE_H__
+#define __NODE_H__
+
+#include <stdbool.h>
+#include <unistd.h>
+
+#include "settings.h"
+
 /*
  * This 'driver' intends to be an abstraction for Radio technologies or
  * proxy for other services using TCP or any socket based communication.
@@ -34,6 +42,8 @@ struct node_ops {
 	ssize_t (*send) (int sockfd, const void *buffer, size_t len);
 };
 
+typedef bool (*on_accepted)(struct node_ops *node_ops, int client_socket);
+
 /*
  * For NRF24L01, there is only one file descriptor associated with
  * the SPI. In this case, sockfd can be just an integer used to map
@@ -41,3 +51,8 @@ struct node_ops {
  * they can be alternatives to integrate to glib main loop or other
  * event loop system.
  */
+
+int node_start(const char *tty, on_accepted on_accepted_cb);
+void node_stop(void);
+
+#endif /* __NODE_H__ */

@@ -70,7 +70,8 @@ src_knotd_SOURCES = src/main.c \
 			src/settings.c src/settings.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
-			src/proto.h src/node.h \
+			src/proto.h \
+			src/node.c src/node.h \
 			$(modules_sources)
 
 src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) ell/libell-internal.la -lm

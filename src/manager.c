@@ -57,7 +57,6 @@ struct session {
 	struct node_ops *ops;
 };
 
-static GSList *server_watch = NULL;
 static GSList *session_list = NULL;
 
 extern struct proto_ops proto_http;
@@ -74,29 +73,8 @@ static struct proto_ops *proto_ops[] = {
 	NULL
 };
 
-/* TODO: After adding buildroot, investigate if it is possible
- * to add macros for conditional builds, or a dynamic builtin
- * plugin mechanism.
- */
-extern struct node_ops unix_ops;
-extern struct node_ops tcp_ops;
-extern struct node_ops tcp6_ops;
-extern struct node_ops serial_ops;
-
-static struct node_ops *node_ops[] = {
-	&unix_ops,
-	&tcp_ops,
-	&tcp6_ops,
-#if 0
-	// Remove temporarly: causing excessive interruptions
-	&serial_ops,
-#endif
-	NULL
-};
-
 static void node_io_destroy(gpointer user_data)
 {
-
 	struct session *session = user_data;
 	GIOChannel *proto_io;
 
@@ -120,7 +98,7 @@ static void node_io_destroy(gpointer user_data)
 }
 
 static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
-					       gpointer user_data)
+								 gpointer user_data)
 {
 	struct session *session = user_data;
 
@@ -156,7 +134,7 @@ static void proto_io_destroy(gpointer user_data)
 }
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
-			      gpointer user_data)
+						gpointer user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *ops = session->ops;
@@ -236,40 +214,25 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	return TRUE;
 }
 
-static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
+static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 {
-	struct node_ops *ops = user_data;
 	GIOChannel *node_io, *proto_io;
-	int sockfd, srv_sock, proto_sock;
+	int proto_sock;
 	GIOCondition watch_cond;
 	struct session *session;
-
-	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
-		return FALSE;
 
 	/* FIXME: Stop knotd if cloud if not available */
 	proto_sock = proto->connect();
 
-	srv_sock = g_io_channel_unix_get_fd(io);
-
-	sockfd = ops->accept(srv_sock);
-	if (sockfd < 0) {
-		proto->close(proto_sock);
-		hal_log_error("%p accept(): %s(%d)", ops,
-					strerror(-sockfd), -sockfd);
-		return TRUE;
-	}
-
 	/* Disconnect peer if fog/cloud is down */
 	if (proto_sock < 0) {
 		hal_log_info("Cloud connect(): %s(%d)",
-			     strerror(-proto_sock), -proto_sock);
-		close(sockfd);
-		return TRUE;
+					 strerror(-proto_sock), -proto_sock);
+		close(client_socket);
+		return true;
 	}
 
-	node_io = g_io_channel_unix_new(sockfd);
+	node_io = g_io_channel_unix_new(client_socket);
 	g_io_channel_set_close_on_unref(node_io, TRUE);
 
 	proto_io = g_io_channel_unix_new(proto_sock);
@@ -294,25 +257,18 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	session->proto_io = proto_io;
 
 	/* TODO: Create refcount */
-	session->ops = ops;
+	session->ops = node_ops;
 
 	hal_log_info("node:%p proto:%p", node_io, proto_io);
 
 	session_list = g_slist_prepend(session_list, session);
 
-	return TRUE;
+	return true;
 }
 
 int manager_start(const struct settings *settings)
 {
-	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
-	GIOChannel *server_io;
-	int err, sock, i;
-	guint server_watch_id;
-
-	/* Tell Serial which port to use */
-	if (settings->tty)
-		serial_load_config(settings->tty);
+	int err, i;
 
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
@@ -343,74 +299,24 @@ int manager_start(const struct settings *settings)
 
 	hal_log_info("proto_ops: %s", proto->name);
 
-	/*
-	 * Probing all access technologies: nRF24L01, BTLE, TCP, Unix
-	 * sockets, Serial, etc. 'node_ops' drivers implements an
-	 * abstraction similar to server sockets, it enables incoming
-	 * connections and provides functions to receive and send data
-	 * streams from/to KNOT nodes.
-	 */
-	for (i = 0; node_ops[i]; i++) {
-
-		/* Ignore Serial driver if port is not informed */
-		if ((strcmp("Serial", node_ops[i]->name) == 0) &&
-							settings->tty == NULL)
-			continue;
-
-		if (node_ops[i]->probe() < 0)
-			continue;
-
-		sock = node_ops[i]->listen();
-		if (sock < 0) {
-			err = sock;
-			hal_log_error("%p listen(): %s(%d)", node_ops[i],
-						strerror(-err), -err);
-			node_ops[i]->remove();
-			continue;
-		}
-
-		server_io = g_io_channel_unix_new(sock);
-		g_io_channel_set_close_on_unref(server_io, TRUE);
-		g_io_channel_set_flags(server_io, G_IO_FLAG_NONBLOCK, NULL);
-
-		/* Use node_ops as parameter to allow multi drivers */
-		server_watch_id = g_io_add_watch(server_io, cond, accept_cb,
-								node_ops[i]);
-		g_io_channel_unref(server_io);
-
-		hal_log_info("node_ops(%p): (%s) watch: %d", node_ops[i],
-					node_ops[i]->name, server_watch_id);
-
-		server_watch = g_slist_prepend(server_watch,
-				      GUINT_TO_POINTER(server_watch_id));
+	err = node_start(settings->tty, on_accepted_cb);
+	if (err < 0) {
+		msg_stop();
+		proto->remove();
 	}
 
-	return 0;
+	return err;
 }
 
 void manager_stop(void)
 {
 	GSList *list;
 	struct session *session;
-	guint server_watch_id;
-	int i;
 
 	msg_stop();
-
-	/* Remove only previously loaded modules */
-	for (i = 0; node_ops[i]; i++)
-		node_ops[i]->remove();
+	node_stop();
 
 	proto->remove();
-
-	for (list = server_watch; list; list = g_slist_next(list)) {
-		server_watch_id = GPOINTER_TO_UINT(list->data);
-		g_source_remove(server_watch_id);
-
-		hal_log_info("Removed watch: %d", server_watch_id);
-	}
-
-	g_slist_free(server_watch);
 
 	for (list = session_list; list; list = g_slist_next(list)) {
 		session = list->data;
