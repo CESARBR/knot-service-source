@@ -42,41 +42,6 @@ static GMainLoop *main_loop;
 
 static struct settings *settings;
 
-static int run_as_nobody()
-{
-	if (setuid(65534))
-		return -errno;
-	return 0;
-}
-
-static void on_config_modified()
-{
-	hal_log_info("Configuration file modified. Exiting  ...");
-	/*
-	 * TODO: implement a robust & clean way to reload settings
-	 * instead of force quitting when configuration file changes.
-	 */
-	if (settings->use_ell)
-		l_main_exit();
-	else
-		g_main_loop_quit(main_loop);
-}
-
-static int detach()
-{
-	if (daemon(0, 0))
-		return -errno;
-	return 0;
-}
-
-static void sig_term(int sig)
-{
-	if (settings->use_ell)
-		l_main_exit();
-	else
-		g_main_loop_quit(main_loop);
-}
-
 static void main_loop_quit(struct l_timeout *timeout, void *user_data)
 {
 	l_main_quit();
@@ -92,6 +57,48 @@ static void terminate(void)
 	terminating = true;
 
 	l_timeout_create(1, main_loop_quit, NULL, NULL);
+}
+
+static int run_as_nobody()
+{
+	if (setuid(65534))
+		return -errno;
+	return 0;
+}
+
+static void l_on_config_modified()
+{
+	hal_log_info("Configuration file modified. Exiting  ...");
+	/*
+	 * TODO: implement a robust & clean way to reload settings
+	 * instead of force quitting when configuration file changes.
+	 */
+	terminate();
+}
+
+static void g_on_config_modified()
+{
+	hal_log_info("Configuration file modified. Exiting  ...");
+	/*
+	 * TODO: implement a robust & clean way to reload settings
+	 * instead of force quitting when configuration file changes.
+	 */
+	g_main_loop_quit(main_loop);
+}
+
+static int detach()
+{
+	if (daemon(0, 0))
+		return -errno;
+	return 0;
+}
+
+static void sig_term(int sig)
+{
+	if (settings->use_ell)
+		l_main_exit();
+	else
+		g_main_loop_quit(main_loop);
 }
 
 static void signal_handler(struct l_signal *signal, uint32_t signo,
@@ -135,17 +142,20 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	config_watch = file_watch_add(settings->config_path, on_config_modified);
-	if (config_watch == NULL) {
-		hal_log_error("Failed to add configuration file watcher. Exiting ...");
-		goto fail_config_watch;
-	}
-
 	if (settings->use_ell) {
 		if (!l_main_init())
 			goto fail_main_loop;
 	} else
 		main_loop = g_main_loop_new(NULL, FALSE);
+
+	if (settings->use_ell)
+		config_watch = l_file_watch_add(settings->config_path, l_on_config_modified);
+	else
+		config_watch = g_file_watch_add(settings->config_path, g_on_config_modified);
+	if (config_watch == NULL) {
+		hal_log_error("Failed to add configuration file watcher. Exiting ...");
+		goto fail_config_watch;
+	}
 
 	if (settings->detach) {
 		err = detach();
@@ -184,10 +194,13 @@ int main(int argc, char *argv[])
 fail_detach:
 	if (settings->use_ell)
 		l_main_exit();
-fail_main_loop:
 done:
 fail_config_watch:
-	file_watch_remove(config_watch);
+	if (settings->use_ell)
+		l_file_watch_remove(config_watch);
+	else
+		g_file_watch_remove(config_watch);
+fail_main_loop:
 fail_nobody:
 	manager_stop();
 fail_manager:

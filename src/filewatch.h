@@ -24,7 +24,9 @@
 
 typedef void (*on_file_modified)(void);
 
-void *file_watch_add(const char *path, on_file_modified on_file_modified_cb);
-void file_watch_remove(void *watch);
+void *g_file_watch_add(const char *path, on_file_modified on_file_modified_cb);
+void g_file_watch_remove(void *watch);
+void *l_file_watch_add(const char *path, on_file_modified on_file_modified_cb);
+void l_file_watch_remove(void *watch);
 
 #endif /* __FILE_WATCH_H__ */
