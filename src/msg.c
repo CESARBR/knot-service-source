@@ -28,6 +28,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <errno.h>
 
 #include <sys/socket.h>
@@ -86,6 +87,76 @@ static struct proto_ops *proto;
 
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 
+/* Message processing */
+static int8_t msg_register(int sock, int proto_sock,
+	const knot_msg_register *kreq, size_t ilen,
+	knot_msg_credential *krsp);
+static int8_t msg_unregister(int sock, int proto_sock);
+static int8_t msg_data(int sock, int proto_sock,
+	const knot_msg_data *kmdata);
+static int8_t msg_auth(int sock, int proto_sock,
+	const knot_msg_authentication *kmauth);
+static int8_t msg_schema(int sock, int proto_sock,
+	const knot_msg_schema *kmsch, gboolean eof);
+static GSList *msg_config(int sock, json_raw_t json, ssize_t *result);
+static int8_t msg_config_resp(int sock, const knot_msg_item *rsp);
+static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result);
+static int8_t msg_setdata_resp(int sock, int proto_sock,
+	const knot_msg_data *kmdata);
+static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result);
+static int fw_push(int sock, knot_msg *kmsg);
+
+/*
+ * Callback that parses the JSON for config (and in the future, send data)
+ * messages. It is called from the protocol that is used to communicate with
+ * the cloud (e.g. http, websocket).
+ */
+static void on_device_changed(json_raw_t json, void *user_data)
+{
+	const struct proto_watch *watch = user_data;
+	int sock;
+	ssize_t result;
+	GSList *list;
+	GSList *tmp;
+
+	sock = g_io_channel_unix_get_fd(watch->node_io);
+
+	list = msg_config(sock, json, &result);
+	list = g_slist_concat(list, msg_setdata(sock, json, &result));
+	list = g_slist_concat(list, msg_getdata(sock, json, &result));
+
+	tmp = list;
+	while (tmp) {
+		result = fw_push(sock, tmp->data);
+		if (result)
+			hal_log_error("KNOT SEND ERROR");
+		tmp = g_slist_next(tmp);
+	}
+	g_slist_free_full(list, g_free);
+}
+
+static struct proto_watch *add_device_watch(int proto_socket, char *uuid,
+	char *token, GIOChannel *node_channel)
+{
+	struct proto_watch *proto_watch;
+
+	proto_watch = g_new0(struct proto_watch, 1);
+	proto_watch->id = proto->async(proto_socket, uuid, token, on_device_changed,
+		proto_watch);
+	proto_watch->node_io = g_io_channel_ref(node_channel);
+
+	return proto_watch;
+}
+
+static void remove_device_watch(struct proto_watch *proto_watch)
+{
+	if (proto_watch->id > 0)
+		g_source_remove(proto_watch->id);
+
+	g_io_channel_unref(proto_watch->node_io);
+	g_free(proto_watch);
+}
+
 static void config_free(gpointer mem)
 {
 	struct config *cfg = mem;
@@ -113,6 +184,112 @@ static void trust_unref(struct trust *trust)
 	g_slist_free_full(trust->schema_tmp, g_free);
 	g_slist_free_full(trust->config, config_free);
 	g_free(trust);
+}
+
+static struct trust *trust_get(int id)
+{
+	return g_hash_table_lookup(trust_list, GINT_TO_POINTER(id));
+}
+
+static GIOChannel *create_node_channel(int node_socket)
+{
+	return g_io_channel_unix_new(node_socket);
+}
+
+static gboolean on_node_channel_disconnected(GIOChannel *channel,
+	GIOCondition cond, gpointer used_data)
+{
+	struct trust *trust;
+	int node_socket, proto_socket;
+
+	node_socket = g_io_channel_unix_get_fd(channel);
+
+	trust = trust_get(node_socket);
+	if (!trust)
+		return FALSE;
+
+	/* Zombie device: registration not complete */
+	if (trust->rollback) {
+		proto_socket = g_io_channel_unix_get_fd(trust->proto_io);
+		if (msg_unregister(node_socket, proto_socket) != KNOT_SUCCESS) {
+			hal_log_info("Rollback failed UUID: %s", trust->uuid);
+		}
+	}
+
+	g_hash_table_remove(trust_list, GINT_TO_POINTER(node_socket));
+
+	return FALSE;
+}
+
+static void on_node_channel_destroyed(gpointer user_data)
+{
+	struct trust *trust = (struct trust *)user_data;
+	trust_unref(trust);
+}
+
+static void add_node_channel_watch(GIOChannel *channel, struct trust *trust)
+{
+	g_io_add_watch_full(channel,
+		G_PRIORITY_HIGH,
+		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+		on_node_channel_disconnected,
+		trust_ref(trust),
+		on_node_channel_destroyed);
+	g_io_channel_unref(channel);
+}
+
+static GIOChannel *create_proto_channel(int proto_socket)
+{
+	return g_io_channel_unix_new(proto_socket);
+}
+
+static gboolean on_proto_channel_disconnected(GIOChannel *channel,
+	GIOCondition cond, gpointer user_data)
+{
+	struct proto_watch *proto_watch = (struct proto_watch *)user_data;
+
+	remove_device_watch(proto_watch);
+
+	return FALSE;
+}
+
+static void add_proto_channel_watch(GIOChannel *channel,
+	struct proto_watch *proto_watch)
+{
+	g_io_add_watch(channel,
+		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+		on_proto_channel_disconnected,
+		proto_watch);
+}
+
+static void trust_create(int node_socket, int proto_socket, char *uuid,
+	char *token, uint64_t device_id, pid_t pid, bool rollback,
+	GSList *schema, GSList *config)
+{
+	struct trust *trust;
+	struct proto_watch *proto_watch;
+	GIOChannel *node_channel;
+
+	trust = g_new0(struct trust, 1);
+	trust->uuid = uuid;
+	trust->token = token;
+	trust->id = device_id;
+	trust->pid = pid;
+	trust->rollback = rollback;
+	trust->schema = schema;
+	trust->config = config;
+
+	g_hash_table_replace(trust_list, GINT_TO_POINTER(node_socket),
+							trust_ref(trust));
+
+	/* Add a watch to remove the credential when the client disconnects */
+	node_channel = create_node_channel(node_socket);
+	add_node_channel_watch(node_channel, trust);
+
+	/* Add a watch to remove source when cloud disconnects */
+	proto_watch = add_device_watch(proto_socket, uuid, token, node_channel);
+	trust->proto_io = create_proto_channel(proto_socket);
+	add_proto_channel_watch(trust->proto_io, proto_watch);
 }
 
 static int8_t msg_unregister(int sock, int proto_sock)
@@ -146,45 +323,6 @@ done:
 		free(jbuf.data);
 
 	return result;
-}
-
-static gboolean node_hup_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
-{
-	struct trust *trust = user_data;
-	int sock, proto_sock;
-
-	sock = g_io_channel_unix_get_fd(io);
-
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
-	if (!trust)
-		return FALSE;
-
-	/* Zombie device: registration not complete */
-	if (trust->rollback) {
-		proto_sock = g_io_channel_unix_get_fd(trust->proto_io);
-		if (msg_unregister(sock, proto_sock) != KNOT_SUCCESS) {
-			hal_log_info("Rollback failed UUID: %s", trust->uuid);
-		}
-	}
-
-	g_hash_table_remove(trust_list, GINT_TO_POINTER(sock));
-
-	return FALSE;
-}
-
-static gboolean proto_hup_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
-{
-	struct proto_watch *proto_watch = user_data;
-
-	if (proto_watch->id > 0)
-		g_source_remove(proto_watch->id);
-
-	g_io_channel_unref(proto_watch->node_io);
-	g_free(proto_watch);
-
-	return FALSE;
 }
 
 static int sensor_id_cmp(gconstpointer a, gconstpointer b)
@@ -541,8 +679,8 @@ static GSList *parse_device_config(const char *json_str)
 								&jobjkey)){
 			jtype = json_object_get_type(jobjkey);
 			if (jtype != json_type_int &&
-			    jtype != json_type_double &&
-			    jtype != json_type_boolean)
+					jtype != json_type_double &&
+					jtype != json_type_boolean)
 				goto done;
 			parse_json_value_types(jobjkey,
 						&upper_limit);
@@ -927,56 +1065,201 @@ static int fw_push(int sock, knot_msg *kmsg)
 	return 0;
 }
 
-/*
- * Callback that parses the JSON for config (and in the future, send data)
- * messages. It is called from the protocol that is used to communicate with
- * the cloud (e.g. http, websocket).
- */
-static void proto_watch_cb(json_raw_t json, void *user_data)
+static int get_socket_credentials(int sock, struct ucred *cred)
 {
-	const struct proto_watch *watch = user_data;
-	int sock;
-	ssize_t result;
-	GSList *list;
-	GSList *tmp;
+	socklen_t sklen;
 
-	sock = g_io_channel_unix_get_fd(watch->node_io);
-
-	list = msg_config(sock, json, &result);
-	list = g_slist_concat(list, msg_setdata(sock, json, &result));
-	list = g_slist_concat(list, msg_getdata(sock, json, &result));
-
-	tmp = list;
-	while (tmp) {
-		result = fw_push(sock, tmp->data);
-		if (result)
-			hal_log_error("KNOT SEND ERROR");
-		tmp = g_slist_next(tmp);
+	memset(cred, 0, sizeof(struct ucred));
+	sklen = sizeof(struct ucred);
+	if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, cred, &sklen) == -1) {
+		hal_log_error("getsockopt(%d): %s(%d)", sock,
+			strerror(errno), errno);
+		return KNOT_ERROR_UNKNOWN;
 	}
-	g_slist_free_full(list, g_free);
+
+	return KNOT_SUCCESS;
 }
 
-static int8_t msg_register(int sock, int proto_sock,
-			   const knot_msg_register *kreq, size_t ilen,
-			   knot_msg_credential *krsp)
+static bool msg_register_has_valid_length(const knot_msg_register *kreq,
+	size_t length)
 {
-	GIOChannel *io;
+	/* Min PDU len containing at least one char representing name */
+	return length > (sizeof(kreq->hdr) + sizeof(kreq->id));
+}
+
+static bool msg_register_has_valid_device_name(const knot_msg_register *kreq)
+{
+	return kreq->devName[0] != '\0';
+}
+
+/* device_name must have length of KNOT_PROTOCOL_DEVICE_NAME_LEN */
+static void msg_register_get_device_name(const knot_msg_register *kreq,
+	char *device_name)
+{
+	size_t length;
+	/*
+	 * Make sure the device name is at maximum 63 bytes leaving 1 byte left
+	 * for the terminating null character
+	 */
+	memset(device_name, 0, KNOT_PROTOCOL_DEVICE_NAME_LEN);
+
+	length = MIN(kreq->hdr.payload_len - sizeof(kreq->id),
+			KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
+
+	strncpy(device_name, kreq->devName, length);
+}
+
+static json_object *create_device_object(const char *device_name,
+	uint64_t device_id, const char *owner_uuid)
+{
+	json_object *device;
+	device = json_object_new_object();
+	if (!device) {
+		return NULL;
+	}
+
+	json_object_object_add(device, "type",
+				json_object_new_string("KNOTDevice"));
+	json_object_object_add(device, "name",
+				json_object_new_string(device_name));
+	json_object_object_add(device, "id",
+				json_object_new_int64(device_id));
+	json_object_object_add(device, "owner",
+				json_object_new_string(owner_uuid));
+
+	return device;
+}
+
+static bool is_uuid_valid(const char *uuid)
+{
+	return strlen(uuid) == KNOT_PROTOCOL_UUID_LEN;
+}
+
+static bool is_token_valid(const char *token)
+{
+	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
+}
+
+/*
+ * TODO: consider making this part of proto-ws.c mknode()
+ */
+static int proto_mknode(int proto_socket, const char *device_name,
+	uint64_t device_id, const char *owner_uuid, char **uuid, char **token)
+{
+	int err, result;
+	json_object *device;
+	const char *device_as_string;
+	json_raw_t response;
+
+	device = create_device_object(device_name, device_id,
+		owner_uuid);
+	if (!device) {
+		hal_log_error("JSON: no memory");
+		result = KNOT_ERROR_UNKNOWN;
+		goto fail_device;
+	}
+
+	device_as_string = json_object_to_json_string(device);
+	memset(&response, 0, sizeof(response));
+	err = proto->mknode(proto_socket, device_as_string, &response);
+	json_object_put(device);
+
+	if (err < 0) {
+		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
+		result = KNOT_CLOUD_FAILURE;
+		goto fail_mknode;
+	}
+
+	if (parse_device_info(response.data, uuid, token) < 0) {
+		hal_log_error("Unexpected response!");
+		result = KNOT_CLOUD_FAILURE;
+		goto fail_parse;
+	}
+
+	/* Parse function never returns NULL for 'uuid' or 'token' fields */
+	if (!is_uuid_valid(*uuid) || !is_token_valid(*token)) {
+		hal_log_error("Invalid UUID or token!");
+		result = KNOT_CLOUD_FAILURE;
+		goto fail_valid;
+	}
+
+	result = KNOT_SUCCESS;
+	goto done;
+
+fail_valid:
+	g_free(*uuid);
+	g_free(*token);
+done:
+fail_parse:
+	free(response.data);
+fail_mknode:
+fail_device:
+	return result;
+}
+
+/*
+ * TODO: consider making this part of proto-ws.c signin()
+ */
+static int proto_signin(int proto_socket, const char *uuid, const char *token,
+	GSList **schema, GSList **config)
+{
+	int err, result;
+	json_raw_t response;
+
+	err = proto->signin(proto_socket, uuid, token, &response);
+
+	if (!response.data) {
+		result = KNOT_CLOUD_FAILURE;
+		goto fail_signin_no_data;
+	}
+
+	if (err < 0) {
+		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		goto fail_signin;
+	}
+
+	if (schema != NULL) {
+		*schema = parse_device_schema(response.data);
+	}
+
+	if (config != NULL) {
+		*config = parse_device_config(response.data);
+	}
+
+	result = KNOT_SUCCESS;
+
+fail_signin:
+	free(response.data);
+fail_signin_no_data:
+	return result;
+}
+
+static void msg_credential_create(knot_msg_credential *message,
+	const char *uuid, const char *token)
+{
+	strcpy(message->uuid, uuid);
+	strcpy(message->token, token);
+
+	/* Payload length includes the result, UUID and TOKEN */
+	message->hdr.payload_len = sizeof(*message) - sizeof(knot_msg_header);
+}
+
+static int8_t msg_register(int node_socket, int proto_socket,
+				 const knot_msg_register *kreq, size_t ilen,
+				 knot_msg_credential *krsp)
+{
 	struct trust *trust;
-	json_object *jobj;
-	const char *jobjstring;
 	char *uuid, *token;
-	json_raw_t json;
-	int err, len;
 	int8_t result;
-	char thing_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
-	struct proto_watch *proto_watch;
-	socklen_t sklen;
+	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct ucred cred;
 
-	/* Min PDU len containing at least one char representing name */
-	if (ilen <= (sizeof(kreq->hdr) + sizeof(kreq->id))) {
+	if (!msg_register_has_valid_length(kreq, ilen)
+		|| !msg_register_has_valid_device_name(kreq)) {
 		hal_log_error("Missing device name!");
-		return KNOT_REGISTER_INVALID_DEVICENAME;
+		result = KNOT_REGISTER_INVALID_DEVICENAME;
+		goto fail_length;
 	}
 
 	/*
@@ -984,219 +1267,96 @@ static int8_t msg_register(int sock, int proto_sock,
 	 * only. For other socket types additional authentication mechanism
 	 * will be required.
 	 */
-	memset(&cred, 0, sizeof(cred));
-	sklen = sizeof(cred);
-	if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &cred, &sklen) == -1) {
-		err = errno;
-		hal_log_error("getsockopt(%d): %s(%d)", sock,
-						strerror(err), err);
-	} else
-		hal_log_info("sock:%d, pid:%ld", sock, (long int) cred.pid);
+	result = get_socket_credentials(node_socket, &cred);
+	if (result != KNOT_SUCCESS)
+		hal_log_info("sock:%d, pid:%ld", node_socket, (long int) cred.pid);
 
 	/*
 	 * Due to radio packet loss, peer may re-transmits register request
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, sock);
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, node_socket);
+	trust = trust_get(node_socket);
 	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
 		hal_log_info("Register: trusted device");
-		strcpy(krsp->uuid, trust->uuid);
-		strcpy(krsp->token, trust->token);
-		krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
-
-		return KNOT_SUCCESS;
-	}
-
-	if (kreq->devName[0] == '\0') {
-		hal_log_error("Empty device name!");
-		return KNOT_REGISTER_INVALID_DEVICENAME;
-	}
-
-	/*
-	 * Make sure the thing name is at maximum 63 bytes leaving 1 byte left
-	 * for the terminating null character
-	 */
-	memset(thing_name, 0, sizeof(thing_name));
-
-	len = MIN(kreq->hdr.payload_len - sizeof(kreq->id),
-		  KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
-
-	strncpy(thing_name, kreq->devName, len);
-
-	jobj = json_object_new_object();
-	if (!jobj) {
-		hal_log_error("JSON: no memory");
-		return KNOT_ERROR_UNKNOWN;
-	}
-
-	json_object_object_add(jobj, "type",
-				json_object_new_string("KNOTDevice"));
-	json_object_object_add(jobj, "name",
-				json_object_new_string(thing_name));
-	json_object_object_add(jobj, "owner",
-				json_object_new_string(owner_uuid));
-	json_object_object_add(jobj, "id",
-				json_object_new_int64(kreq->id));
-
-	jobjstring = json_object_to_json_string(jobj);
-
-	memset(&json, 0, sizeof(json));
-	err = proto->mknode(proto_sock, jobjstring, &json);
-
-	json_object_put(jobj);
-
-	if (err < 0) {
-		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
-		free(json.data);
-		return KNOT_CLOUD_FAILURE;
-	}
-
-	if (parse_device_info(json.data, &uuid, &token) < 0) {
-		hal_log_error("Unexpected response!");
-		free(json.data);
-		return KNOT_CLOUD_FAILURE;
-	}
-
-	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
-
-	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (strlen(uuid) != KNOT_PROTOCOL_UUID_LEN ||
-				strlen(token) != KNOT_PROTOCOL_TOKEN_LEN) {
-		hal_log_error("Invalid UUID or token!");
-		result = KNOT_CLOUD_FAILURE;
+		msg_credential_create(krsp, trust->uuid, trust->token);
+		result = KNOT_SUCCESS;
 		goto done;
 	}
 
-	strcpy(krsp->uuid, uuid);
-	strcpy(krsp->token, token);
+	msg_register_get_device_name(kreq, device_name);
+	result = proto_mknode(proto_socket, device_name, kreq->id,
+		owner_uuid,	&uuid, &token);
+	if (result != KNOT_SUCCESS)
+		goto fail_create;
 
-	err = proto->signin(proto_sock, uuid, token, &json);
+	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
 
-	if (!json.data)
-		return KNOT_CLOUD_FAILURE;
+	result = proto_signin(proto_socket, uuid, token, NULL, NULL);
+	if (result != KNOT_SUCCESS)
+		goto fail_signin;
 
-	free(json.data);
+	msg_credential_create(krsp, uuid, token);
 
-	if (err < 0) {
-		hal_log_error("register_signin(): %s(%d)", strerror(-err),
-									-err);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
-	}
+	trust_create(node_socket, proto_socket, uuid, token, kreq->id,
+		(cred.pid ? : INT32_MAX), true, NULL, NULL);
 
-	/* Payload length includes the result, UUID and TOKEN */
-	krsp->hdr.payload_len = sizeof(*krsp) - sizeof(knot_msg_header);
+	result = KNOT_SUCCESS;
+	goto done;
 
-	trust = g_new0(struct trust, 1);
-	trust->uuid = uuid;
-	trust->token = token;
-	trust->id = kreq->id;
-	trust->pid = (cred.pid ? : INT32_MAX);
-	trust->rollback = TRUE;
-
-	g_hash_table_replace(trust_list, GINT_TO_POINTER(sock),
-							trust_ref(trust));
-	/* Add a watch to remove the credential when the client disconnects */
-	io = g_io_channel_unix_new(sock);
-	g_io_add_watch_full(io, G_PRIORITY_HIGH,
-			    G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-			    node_hup_cb, trust_ref(trust),
-			    (GDestroyNotify) trust_unref);
-	g_io_channel_unref(io);
-
-	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto->async(proto_sock, trust->uuid,
-				trust->token, proto_watch_cb, proto_watch);
-	proto_watch->node_io = g_io_channel_ref(io);
-
-	/* Add a watch to remove source when cloud disconnects */
-	trust->proto_io = g_io_channel_unix_new(proto_sock);
-	g_io_add_watch(trust->proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-					proto_hup_cb, proto_watch);
-
-	return KNOT_SUCCESS;
-
-done:
+fail_signin:
 	g_free(uuid);
 	g_free(token);
-
+done:
+fail_create:
+fail_length:
 	return result;
 }
 
-static int8_t msg_auth(int sock, int proto_sock,
+static int8_t msg_auth(int node_socket, int proto_socket,
 				const knot_msg_authentication *kmauth)
 {
-	GIOChannel *io;
-	json_raw_t json;
-	struct trust *trust;
-	struct proto_watch *proto_watch;
-	int err;
+	int8_t result;
+	GSList *schema, *config;
+	char *uuid, *token;
 
-	if (g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock))) {
+	if (trust_get(node_socket)) {
 		hal_log_info("Authenticated already");
-		return KNOT_SUCCESS;
+		result = KNOT_SUCCESS;
+		goto done;
 	}
 
-	memset(&json, 0, sizeof(json));
-	trust = g_new0(struct trust, 1);
+	result = proto_signin(proto_socket, kmauth->uuid, kmauth->token,
+		&schema, &config);
+	if (result != KNOT_SUCCESS)
+		goto done;
+
+	if (schema == NULL) {
+		result = KNOT_SCHEMA_EMPTY;
+		goto done;
+	}
+
+	if (config_is_valid(config)) {
+		hal_log_error("Invalid config message");
+		g_slist_free_full(config, config_free);
+		config = NULL;
+	}
+
 	/*
 	 * g_strndup returns a newly-allocated buffer n + 1 bytes
 	 * long which will always be nul-terminated.
 	 */
-	trust->uuid = g_strndup(kmauth->uuid, sizeof(kmauth->uuid));
-	trust->token = g_strndup(kmauth->token, sizeof(kmauth->token));
-	err = proto->signin(proto_sock, trust->uuid, trust->token, &json);
+	uuid = g_strndup(kmauth->uuid, sizeof(kmauth->uuid));
+	token = g_strndup(kmauth->token, sizeof(kmauth->token));
+	/* TODO: should we receive the ID? Should we get the socket PID? */
+	trust_create(node_socket, proto_socket, uuid, token, 0, 0, FALSE,
+		schema, config);
 
-	if (!json.data) {
-		trust_unref(trust);
-		return KNOT_SCHEMA_EMPTY;
-	}
+	result = KNOT_SUCCESS;
 
-	trust->schema = parse_device_schema(json.data);
-	trust->config_tmp = parse_device_config(json.data);
-
-	free(json.data);
-
-	if (err < 0) {
-		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
-		trust_unref(trust);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
-	}
-
-	if (config_is_valid(trust->config_tmp)) {
-		hal_log_error("Invalid config message");
-		g_slist_free_full(trust->config_tmp, config_free);
-		trust->config_tmp = NULL;
-	} else {
-		trust->config = trust->config_tmp;
-		trust->config_tmp = NULL;
-	}
-
-	trust->rollback = FALSE;
-
-	g_hash_table_insert(trust_list, GINT_TO_POINTER(sock),
-							trust_ref(trust));
-
-	/* Add a watch to remove the credential when the client disconnects */
-	io = g_io_channel_unix_new(sock);
-	g_io_add_watch_full(io, G_PRIORITY_HIGH,
-			    G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-			    node_hup_cb, trust_ref(trust),
-			    (GDestroyNotify) trust_unref);
-	g_io_channel_unref(io);
-
-	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto->async(proto_sock,
-			trust->uuid, trust->token, proto_watch_cb, proto_watch);
-	proto_watch->node_io = g_io_channel_ref(io);
-
-	/* Add a watch to remove source when cloud disconnects */
-	trust->proto_io = g_io_channel_unix_new(proto_sock);
-	g_io_add_watch(trust->proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-						proto_hup_cb, proto_watch);
-
-	return KNOT_SUCCESS;
+done:
+	return result;
 }
 
 static int8_t msg_schema(int sock, int proto_sock,
@@ -1742,7 +1902,7 @@ ssize_t msg_process(int sock, int proto_sock,
 	case KNOT_MSG_REGISTER_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(sock, proto_sock,
-				      &kreq->reg, ilen, &krsp->cred);
+							&kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
@@ -1792,7 +1952,7 @@ int msg_start(const char *uuid, struct proto_ops *proto_ops)
 	proto = proto_ops;
 
 	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-				      NULL, (GDestroyNotify) trust_unref);
+							NULL, (GDestroyNotify) trust_unref);
 	return 0;
 }
 
