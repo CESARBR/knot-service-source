@@ -40,216 +40,24 @@
 #include <hal/linux_log.h>
 
 #include "node.h"
-#include "proto.h"
 #include "serial.h"
+#include "proto.h"
+#include "session.h"
 #include "msg.h"
 #include "settings.h"
 #include "manager.h"
 
-/*
- * Device session storing the connected
- * device context: 'drivers' and file descriptors
- */
-struct session {
-	unsigned int node_id;	/* Radio event source */
-	unsigned int proto_id;	/* TCP/backend event source */
-	GIOChannel *proto_io;	/* Protocol GIOChannel reference */
-	struct node_ops *ops;
-};
-
-static GSList *session_list = NULL;
-
-static struct proto_ops *proto; /* Selected protocol */
-
-static void node_io_destroy(gpointer user_data)
-{
-	struct session *session = user_data;
-	GIOChannel *proto_io;
-
-	proto_io = session->proto_io;
-
-	/*
-	 * Destroy callback may be called after a remote (Radio or Unix peer)
-	 * initiated disconnection. If Cloud is still connected: disconnect
-	 * release allocated resources.
-	 */
-
-	if (session->proto_id) {
-		g_source_remove(session->proto_id);
-
-		g_io_channel_shutdown(proto_io, FALSE, NULL);
-		g_io_channel_unref(proto_io);
-	}
-
-	session_list = g_slist_remove(session_list, session);
-	g_free(session);
-}
-
-static gboolean proto_io_watch(GIOChannel *io, GIOCondition cond,
-								 gpointer user_data)
-{
-	struct session *session = user_data;
-
-	/*
-	 * Mark protocol watch as removed. Return FALSE to remove
-	 * GIOChannel watch. This callback gets called when the
-	 * REMOTE initiates a disconnection or if an error happens.
-	 * In this case, radio (or Unix) transport should be left
-	 * connected.
-	 */
-	session->proto_id = 0;
-
-	if (session->proto_io) {
-		g_io_channel_unref(session->proto_io);
-		session->proto_io = NULL;
-	}
-
-	return FALSE;
-}
-
-static void proto_io_destroy(gpointer user_data)
-{
-	struct session *session = user_data;
-
-	/*
-	 * Considering that Radio (Unix) transport should stay
-	 * connected for Cloud initiated disconnection, just
-	 * 'reset' protocol references to signal that Cloud
-	 * connection needs to be re-established on-demand.
-	 */
-	session->proto_io = NULL;
-	session->proto_id = 0;
-}
-
-static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
-						gpointer user_data)
-{
-	struct session *session = user_data;
-	struct node_ops *ops = session->ops;
-	uint8_t ipdu[512], opdu[512]; /* FIXME: */
-	ssize_t recvbytes, sentbytes, olen;
-	int sock, proto_sock, err;
-	GIOCondition watch_cond;
-
-
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		/*
-		 * Mark as removed. node_io has only one
-		 * reference. Returning FALSE removes the
-		 * last reference and the destroy callback
-		 * is called.
-		 */
-		if (cond & G_IO_HUP && session->proto_io) {
-			proto_sock =
-				g_io_channel_unix_get_fd(session->proto_io);
-			proto->close(proto_sock);
-		}
-		session->node_id = 0;
-		return FALSE;
-	}
-
-	sock = g_io_channel_unix_get_fd(io);
-
-	recvbytes = ops->recv(sock, ipdu, sizeof(ipdu));
-	if (recvbytes <= 0) {
-		err = errno;
-		hal_log_error("readv(): %s(%d)", strerror(err), err);
-		return FALSE;
-	}
-
-	if (!session->proto_io) {
-		proto_sock = proto->connect();
-		if (proto_sock < 0) {
-			/* TODO:  missing reply an error */
-			hal_log_info("Can't connect to cloud service!");
-			session->node_id = 0;
-			return FALSE;
-		}
-
-		hal_log_info("Connected to cloud service!");
-
-		session->proto_io = g_io_channel_unix_new(proto_sock);
-
-		watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
-		session->proto_id = g_io_add_watch_full(session->proto_io,
-							G_PRIORITY_DEFAULT,
-							watch_cond,
-							proto_io_watch, session,
-							proto_io_destroy);
-	} else
-		proto_sock = g_io_channel_unix_get_fd(session->proto_io);
-
-	olen = msg_process(sock, proto_sock, ipdu,
-					recvbytes, opdu, sizeof(opdu));
-	/* olen: output length or -errno */
-	if (olen < 0) {
-		/* Server didn't reply any error */
-		hal_log_error("KNOT IoT proto error: %s(%zd)",
-						strerror(-olen), -olen);
-		return FALSE;
-	}
-	/* If there are no octets to be sent */
-	if (!olen)
-		return TRUE;
-
-	/* Response from the gateway: error or response for the given command */
-
-	sentbytes = ops->send(sock, opdu, olen);
-	if (sentbytes < 0)
-		hal_log_error("node_ops: %s(%zd)",
-					strerror(-sentbytes), -sentbytes);
-
-	return TRUE;
-}
+static struct proto_ops *selected_protocol;
 
 static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 {
-	GIOChannel *node_io, *proto_io;
-	int proto_sock;
-	GIOCondition watch_cond;
-	struct session *session;
+	int err;
 
-	/* FIXME: Stop knotd if cloud if not available */
-	proto_sock = proto->connect();
-
-	/* Disconnect peer if fog/cloud is down */
-	if (proto_sock < 0) {
-		hal_log_info("Cloud connect(): %s(%d)",
-					 strerror(-proto_sock), -proto_sock);
+	err = session_create(node_ops, selected_protocol, client_socket, msg_process);
+	if (err < 0) {
+		/* FIXME: Stop knotd if cloud if not available */
 		close(client_socket);
-		return true;
 	}
-
-	node_io = g_io_channel_unix_new(client_socket);
-	g_io_channel_set_close_on_unref(node_io, TRUE);
-
-	proto_io = g_io_channel_unix_new(proto_sock);
-
-	session = g_new0(struct session, 1);
-	/* Watch for unix socket disconnection */
-	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN;
-	session->node_id = g_io_add_watch_full(node_io,
-				G_PRIORITY_DEFAULT, watch_cond,
-				node_io_watch, session,
-				node_io_destroy);
-	g_io_channel_unref(node_io);
-
-	/* Watch for TCP socket disconnection */
-	watch_cond = G_IO_HUP | G_IO_NVAL | G_IO_ERR;
-	session->proto_id = g_io_add_watch_full(proto_io,
-				G_PRIORITY_DEFAULT, watch_cond,
-				proto_io_watch, session,
-				proto_io_destroy);
-
-	/* Keep one reference to call sign-off */
-	session->proto_io = proto_io;
-
-	/* TODO: Create refcount */
-	session->ops = node_ops;
-
-	hal_log_info("node:%p proto:%p", node_io, proto_io);
-
-	session_list = g_slist_prepend(session_list, session);
 
 	return true;
 }
@@ -258,7 +66,7 @@ int manager_start(const struct settings *settings)
 {
 	int err;
 
-	err = proto_start(settings, &proto);
+	err = proto_start(settings, &selected_protocol);
 	if (err < 0)
 		goto fail_proto;
 
@@ -266,7 +74,7 @@ int manager_start(const struct settings *settings)
 	if (err < 0)
 		goto fail_node;
 
-	err = msg_start(settings->uuid, proto);
+	err = msg_start(settings->uuid, selected_protocol);
 	if (err < 0)
 		goto fail_msg;
 
@@ -284,19 +92,8 @@ done:
 
 void manager_stop(void)
 {
-	GSList *list;
-	struct session *session;
-
+	session_destroy_all();
 	msg_stop();
 	node_stop();
 	proto_stop();
-
-	for (list = session_list; list; list = g_slist_next(list)) {
-		session = list->data;
-
-		/* Freed by node_io_destroy */
-		g_source_remove(session->node_id);
-	}
-
-	g_slist_free(session_list);
 }

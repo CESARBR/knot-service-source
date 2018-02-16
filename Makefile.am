@@ -68,6 +68,7 @@ ell_libell_internal_la_SOURCES = $(ell_sources)
 src_knotd_SOURCES = src/main.c \
 			src/filewatch.c src/filewatch.h \
 			src/settings.c src/settings.h \
+			src/session.c src/session.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
 			src/proto.c src/proto.h \
