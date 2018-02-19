@@ -54,7 +54,6 @@ struct config {
 	knot_msg_config kmcfg;		/* knot_message_config from cloud */
 	char *hash;			/* Checksum of kmcfg */
 	gboolean confirmed;
-
 };
 
 struct trust {
@@ -69,7 +68,6 @@ struct trust {
 					* knot_schema to be submitted to cloud
 					*/
 	GSList *config;			/* knot_config accepted from cloud */
-	GSList *config_tmp;		/* knot_config to be validate by GW */
 	const struct proto_ops *proto_ops; /* Cloud driver */
 	GIOChannel *proto_io;		/* Cloud IO channel */
 };
@@ -353,6 +351,26 @@ static void trust_sensor_schema_complete(struct trust *trust)
 	trust_sensor_schema_free(trust);
 	trust->schema = trust->schema_tmp;
 	trust->schema_tmp = NULL;
+}
+
+static void trust_config_update(struct trust *trust, GSList *config)
+{
+	g_slist_free_full(trust->config, config_free);
+	trust->config = config;
+}
+
+static void trust_config_confirm(struct trust *trust, uint8_t sensor_id)
+{
+	GSList *item;
+	struct config *config_item;
+
+	for (item = trust->config; item; item = g_slist_next(item)) {
+		config_item = item->data;
+		if (config_item->kmcfg.sensor_id == sensor_id) {
+			config_item->confirmed = TRUE;
+			break;
+		}
+	}
 }
 
 /*
@@ -986,9 +1004,9 @@ static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result)
 
 /*
  * Returns a list of all the configs that changed compared to the stored in
- * trust->config. If the trust->config is empty, returns a list with all the
- * configs that were received by the cloud. If nothing was received from the
- * cloud, returns NULL.
+ * current. If the current is empty, returns a list with all the configs that
+ * were received by the cloud. If nothing was received from the cloud,
+ * returns NULL.
  */
 static GSList *get_changed_config(GSList *current, GSList *received)
 {
@@ -1006,7 +1024,7 @@ static GSList *get_changed_config(GSList *current, GSList *received)
 
 	/*
 	 * If there is nothing in the current config list, returns all that was
-	 *received from the cloud
+	 * received from the cloud
 	 */
 	if (!current) {
 		while (rec) {
@@ -1074,28 +1092,29 @@ static GSList *get_changed_config(GSList *current, GSList *received)
 
 /*
  * Parses the JSON from cloud to get all the configs. If the config is valid,
- * checks if any changed, and put them in the list that  will be sent to the
- * thing. Returns the list with the messages to be sent or  NULL if any error.
+ * checks if any changed, and put them in the list that will be sent to the
+ * thing. Returns the list with the messages to be sent or NULL if any error.
  */
-static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
+static GSList *msg_config(int node_socket, json_raw_t device_message,
+	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *list;
+	GSList *config;
+	GSList *changed_config;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
 	}
 
-	trust->config_tmp = parse_device_config(json.data);
+	config = parse_device_config(device_message.data);
 
 	/* config_is_valid() returns 0 if SUCCESS */
-	if (config_is_valid(trust->config_tmp)) {
+	if (config_is_valid(config)) {
 		hal_log_error("Invalid config message");
-		g_slist_free_full(trust->config_tmp, config_free);
-		trust->config_tmp = NULL;
+		g_slist_free_full(config, config_free);
 		/*
 		 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 		 * KNOT_INVALID_CONFIG in new protocol
@@ -1104,14 +1123,12 @@ static GSList *msg_config(int sock, json_raw_t json, ssize_t *result)
 		return NULL;
 	}
 
-	list = get_changed_config(trust->config, trust->config_tmp);
-	g_slist_free_full(trust->config, config_free);
-	trust->config = trust->config_tmp;
-	trust->config_tmp = NULL;
+	changed_config = get_changed_config(trust->config, config);
+	trust_config_update(trust, config);
 
 	*result = KNOT_SUCCESS;
 
-	return list;
+	return changed_config;
 }
 
 /*
@@ -1802,28 +1819,23 @@ done:
 	return result;
 }
 
-static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
+static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 {
 	struct trust *trust;
 	uint8_t sensor_id;
-	GSList *list;
-	struct config *entry;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
-	sensor_id = rsp->sensor_id;
-	for (list = trust->config; list; list = g_slist_next(list)) {
-		entry = list->data;
-		if (entry->kmcfg.sensor_id == sensor_id) {
-			entry->confirmed = TRUE;
-			break;
-		}
-	}
+
+	sensor_id = response->sensor_id;
+	trust_config_confirm(trust, sensor_id);
+
 	hal_log_info("THING %s received config for sensor %d", trust->uuid,
 								sensor_id);
+
 	return KNOT_SUCCESS;
 }
 
