@@ -297,6 +297,25 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	add_proto_channel_watch(trust->proto_io, proto_watch);
 }
 
+static int sensor_id_cmp(gconstpointer a, gconstpointer b)
+{
+	const knot_msg_schema *schema = a;
+	unsigned int sensor_id = GPOINTER_TO_UINT(b);
+
+	return sensor_id - schema->sensor_id;
+}
+
+static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
+	int sensor_id)
+{
+	GSList *schema_entry;
+
+	schema_entry = g_slist_find_custom(trust->schema,
+		GUINT_TO_POINTER(sensor_id), sensor_id_cmp);
+
+	return schema_entry ? schema_entry->data : NULL;
+}
+
 /*
  * TODO: consider making this part of proto-ws.c signin()
  */
@@ -342,14 +361,6 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 
 done:
 	return result;
-}
-
-static int sensor_id_cmp(gconstpointer a, gconstpointer b)
-{
-	const knot_msg_schema *schema = a;
-	unsigned int sensor_id = GPOINTER_TO_UINT(b);
-
-	return sensor_id - schema->sensor_id;
 }
 
 static char *checksum_config(json_object *jobjkey)
@@ -1480,7 +1491,7 @@ static int8_t msg_schema(int sock, int proto_sock,
 }
 
 /*
- * Updates de 'devices' db, removing the sensor_id that just sent the data
+ * Updates the 'devices' db, removing the sensor_id that just sent the data
  */
 static void update_device_getdata(int proto_sock, char *uuid, char *token,
 					uint8_t sensor_id)
@@ -1508,9 +1519,9 @@ static void update_device_getdata(int proto_sock, char *uuid, char *token,
 	/*
 	 * Getting 'get_data' from the device properties
 	 * {"devices":[{"uuid":
-	 *		"set_data" : [
-	 *			{"sensor_id": v,
-	 *			"value": w}]
+	 *		"get_data" : [
+	 *			{"sensor_id": v
+	 *			}]
 	 *		}]
 	 * }
 	 */
@@ -1563,107 +1574,163 @@ done:
 	free(json.data);
 }
 
-static int8_t msg_data(int sock, int proto_sock,
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static int knot_data_as_int(const knot_data *data)
+{
+	return data->values.val_i.value;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static int knot_data_get_double_length(const knot_data *data)
+{
+	char buffer[12]; /* INT_MAX 2147483647 */
+	/* FIXME: precision */
+	return sprintf(buffer, "%d", data->values.val_f.value_dec);
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static double knot_data_as_double(const knot_data *data)
+{
+	int length = knot_data_get_double_length(data);
+	return data->values.val_f.multiplier *
+		(data->values.val_f.value_int +
+		(data->values.val_f.value_dec / pow(10, length)));
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static bool knot_data_as_boolean(const knot_data *data)
+{
+	return data->values.val_b;
+}
+
+static json_object *create_data_object(uint8_t sensor_id,
+	uint8_t value_type, const knot_data *value)
+{
+	json_object *data;
+
+	data = json_object_new_object();
+	json_object_object_add(data, "sensor_id",
+						json_object_new_int(sensor_id));
+
+	switch (value_type) {
+	case KNOT_VALUE_TYPE_INT:
+		json_object_object_add(data, "value",
+				json_object_new_int(knot_data_as_int(value)));
+		break;
+	case KNOT_VALUE_TYPE_FLOAT:
+		json_object_object_add(data, "value",
+					json_object_new_double(knot_data_as_double(value)));
+		break;
+	case KNOT_VALUE_TYPE_BOOL:
+		json_object_object_add(data, "value",
+				json_object_new_boolean(knot_data_as_boolean(value)));
+		break;
+	case KNOT_VALUE_TYPE_RAW:
+		break;
+	default:
+		json_object_put(data);
+		return NULL;
+	}
+
+	return data;
+}
+
+/*
+ * TODO: consider making this part of proto-ws.c signin()
+ */
+static int proto_data(int proto_socket, const char *uuid, const char *token,
+	uint8_t sensor_id, uint8_t value_type, const knot_data *value)
+{
+	int result, err;
+	struct json_object *data;
+	const char *data_as_string;
+	json_raw_t response;
+
+	data = create_data_object(sensor_id, value_type, value);
+	if (!data) {
+		result = KNOT_INVALID_DATA;
+		goto done;
+	}
+
+	data_as_string = json_object_to_json_string(data);
+
+	memset(&response, 0, sizeof(response));
+	err = proto->data(proto_socket, uuid, token, data_as_string, &response);
+
+	if (response.data)
+		free(response.data);
+
+	json_object_put(data);
+
+	if (err < 0) {
+		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
+		result = KNOT_CLOUD_FAILURE;
+		goto done;
+	}
+
+	result = KNOT_SUCCESS;
+
+done:
+	return result;
+}
+
+static int8_t msg_data(int node_socket, int proto_socket,
 					const knot_msg_data *kmdata)
 {
+	int8_t result;
+	int err;
+	uint8_t sensor_id;
+	const struct trust *trust;
+	const knot_msg_schema *schema;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
 	 */
 	const knot_data *kdata = &(kmdata->payload);
-	struct json_object *jobj;
-	const struct trust *trust;
-	const knot_msg_schema *schema;
-	GSList *list;
-	json_raw_t json;
-	const char *jobjstr;
-	/* INT_MAX 2147483647 */
-	char str[12];
-	double doubleval;
-	uint8_t sensor_id;
-	int len, err;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		goto done;
 	}
 
 	sensor_id = kmdata->sensor_id;
-
-	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
-								sensor_id_cmp);
-	if (!list) {
+	schema = trust_get_sensor_schema(trust, sensor_id);
+	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
-		return KNOT_INVALID_DATA;
+		result = KNOT_INVALID_DATA;
+		goto done;
 	}
-
-	schema = list->data;
 
 	err = knot_schema_is_valid(schema->values.type_id,
 				schema->values.value_type, schema->values.unit);
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
-		return KNOT_INVALID_DATA;
+		result = KNOT_INVALID_DATA;
+		goto done;
 	}
 
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 				schema->values.unit, schema->values.value_type);
 
-	jobj = json_object_new_object();
-	json_object_object_add(jobj, "sensor_id",
-						json_object_new_int(sensor_id));
+	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
+		schema->values.value_type, kdata);
 
-	switch (schema->values.value_type) {
-	case KNOT_VALUE_TYPE_INT:
-		json_object_object_add(jobj, "value",
-				json_object_new_int(kdata->values.val_i.value));
-		break;
-	case KNOT_VALUE_TYPE_FLOAT:
+	update_device_getdata(proto_socket, trust->uuid, trust->token, sensor_id);
 
-		/* FIXME: precision */
-		len = sprintf(str, "%d", kdata->values.val_f.value_dec);
-
-		doubleval = kdata->values.val_f.multiplier *
-			(kdata->values.val_f.value_int +
-			(kdata->values.val_f.value_dec / pow(10, len)));
-
-		json_object_object_add(jobj, "value",
-					json_object_new_double(doubleval));
-		break;
-	case KNOT_VALUE_TYPE_BOOL:
-		json_object_object_add(jobj, "value",
-				json_object_new_boolean(kdata->values.val_b));
-		break;
-	case KNOT_VALUE_TYPE_RAW:
-		break;
-	default:
-		json_object_put(jobj);
-		return KNOT_INVALID_DATA;
-	}
-
-	jobjstr = json_object_to_json_string(jobj);
-
-	hal_log_info("JSON: %s", jobjstr);
-
-	memset(&json, 0, sizeof(json));
-	err = proto->data(proto_sock, trust->uuid, trust->token,
-							jobjstr, &json);
-	if (json.data)
-		free(json.data);
-
-	json_object_put(jobj);
-
-	if (err < 0) {
-		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
-		return KNOT_CLOUD_FAILURE;
-	}
-
-	update_device_getdata(proto_sock, trust->uuid, trust->token, sensor_id);
-
-	return KNOT_SUCCESS;
+done:
+	return result;
 }
 
 static int8_t msg_config_resp(int sock, const knot_msg_item *rsp)
