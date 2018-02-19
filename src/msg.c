@@ -316,6 +316,45 @@ static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
 	return schema_entry ? schema_entry->data : NULL;
 }
 
+static void trust_sensor_schema_free(struct trust *trust)
+{
+	g_slist_free_full(trust->schema, g_free);
+	trust->schema = NULL;
+}
+
+static knot_msg_schema *trust_get_sensor_schema_tmp(const struct trust *trust,
+	int sensor_id)
+{
+	GSList *schema_entry;
+
+	schema_entry = g_slist_find_custom(trust->schema_tmp,
+		GUINT_TO_POINTER(sensor_id), sensor_id_cmp);
+
+	return schema_entry ? schema_entry->data : NULL;
+}
+
+static void trust_sensor_schema_tmp_add(struct trust *trust,
+	const knot_msg_schema *schema)
+{
+	knot_msg_schema *schema_copy;
+
+	schema_copy = g_memdup(schema, sizeof(*schema));
+	trust->schema_tmp = g_slist_append(trust->schema_tmp, schema_copy);
+}
+
+static void trust_sensor_schema_tmp_free(struct trust *trust)
+{
+	g_slist_free_full(trust->schema_tmp, g_free);
+	trust->schema_tmp = NULL;
+}
+
+static void trust_sensor_schema_complete(struct trust *trust)
+{
+	trust_sensor_schema_free(trust);
+	trust->schema = trust->schema_tmp;
+	trust->schema_tmp = NULL;
+}
+
 /*
  * TODO: consider making this part of proto-ws.c signin()
  */
@@ -1389,23 +1428,91 @@ done:
 	return result;
 }
 
-static int8_t msg_schema(int sock, int proto_sock,
-				const knot_msg_schema *kmsch, gboolean eof)
+static json_object *create_schema_object(uint8_t sensor_id, uint8_t value_type,
+	uint8_t unit, uint16_t type_id, const char *name)
 {
-	const knot_msg_schema *schema = kmsch;
-	knot_msg_schema *kschema;
-	struct json_object *jobj, *ajobj, *schemajobj;
-	struct trust *trust;
-	GSList *list;
-	json_raw_t json;
-	const char *jobjstr;
-	int err;
-	gboolean found = FALSE;
+	json_object *schema;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	schema = json_object_new_object();
+	json_object_object_add(schema, "sensor_id",
+		json_object_new_int(sensor_id));
+	json_object_object_add(schema, "value_type",
+		json_object_new_int(value_type));
+	json_object_object_add(schema, "unit",
+		json_object_new_int(unit));
+	json_object_object_add(schema, "type_id",
+		json_object_new_int(type_id));
+	json_object_object_add(schema, "name",
+		json_object_new_string(name));
+
+	return schema;
+}
+
+static json_object *create_schema_list_object(GSList *schema_list)
+{
+	json_object *jschema, *jschema_list, *jschema_item;
+	GSList *item;
+	knot_msg_schema *schema;
+
+	jschema = json_object_new_object();
+	jschema_list = json_object_new_array();
+	for (item = schema_list; item; item = g_slist_next(schema_list)) {
+		schema = item->data;
+		jschema_item = create_schema_object(schema->sensor_id, schema->values.value_type,
+			schema->values.unit, schema->values.type_id, schema->values.name);
+		json_object_array_add(jschema_list, jschema_item);
+	}
+	json_object_object_add(jschema, "schema", jschema_list);
+
+	return jschema;
+}
+
+/*
+ * TODO: consider making this part of proto-ws.c signin()
+ */
+static int proto_schema(int proto_socket, const char *uuid, const char *token,
+	GSList *schema_list)
+{
+	int result, err;
+	json_object *jschema_list;
+	const char *jschema_list_as_string;
+	json_raw_t response;
+
+	jschema_list = create_schema_list_object(schema_list);
+	jschema_list_as_string = json_object_to_json_string(jschema_list);
+
+	memset(&response, 0, sizeof(response));
+	err = proto->schema(proto_socket, uuid, token, jschema_list_as_string,
+		&response);
+
+	if (response.data)
+		free(response.data);
+
+	json_object_put(jschema_list);
+
+	if (err < 0) {
+		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
+		result = KNOT_CLOUD_FAILURE;
+		goto done;
+	}
+
+	result = KNOT_SUCCESS;
+
+done:
+	return result;
+}
+
+static int8_t msg_schema(int node_socket, int proto_socket,
+				const knot_msg_schema *schema, gboolean eof)
+{
+	int8_t result;
+	struct trust *trust;
+
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		goto done;
 	}
 
 	/*
@@ -1428,66 +1535,28 @@ static int8_t msg_schema(int sock, int proto_sock,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
-	kschema = g_memdup(schema, sizeof(*schema));
-	for (list = trust->schema_tmp; list ; list = g_slist_next(list)) {
-		schema = list->data;
-		if (kschema->sensor_id == schema->sensor_id)
-			found = TRUE;
-	}
-	if (!found)
-		trust->schema_tmp = g_slist_append(trust->schema_tmp, kschema);
+	if (!trust_get_sensor_schema_tmp(trust, schema->sensor_id))
+		trust_sensor_schema_tmp_add(trust, schema);
 
 	 /* TODO: missing timer to wait for end of schema transfer */
 
-	if (!eof)
-		return KNOT_SUCCESS;
-
-	/* SCHEMA is an array of entries */
-	ajobj = json_object_new_array();
-	schemajobj = json_object_new_object();
-
-	/* Creating an array if the sensor supports multiple data types */
-	for (list = trust->schema_tmp; list; list = g_slist_next(list)) {
-		schema = list->data;
-		jobj = json_object_new_object();
-		json_object_object_add(jobj, "sensor_id",
-				json_object_new_int(schema->sensor_id));
-		json_object_object_add(jobj, "value_type",
-				json_object_new_int(schema->values.value_type));
-		json_object_object_add(jobj, "unit",
-				json_object_new_int(schema->values.unit));
-		json_object_object_add(jobj, "type_id",
-				json_object_new_int(schema->values.type_id));
-		json_object_object_add(jobj, "name",
-				json_object_new_string(schema->values.name));
-
-		json_object_array_add(ajobj, jobj);
+	if (!eof) {
+		result = KNOT_SUCCESS;
+		goto done;
 	}
 
-	json_object_object_add(schemajobj, "schema", ajobj);
-	jobjstr = json_object_to_json_string(schemajobj);
-
-	memset(&json, 0, sizeof(json));
-	err = proto->schema(proto_sock, trust->uuid, trust->token,
-							jobjstr, &json);
-	if (json.data)
-		free(json.data);
-
-	json_object_put(schemajobj);
-
-	if (err < 0) {
-		g_slist_free_full(trust->schema_tmp, g_free);
-		trust->schema_tmp = NULL;
-		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
-		return KNOT_CLOUD_FAILURE;
+	result = proto_schema(proto_socket, trust->uuid, trust->token,
+		trust->schema_tmp);
+	if (result != KNOT_SUCCESS) {
+		trust_sensor_schema_tmp_free(trust);
+		goto done;
 	}
 
-	/* If POST succeed: free old schema and use the new one */
-	g_slist_free_full(trust->schema, g_free);
-	trust->schema = trust->schema_tmp;
-	trust->schema_tmp = NULL;
+	/* If succeed: free old schema and use the new one */
+	trust_sensor_schema_complete(trust);
 
-	return KNOT_SUCCESS;
+done:
+	return result;
 }
 
 /*
