@@ -191,6 +191,11 @@ static struct trust *trust_get(int id)
 	return g_hash_table_lookup(trust_list, GINT_TO_POINTER(id));
 }
 
+static void trust_remove(int id)
+{
+	g_hash_table_remove(trust_list, GINT_TO_POINTER(id));
+}
+
 static GIOChannel *create_node_channel(int node_socket)
 {
 	return g_io_channel_unix_new(node_socket);
@@ -292,22 +297,15 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	add_proto_channel_watch(trust->proto_io, proto_watch);
 }
 
-static int8_t msg_unregister(int sock, int proto_sock)
+/*
+ * TODO: consider making this part of proto-ws.c signin()
+ */
+static int proto_rmnode(int proto_socket, const char *uuid, const char *token)
 {
-	const struct trust *trust;
-	json_raw_t jbuf = { NULL, 0 };
-	int8_t result;
-	int err;
+	int result, err;
+	json_raw_t response = { NULL, 0 };
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
-	if (!trust) {
-		hal_log_info("Permission denied!");
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
-	}
-
-	hal_log_info("rmnode: %.36s", trust->uuid);
-
-	err = proto->rmnode(proto_sock, trust->uuid, trust->token, &jbuf);
+	err = proto->rmnode(proto_socket, uuid, token, &response);
 	if (err < 0) {
 		result = KNOT_CLOUD_FAILURE;
 		hal_log_error("rmnode() failed %s (%d)", strerror(-err), -err);
@@ -316,12 +314,33 @@ static int8_t msg_unregister(int sock, int proto_sock)
 
 	result = KNOT_SUCCESS;
 
-	g_hash_table_remove(trust_list, GINT_TO_POINTER(sock));
+done:
+	if (response.data)
+		free(response.data);
+	return result;
+}
+
+static int8_t msg_unregister(int node_socket, int proto_socket)
+{
+	int8_t result;	
+	const struct trust *trust;
+
+	trust = trust_get(node_socket);
+	if (!trust) {
+		hal_log_info("Permission denied!");
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		goto done;
+	}
+
+	hal_log_info("rmnode: %.36s", trust->uuid);
+	result = proto_rmnode(proto_socket, trust->uuid, trust->token);
+	if (result != KNOT_SUCCESS)
+		goto done;
+
+	trust_remove(node_socket);
+	result = KNOT_SUCCESS;
 
 done:
-	if (jbuf.data)
-		free(jbuf.data);
-
 	return result;
 }
 
