@@ -970,18 +970,30 @@ static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
 	return list;
 }
 
+static void msg_setdata_update_header(GSList *messages)
+{
+	knot_msg_data *kmdata;
+	GSList *message;
+
+	for (message = messages; message; message = g_slist_next(message)) {
+		kmdata = message->data;
+		kmdata->hdr.type = KNOT_MSG_SET_DATA;
+		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
+							sizeof(kmdata->payload);
+	}
+}
+
 /*
  * Includes the proper header in the setdata messages and returns a list with
  * all the sensor data that will be sent to the thing.
  */
-static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result)
+static GSList *msg_setdata(int node_socket, json_raw_t device_message,
+	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *list;
-	GSList *tmp;
-	knot_msg_data *kmdata;
+	GSList *messages;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -989,18 +1001,11 @@ static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result)
 	}
 	*result = KNOT_SUCCESS;
 
-	list = parse_device_setdata(json.data);
+	messages = parse_device_setdata(device_message.data);
+	msg_setdata_update_header(messages);
 
-	for (tmp = list; tmp; tmp = g_slist_next(tmp)) {
-		kmdata = tmp->data;
-		kmdata->hdr.type = KNOT_MSG_SET_DATA;
-		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
-							sizeof(kmdata->payload);
-	}
-
-	return list;
+	return messages;
 }
-
 
 /*
  * Returns a list of all the configs that changed compared to the stored in
@@ -1924,110 +1929,63 @@ done:
  * Works like msg_data() (copy & paste), but removes the received info from
  * the 'devices' database.
  */
-static int8_t msg_setdata_resp(int sock, int proto_sock,
+static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 					const knot_msg_data *kmdata)
 {
+	int8_t result;
+	int err;
+	uint8_t sensor_id;
+	const struct trust *trust;
+	const knot_msg_schema *schema;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
 	 */
 	const knot_data *kdata = &(kmdata->payload);
-	struct json_object *jobj;
-	const struct trust *trust;
-	const knot_msg_schema *schema;
-	GSList *list;
-	json_raw_t json;
-	const char *jobjstr;
-	/* INT_MAX 2147483647 */
-	char str[12];
-	double doubleval;
-	uint8_t sensor_id;
-	int len, err;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		goto done;
 	}
 
 	sensor_id = kmdata->sensor_id;
-
-	list = g_slist_find_custom(trust->schema, GUINT_TO_POINTER(sensor_id),
-								sensor_id_cmp);
-	if (!list) {
+	schema = trust_get_sensor_schema(trust, sensor_id);
+	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
-		return KNOT_INVALID_DATA;
+		result = KNOT_INVALID_DATA;
+		goto done;
 	}
-
-	schema = list->data;
 
 	err = knot_schema_is_valid(schema->values.type_id,
 				schema->values.value_type, schema->values.unit);
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
-		return KNOT_INVALID_DATA;
+		result = KNOT_INVALID_DATA;
+		goto done;
 	}
 
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 				schema->values.unit, schema->values.value_type);
 
 	/* Fetches the 'devices' db */
-	update_device_setdata(proto_sock, trust->uuid, trust->token,
+	update_device_setdata(proto_socket, trust->uuid, trust->token,
 								sensor_id);
 
-	jobj = json_object_new_object();
-	json_object_object_add(jobj, "sensor_id",
-						json_object_new_int(sensor_id));
-
-	switch (schema->values.value_type) {
-	case KNOT_VALUE_TYPE_INT:
-		json_object_object_add(jobj, "value",
-				json_object_new_int(kdata->values.val_i.value));
-		break;
-	case KNOT_VALUE_TYPE_FLOAT:
-
-		/* FIXME: precision */
-		len = sprintf(str, "%d", kdata->values.val_f.value_dec);
-
-		doubleval = kdata->values.val_f.multiplier *
-			(kdata->values.val_f.value_int +
-			(kdata->values.val_f.value_dec / pow(10, len)));
-
-		json_object_object_add(jobj, "value",
-					json_object_new_double(doubleval));
-		break;
-	case KNOT_VALUE_TYPE_BOOL:
-		json_object_object_add(jobj, "value",
-				json_object_new_boolean(kdata->values.val_b));
-		break;
-	case KNOT_VALUE_TYPE_RAW:
-		break;
-	default:
-		json_object_put(jobj);
-		return KNOT_INVALID_DATA;
-	}
-
-	jobjstr = json_object_to_json_string(jobj);
-
-	memset(&json, 0, sizeof(json));
-	err = proto->data(proto_sock, trust->uuid, trust->token,
-							jobjstr, &json);
-	if (json.data)
-		free(json.data);
-
-	json_object_put(jobj);
-
-	if (err < 0) {
-		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
-		return KNOT_CLOUD_FAILURE;
-	}
+	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
+		schema->values.value_type, kdata);
+	if (result != KNOT_SUCCESS)
+		goto done;
 
 	hal_log_info("THING %s updated data for sensor %d", trust->uuid,
 								sensor_id);
+	result = KNOT_SUCCESS;
 
-	return KNOT_SUCCESS;
+done:
+	return result;
 }
 
 
