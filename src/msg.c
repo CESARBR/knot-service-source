@@ -109,28 +109,30 @@ static int fw_push(int sock, knot_msg *kmsg);
  * messages. It is called from the protocol that is used to communicate with
  * the cloud (e.g. http, websocket).
  */
-static void on_device_changed(json_raw_t json, void *user_data)
+static void on_device_changed(json_raw_t device_message, void *user_data)
 {
 	const struct proto_watch *watch = user_data;
-	int sock;
+	int node_socket;
 	ssize_t result;
-	GSList *list;
-	GSList *tmp;
+	GSList *config_messages, *setdata_messages, *getdata_messages;
+	GSList *messages = NULL;
 
-	sock = g_io_channel_unix_get_fd(watch->node_io);
+	node_socket = g_io_channel_unix_get_fd(watch->node_io);
+	config_messages = msg_config(node_socket, device_message, &result);
+	setdata_messages = msg_setdata(node_socket, device_message, &result);
+	getdata_messages = msg_getdata(node_socket, device_message, &result);
 
-	list = msg_config(sock, json, &result);
-	list = g_slist_concat(list, msg_setdata(sock, json, &result));
-	list = g_slist_concat(list, msg_getdata(sock, json, &result));
+	messages = g_slist_concat(messages, config_messages);
+	messages = g_slist_concat(messages, setdata_messages);
+	messages = g_slist_concat(messages, getdata_messages);
 
-	tmp = list;
-	while (tmp) {
-		result = fw_push(sock, tmp->data);
+	while (messages) {
+		result = fw_push(node_socket, messages->data);
 		if (result)
 			hal_log_error("KNOT SEND ERROR");
-		tmp = g_slist_next(tmp);
+		messages = g_slist_next(messages);
 	}
-	g_slist_free_full(list, g_free);
+	g_slist_free_full(messages, g_free);
 }
 
 static struct proto_watch *add_device_watch(int proto_socket, char *uuid,
@@ -940,18 +942,29 @@ done:
 	return NULL;
 }
 
+static void msg_getdata_update_header(GSList *messages)
+{
+	knot_msg_item *kmitem;
+	GSList *message;
+
+	for (message = messages; message; message = g_slist_next(message)) {
+		kmitem = message->data;
+		kmitem->hdr.type = KNOT_MSG_GET_DATA;
+		kmitem->hdr.payload_len = sizeof(kmitem->sensor_id);
+	}
+}
+
 /*
  * Includes the proper header in the getdata messages and returns a list with
  * all the sensor from which the data is requested.
  */
-static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
+static GSList *msg_getdata(int node_socket, json_raw_t device_message,
+	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *list;
-	GSList *tmp;
-	knot_msg_item *kmitem;
+	GSList *messages;
 
-	trust = g_hash_table_lookup(trust_list, GINT_TO_POINTER(sock));
+	trust = trust_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -959,15 +972,10 @@ static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result)
 	}
 	*result = KNOT_SUCCESS;
 
-	list = parse_device_getdata(json.data);
+	messages = parse_device_getdata(device_message.data);
+	msg_getdata_update_header(messages);
 
-	for (tmp = list; tmp; tmp = g_slist_next(tmp)) {
-		kmitem = tmp->data;
-		kmitem->hdr.type = KNOT_MSG_GET_DATA;
-		kmitem->hdr.payload_len = sizeof(kmitem->sensor_id);
-	}
-
-	return list;
+	return messages;
 }
 
 static void msg_setdata_update_header(GSList *messages)
