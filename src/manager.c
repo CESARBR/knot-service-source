@@ -33,8 +33,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include <glib.h>
-
 #include <knot_protocol.h>
 
 #include <hal/linux_log.h>
