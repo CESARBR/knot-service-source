@@ -36,7 +36,7 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 
 #include <json-c/json.h>
 
@@ -68,6 +68,8 @@ static unsigned int host_port;
 static char *host_uri;
 static char *device_uri;
 static char *data_uri;
+static struct l_hashmap *timeouts = NULL;
+static unsigned int next_timeout_id = 1;
 
 /* Struct used to fetch data from cloud and send to THING */
 struct to_fetch {
@@ -78,6 +80,27 @@ struct to_fetch {
 	void *user_data;
 	void (*proto_watch_destroy_cb) (void *);
 };
+
+/* Wrappers to ELL's timeout API that returns/removes a timeout by an ID */
+static unsigned int create_timeout(unsigned int seconds,
+	l_timeout_notify_cb_t callback, void *user_data,
+	l_timeout_destroy_cb_t destroy)
+{
+	unsigned int id = next_timeout_id++;
+	struct l_timeout *timeout = l_timeout_create(seconds, callback, user_data,
+		destroy);
+	l_hashmap_insert(timeouts, L_UINT_TO_PTR(id), timeout);
+
+	return id;
+}
+
+static void remove_timeout(unsigned int id)
+{
+	struct l_timeout *timeout = l_hashmap_remove(timeouts, L_UINT_TO_PTR(id));
+	if (!timeout)
+		return;
+	l_timeout_remove(timeout);
+}
 
 static int http2errno(long ehttp)
 {
@@ -410,7 +433,6 @@ static int http_data(int sock, const char *uuid, const char *token,
 
 static void http_close(int sock)
 {
-
 }
 
 static int http_probe(const char *host, unsigned int port)
@@ -423,13 +445,13 @@ static int http_probe(const char *host, unsigned int port)
 	/* TODO: Add timer if it fails? */
 
 	if (host)
-		host_uri = g_strdup_printf("%s:%u", host, port);
+		host_uri = l_strdup_printf("%s:%u", host, port);
 	else
-		host_uri = g_strdup_printf("%s:%u", DEFAULT_SERVER_URI, port);
+		host_uri = l_strdup_printf("%s:%u", DEFAULT_SERVER_URI, port);
 
 	host_port = port;
-	device_uri = g_strdup_printf("%s/devices", host_uri);
-	data_uri = g_strdup_printf("%s/data", host_uri);
+	device_uri = l_strdup_printf("%s/devices", host_uri);
+	data_uri = l_strdup_printf("%s/data", host_uri);
 
 	/*
 	 * TODO: gethostbyname() is obslote. Need to change it.
@@ -451,14 +473,19 @@ static int http_probe(const char *host, unsigned int port)
 
 	hal_log_info("Meshblu IP: %s", inet_ntoa(host_addr));
 
+	timeouts = l_hashmap_new();
+
 	return 0;
 }
 
 static void http_remove(void)
 {
-	g_free(host_uri);
-	g_free(device_uri);
-	g_free(data_uri);
+	if (timeouts)
+		l_hashmap_destroy(timeouts,
+			(l_hashmap_destroy_func_t) l_timeout_remove);
+	l_free(host_uri);
+	l_free(device_uri);
+	l_free(data_uri);
 }
 
 static int http_setdata(int sock, const char *uuid, const char *token,
@@ -507,7 +534,7 @@ static int http_fetch(int sock, const char *uuid, const char *token,
  * Gets the data from the device with the passed uuid and token and sends it to
  * msg.c to parse and then send to the THING if necessary
  */
-static gboolean proto_poll(gpointer user_data)
+static void proto_poll(struct l_timeout *timeout, void *user_data)
 {
 	struct to_fetch *data = user_data;
 	int result;
@@ -522,36 +549,27 @@ static gboolean proto_poll(gpointer user_data)
 	 */
 	if (result) {
 		hal_log_error("signin(): %s(%d)", strerror(-result), -result);
-		return TRUE;
+		return;
 	}
 
 	data->proto_watch_cb(json, data->user_data);
 
 	free(json.data);
-
-	return TRUE;
 }
 
-static void on_proto_poll_removed(gpointer user_data)
+static void on_proto_poll_destroyed(void *user_data)
 {
 	struct to_fetch *fetch_data = user_data;
 
 	if (fetch_data->proto_watch_destroy_cb)
 		fetch_data->proto_watch_destroy_cb(fetch_data->user_data);
-	g_free(fetch_data);
+	l_free(fetch_data);
 }
 
-static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
-	gpointer user_data)
+static void on_proto_destroyed(void *user_data)
 {
-	/* Just remove the watch */
-	return FALSE;
-}
-
-static void on_proto_watch_removed(gpointer user_data)
-{
-	gint timeout_watch_id = GPOINTER_TO_UINT(user_data);
-	g_source_remove(timeout_watch_id);
+	unsigned int timeout_watch_id = L_PTR_TO_UINT(user_data);
+	remove_timeout(timeout_watch_id);
 }
 
 /*
@@ -561,11 +579,11 @@ static unsigned int http_async(int proto_sock, const char *uuid,
 	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
 	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
-	unsigned int watch_id, timeout_watch_id;
+	unsigned int timeout_id;
 	struct to_fetch *fetch_data;
-	GIOChannel *proto_io;
+	struct l_io *proto_io;
 
-	fetch_data = g_new0(struct to_fetch, 1);
+	fetch_data = l_new(struct to_fetch, 1);
 	memcpy(fetch_data->uuid, uuid, MESHBLU_UUID_SIZE+1);
 	memcpy(fetch_data->token, token, MESHBLU_TOKEN_SIZE+1);
 	fetch_data->proto_sock = proto_sock;
@@ -573,25 +591,20 @@ static unsigned int http_async(int proto_sock, const char *uuid,
 	fetch_data->user_data = user_data;
 	fetch_data->proto_watch_destroy_cb = proto_watch_destroy_cb;
 
-	timeout_watch_id = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 10,
-		proto_poll, fetch_data,
-		on_proto_poll_removed);
+	timeout_id = create_timeout(10, proto_poll, fetch_data,
+		on_proto_poll_destroyed);
 
-	proto_io = g_io_channel_unix_new(fetch_data->proto_sock);
-	watch_id = g_io_add_watch_full(proto_io,
-		G_PRIORITY_DEFAULT,
-		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-		on_proto_disconnected,
-		GUINT_TO_POINTER(timeout_watch_id),
-		on_proto_watch_removed);
-	g_io_channel_unref(proto_io);
+	proto_io = l_io_new(fetch_data->proto_sock);
+	l_io_set_disconnect_handler(proto_io, NULL,
+		L_UINT_TO_PTR(timeout_id), on_proto_destroyed);
 
-	return watch_id;
+	return L_PTR_TO_UINT(proto_io);
 }
 
-static void http_async_stop(int proto_sock, unsigned int watch_id)
+static void http_async_stop(int sock, unsigned int watch_id)
 {
-	g_source_remove(watch_id);
+	struct l_io *proto_io = L_UINT_TO_PTR(watch_id);
+	l_io_destroy(proto_io);
 }
 
 struct proto_ops proto_http = {
