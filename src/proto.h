@@ -61,9 +61,9 @@ struct proto_ops {
 	 * Watch that polls or monitors the cloud to check if "CONFIG" changed
 	 * or "SET DATA" or "GET DATA".
 	 */
-	unsigned int (*async) (int proto_sock, const char *uuid,
-				const char *token, void (*proto_watch_cb)
-				(json_raw_t, void *), void *user_data);
+	unsigned int (*async) (int proto_sock, const char *uuid, const char *token,
+		void (*proto_watch_cb) (json_raw_t, void *), void *user_data,
+		void (*proto_watch_destroy_cb) (void *));
 };
 
 int proto_start(const struct settings *settings, struct proto_ops **proto_ops);

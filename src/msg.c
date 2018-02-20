@@ -135,26 +135,23 @@ static void on_device_changed(json_raw_t device_message, void *user_data)
 	g_slist_free_full(messages, g_free);
 }
 
-static struct proto_watch *add_device_watch(int proto_socket, char *uuid,
+static void on_device_watch_destroyed(void *user_data)
+{
+	struct proto_watch *proto_watch = user_data;
+
+	g_io_channel_unref(proto_watch->node_io);
+	g_free(proto_watch);
+}
+
+static void add_device_watch(int proto_socket, char *uuid,
 	char *token, GIOChannel *node_channel)
 {
 	struct proto_watch *proto_watch;
 
 	proto_watch = g_new0(struct proto_watch, 1);
 	proto_watch->id = proto->async(proto_socket, uuid, token, on_device_changed,
-		proto_watch);
+		proto_watch, on_device_watch_destroyed);
 	proto_watch->node_io = g_io_channel_ref(node_channel);
-
-	return proto_watch;
-}
-
-static void remove_device_watch(struct proto_watch *proto_watch)
-{
-	if (proto_watch->id > 0)
-		g_source_remove(proto_watch->id);
-
-	g_io_channel_unref(proto_watch->node_io);
-	g_free(proto_watch);
 }
 
 static void config_free(gpointer mem)
@@ -248,31 +245,11 @@ static GIOChannel *create_proto_channel(int proto_socket)
 	return g_io_channel_unix_new(proto_socket);
 }
 
-static gboolean on_proto_channel_disconnected(GIOChannel *channel,
-	GIOCondition cond, gpointer user_data)
-{
-	struct proto_watch *proto_watch = (struct proto_watch *)user_data;
-
-	remove_device_watch(proto_watch);
-
-	return FALSE;
-}
-
-static void add_proto_channel_watch(GIOChannel *channel,
-	struct proto_watch *proto_watch)
-{
-	g_io_add_watch(channel,
-		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-		on_proto_channel_disconnected,
-		proto_watch);
-}
-
 static void trust_create(int node_socket, int proto_socket, char *uuid,
 	char *token, uint64_t device_id, pid_t pid, bool rollback,
 	GSList *schema, GSList *config)
 {
 	struct trust *trust;
-	struct proto_watch *proto_watch;
 	GIOChannel *node_channel;
 
 	trust = g_new0(struct trust, 1);
@@ -283,6 +260,7 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	trust->rollback = rollback;
 	trust->schema = schema;
 	trust->config = config;
+	trust->proto_io = create_proto_channel(proto_socket);
 
 	g_hash_table_replace(trust_list, GINT_TO_POINTER(node_socket),
 							trust_ref(trust));
@@ -291,10 +269,8 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	node_channel = create_node_channel(node_socket);
 	add_node_channel_watch(node_channel, trust);
 
-	/* Add a watch to remove source when cloud disconnects */
-	proto_watch = add_device_watch(proto_socket, uuid, token, node_channel);
-	trust->proto_io = create_proto_channel(proto_socket);
-	add_proto_channel_watch(trust->proto_io, proto_watch);
+	/* Add watch to device changes in the cloud */
+	add_device_watch(proto_socket, uuid, token, node_channel);
 }
 
 static int sensor_id_cmp(gconstpointer a, gconstpointer b)
