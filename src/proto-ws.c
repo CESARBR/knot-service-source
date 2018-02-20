@@ -25,12 +25,13 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <string.h>
 
 #include <libwebsockets.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 
 #include <json-c/json.h>
 
@@ -54,16 +55,17 @@
 #define MESSAGE_PREFIX		42
 
 static struct lws_context *context;
-static GHashTable *wstable;
-static gboolean got_response = FALSE;
-static gboolean connection_error = FALSE;
-static gboolean connected = FALSE;
-static gboolean client_connection_error = FALSE;
-static gboolean ready = FALSE;
+static struct l_timeout *timeout = NULL;
+static struct l_hashmap *wstable = NULL;
+static bool got_response = false;
+static bool connection_error = false;
+static bool connected = false;
+static bool client_connection_error = false;
+static bool ready = false;
 static char *host_address = "localhost";
 static int host_port = 3000;
-static GSList *wsis = NULL;
-static gint conn_index = 0;
+static struct l_queue *wsis = NULL;
+static int conn_index = 0;
 
 /* Struct used to fetch data from cloud and send to THING */
 struct to_fetch {
@@ -74,7 +76,7 @@ struct to_fetch {
 };
 
 struct per_session_data_ws {
-	gint index;
+	int index;
 	/*
 	 * This buffer MUST have LWS_PRE bytes valid BEFORE the pointer. this
 	 * is defined in the lws documentation,
@@ -106,14 +108,25 @@ struct handshake_data {
 	int pingTimeout;
 };
 
-static struct handshake_data *h_data;
+static struct handshake_data *h_data = NULL;
 static struct per_session_data_ws *psd;
 
-static void send_ping(gpointer key, gpointer value, gpointer user_data)
+static void *queue_at(struct l_queue *queue, unsigned int index)
+{
+	unsigned int i = 0;
+	const struct l_queue_entry *current = l_queue_get_entries(queue);
+	while (current && i < index) {
+		current = current->next;
+		i++;
+	}
+
+	return current ? current->data : NULL;
+}
+
+static void send_ping(const void *key, void *value, void *user_data)
 {
 	struct timeval *timenow = user_data;
 	struct per_session_data_ws *p;
-	GSList *entry;
 	struct lws *ws;
 
 	p = (struct per_session_data_ws *) value;
@@ -124,24 +137,21 @@ static void send_ping(gpointer key, gpointer value, gpointer user_data)
 		p->len = snprintf((char *) p->buffer + LWS_PRE,
 						MAX_PAYLOAD, "%d", EIO_PING);
 
-		entry = g_slist_nth(wsis, p->index);
-		ws = entry->data;
+		ws = queue_at(wsis, p->index);
 
 		lws_callback_on_writable(ws);
 		lws_service(context, SERVICE_TIMEOUT);
 	}
 }
 
-static gboolean timeout_ws(gpointer user_data)
+static void timeout_ws(struct l_timeout *timeout, void *user_data)
 {
 	struct timeval timenow;
 
 	gettimeofday(&timenow, NULL);
 	lws_service(context, SERVICE_TIMEOUT);
 	/* check if some socket needs to send ping */
-	g_hash_table_foreach(wstable, send_ping, &timenow);
-
-	return TRUE;
+	l_hashmap_foreach(wstable, send_ping, &timenow);
 }
 
 static int handle_response(json_raw_t *json)
@@ -204,7 +214,7 @@ static void parse_handshake_data(const char *json_str)
 	if (!json_object_object_get_ex(jobj, "pingTimeout", &jtimeout))
 		goto done;
 
-	h_data = g_new0(struct handshake_data, 1);
+	h_data = l_new(struct handshake_data, 1);
 
 	h_data->sid = json_object_get_string(jsid);
 	h_data->pingInterval = json_object_get_int(jinterval);
@@ -212,13 +222,15 @@ static void parse_handshake_data(const char *json_str)
 
 	/* TODO: Send ping every h_data.pingInterval; */
 done:
-	g_free(h_data);
+	if (h_data) {
+		l_free(h_data);
+		h_data = NULL;
+	}
 	json_object_put(jobj);
 }
 
 static void ws_close(int sock)
 {
-	GSList *entry;
 	struct lws *ws;
 
 	/*
@@ -226,24 +238,23 @@ static void ws_close(int sock)
 	 * find its alloted resources at the 'wstable' and 'wsis' list
 	 * and free them.
 	 */
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return;
 
-	entry = g_slist_nth(wsis, psd->index);
-	ws = entry->data;
+	ws = queue_at(wsis, psd->index);
 	lws_callback_on_writable(ws);
 	lws_service(context, SERVICE_TIMEOUT);
 
-	if (g_slist_remove(wsis, entry) == NULL)
+	if (!l_queue_remove(wsis, ws))
 		hal_log_error("Removing wsi: no wsi found for sock %d", sock);
 
-	if (!g_hash_table_remove(wstable, GINT_TO_POINTER(sock))) {
+	if (!l_hashmap_remove(wstable, L_INT_TO_PTR(sock))) {
 		hal_log_error("Removing key: sock %d not found!", sock);
 		return;
 	}
-	g_free(psd->json);
-	g_free(psd);
+	l_free(psd->json);
+	l_free(psd);
 }
 
 static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
@@ -251,9 +262,9 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	int err;
 	json_object *jobj, *jarray;
 	const char *jobjstring;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -266,8 +277,8 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	json_object_array_add(jarray, jobj);
 	jobjstring = json_object_to_json_string(jarray);
 
-	entry = g_slist_nth(wsis, psd->index);
-	if (entry->data == NULL) {
+	ws = queue_at(wsis, psd->index);
+	if (ws == NULL) {
 		err = -EBADF;
 		hal_log_error("Not found");
 		goto done;
@@ -287,13 +298,13 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	 * wasn't designed to be completely asynchronous, the operations on
 	 * msg.c expects a blocking behavior, so this while forces it. Every
 	 * message received will trigger a LWS_CALLBACK_CLIENT_RECEIVE. Once
-	 * the server responds, the got_response flag will be set to TRUE and
+	 * the server responds, the got_response flag will be set to true and
 	 * we leave the loop. Since all messages are serialized by the unix
 	 * socket between radio daemon (eg: nrfd, lorad) and knotd, there is no
 	 * problem in using a global 'per session data (psd)' and flags, they
 	 * won't be overwritten.
 	 */
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 	hal_log_info("WS JSON TX: %s", jobjstring);
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
@@ -305,8 +316,8 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	if (err < 0)
 		goto done;
 done:
-	connection_error = FALSE;
-	got_response = FALSE;
+	connection_error = false;
+	got_response = false;
 
 	json_object_put(jarray);
 
@@ -319,9 +330,9 @@ static int ws_device(int sock, const char *uuid,
 	int err;
 	const char *jobjstring;
 	json_object *jobj, *jarray;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -344,9 +355,8 @@ static int ws_device(int sock, const char *uuid,
 
 	hal_log_info("WS JSON TX %s", jobjstring);
 
-	entry = g_slist_nth(wsis, psd->index);
-
-	if (entry->data == NULL) {
+	ws = queue_at(wsis, psd->index);
+	if (ws == NULL) {
 		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
@@ -354,7 +364,7 @@ static int ws_device(int sock, const char *uuid,
 
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 						OPERATION_PREFIX, jobjstring);
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
@@ -367,8 +377,8 @@ static int ws_device(int sock, const char *uuid,
 	err = handle_response(json);
 
 done:
-	got_response = FALSE;
-	connection_error = FALSE;
+	got_response = false;
+	connection_error = false;
 
 	json_object_put(jarray);
 
@@ -381,9 +391,9 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	int err;
 	const char *jobjstring;
 	json_object *jobj, *jarray;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -407,9 +417,9 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	hal_log_info("WS TX JSON %s", jobjstring);
 
-	entry = g_slist_nth(wsis, psd->index);
+	ws = queue_at(wsis, psd->index);
 
-	if (entry->data == NULL) {
+	if (ws == NULL) {
 		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
@@ -417,7 +427,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 					OPERATION_PREFIX, jobjstring);
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 
 	/* Keep serving context until server responds or an error occurs */
 	while (!ready && !connection_error)
@@ -432,8 +442,8 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 	err = ws_device(sock, uuid, token, json);
 
 done:
-	ready = FALSE;
-	connection_error = FALSE;
+	ready = false;
+	connection_error = false;
 
 	json_object_put(jarray);
 
@@ -446,9 +456,9 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	int err;
 	const char *jobjstring;
 	json_object *jobj, *jarray;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -472,9 +482,8 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 
 	hal_log_info("WS JSON TX %s", jobjstring);
 
-	entry = g_slist_nth(wsis, psd->index);
-
-	if (entry->data == NULL) {
+	ws = queue_at(wsis, psd->index);
+	if (ws == NULL) {
 		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
@@ -482,7 +491,7 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 
 	psd->len = snprintf((char *) psd->buffer + LWS_PRE, MAX_PAYLOAD,
 					"%d%s", OPERATION_PREFIX, jobjstring);
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 
 	/*
 	 * Execution is blocked until server responds or and error occurs
@@ -499,8 +508,8 @@ static int ws_rmnode(int sock, const char *uuid, const char *token,
 	if (err < 0)
 		goto done;
 done:
-	got_response = FALSE;
-	connection_error = FALSE;
+	got_response = false;
+	connection_error = false;
 
 	json_object_put(jarray);
 
@@ -513,9 +522,9 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	int err;
 	struct json_object *jobj, *jarray;
 	const char *jobjstr;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -531,15 +540,15 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	json_object_array_add(jarray, jobj);
 	jobjstr = json_object_to_json_string(jarray);
 
-	entry = g_slist_nth(wsis, psd->index);
-	if (entry->data == NULL) {
+	ws = queue_at(wsis, psd->index);
+	if (ws == NULL) {
 		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 						MESSAGE_PREFIX, jobjstr);
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 
 	hal_log_info("WS JSON TX: %s", jobjstr);
 
@@ -553,8 +562,8 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	err = 0;
 
 done:
-	got_response = FALSE;
-	connection_error = FALSE;
+	got_response = false;
+	connection_error = false;
 	json_object_put(jarray);
 
 	return err;
@@ -566,9 +575,9 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	int err;
 	struct json_object *jobj, *jmsg;
 	const char *jobjstr;
-	GSList *entry;
+	struct lws *ws;
 
-	psd = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	psd = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!psd)
 		return -EINVAL;
 
@@ -583,23 +592,23 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	json_object_array_add(jmsg, jobj);
 	jobjstr = json_object_to_json_string(jmsg);
 
-	entry = g_slist_nth(wsis, psd->index);
-	if (entry->data == NULL) {
+	ws = queue_at(wsis, psd->index);
+	if (ws == NULL) {
 		hal_log_error("Not found");
 		err = -EBADF;
 		goto done;
 	}
 	psd->len = snprintf((char *)&psd->buffer + LWS_PRE, MAX_PAYLOAD, "%d%s",
 						OPERATION_PREFIX, jobjstr);
-	lws_callback_on_writable(entry->data);
+	lws_callback_on_writable(ws);
 	err = 0;
 
 	while (!got_response && !connection_error)
 		lws_service(context, SERVICE_TIMEOUT);
 
 done:
-	got_response = FALSE;
-	connection_error = FALSE;
+	got_response = false;
+	connection_error = false;
 
 	json_object_put(jmsg);
 
@@ -640,13 +649,13 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 	case EIO_MSG:
 		hal_log_info("WS JSON_RX %d = %s", packet_type, resp);
 		if (!strcmp(resp, IDENTIFY_REQUEST))
-			connected = TRUE;
+			connected = true;
 		else if (!strncmp(resp, READY_RESPONSE, READY_RESPONSE_LEN))
-			ready = TRUE;
+			ready = true;
 		else if (!strncmp(resp, NOT_READY_RESPONSE,
 						NOT_READY_RESPONSE_LEN)) {
-			connection_error = TRUE;
-			client_connection_error = TRUE;
+			connection_error = true;
+			client_connection_error = true;
 		/*
 		 * Every time a device is updated a CONFIG_MSG is sent to all
 		 * devices that subscribed for the updated device's uuid
@@ -656,8 +665,8 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 		 * the message to the thing.
 		 */
 		} else if (!strncmp(resp, CONFIG_MSG, CONFIG_MSG_LEN)) {
-			session_data = g_hash_table_lookup(wstable,
-				GINT_TO_POINTER(lws_get_socket_fd(wsi)));
+			session_data = l_hashmap_lookup(wstable,
+				L_INT_TO_PTR(lws_get_socket_fd(wsi)));
 
 			if (!session_data)
 				break;
@@ -693,9 +702,9 @@ static void handle_cloud_response(const char *resp, struct lws *wsi)
 			free(json.data);
 		} else {
 			if (psd->json)
-				g_free(psd->json);
-			psd->json = g_strdup(resp);
-			got_response = TRUE;
+				l_free(psd->json);
+			psd->json = l_strdup(resp);
+			got_response = true;
 		}
 		break;
 	default:
@@ -714,7 +723,7 @@ static int callback_lws_http(struct lws *wsi,
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		hal_log_info("LWS_CALLBACK_CLIENT_CONNECTION_ERROR");
-		client_connection_error = TRUE;
+		client_connection_error = true;
 		break;
 	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
 		break;
@@ -724,7 +733,7 @@ static int callback_lws_http(struct lws *wsi,
 	case LWS_CALLBACK_CLOSED:
 		hal_log_info("LWS_CALLBACK_CLOSED FOR WSI %p", wsi);
 		wsi = NULL;
-		/* FIXME: Needed? connection_error = TRUE; */
+		/* FIXME: Needed? connection_error = true; */
 		break;
 	case LWS_CALLBACK_CLOSED_HTTP:
 		break;
@@ -741,8 +750,8 @@ static int callback_lws_http(struct lws *wsi,
 
 		gettimeofday(&psd->interval, NULL);
 
-		psd = g_hash_table_lookup(wstable,
-				GINT_TO_POINTER(lws_get_socket_fd(wsi)));
+		psd = l_hashmap_lookup(wstable,
+				L_INT_TO_PTR(lws_get_socket_fd(wsi)));
 
 		l = lws_write(wsi, &psd->buffer[LWS_PRE], psd->len,
 								LWS_WRITE_TEXT);
@@ -755,7 +764,7 @@ static int callback_lws_http(struct lws *wsi,
 
 		/* Enable RX when after message is successfully sent */
 		if (l < 0) {
-			connection_error = TRUE;
+			connection_error = true;
 			return -1;
 		}
 			lws_rx_flow_control(wsi, 1);
@@ -835,7 +844,7 @@ static int ws_connect(void)
 	struct lws *ws;
 	int sock;
 	static char ads_port[300];
-	gboolean use_ssl = FALSE; /* wss */
+	bool use_ssl = false; /* wss */
 
 	memset(&info, 0, sizeof(info));
 	snprintf(ads_port, sizeof(ads_port) - 1, "%s:%u", host_address,
@@ -843,7 +852,7 @@ static int ws_connect(void)
 
 	hal_log_info("Connecting to %s...", ads_port);
 
-	psd = g_try_new0(struct per_session_data_ws, 1);
+	psd = l_new(struct per_session_data_ws, 1);
 
 	info.context = context;
 	info.ssl_connection = use_ssl;
@@ -855,10 +864,10 @@ static int ws_connect(void)
 	info.ietf_version_or_minus_one = -1;
 	info.protocol = protocols[0].name;
 
-	connected = FALSE;
-	client_connection_error = FALSE;
-	connection_error = FALSE;
-	got_response = FALSE;
+	connected = false;
+	client_connection_error = false;
+	connection_error = false;
+	got_response = false;
 
 	/*
 	 * Every new connection is stored in the 'wsis' list. The client only
@@ -881,22 +890,22 @@ static int ws_connect(void)
 		lws_service(context, SERVICE_TIMEOUT);
 
 	if (client_connection_error) {
-		g_free(psd);
+		l_free(psd);
 		/* TODO: ws leaking */
 		return -ECONNREFUSED;
 	}
 
-	wsis = g_slist_append(wsis, ws);
+	l_queue_push_tail(wsis, ws);
 
 	/* Map ws to a unique int */
 	sock = lws_get_socket_fd((struct lws *) ws);
 	gettimeofday(&psd->interval, NULL);
-	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), psd);
+	l_hashmap_insert(wstable, L_INT_TO_PTR(sock), psd);
 
-	connected = FALSE;
-	client_connection_error = FALSE;
-	connection_error = FALSE;
-	got_response = FALSE;
+	connected = false;
+	client_connection_error = false;
+	connection_error = false;
+	got_response = false;
 
 	return sock;
 }
@@ -907,7 +916,7 @@ static int ws_probe(const char *host, unsigned int port)
 
 	memset(&i, 0, sizeof(i));
 
-	host_address = g_strdup(host);
+	host_address = l_strdup(host);
 	host_port = port;
 
 	i.port = CONTEXT_PORT_NO_LISTEN;
@@ -916,38 +925,34 @@ static int ws_probe(const char *host, unsigned int port)
 	i.protocols = protocols;
 	context = lws_create_context(&i);
 
-	wstable = g_hash_table_new(g_direct_hash, g_direct_equal);
+	wsis = l_queue_new();
+	wstable = l_hashmap_new();
 
 	/* FIXME: Investigate alternatives for libwebsocket_service() */
-	g_timeout_add_seconds(1, timeout_ws, NULL);
+	timeout = l_timeout_create(1, timeout_ws, NULL, NULL);
 
 	return 0;
 }
 
-static void session_data_free(gpointer key, gpointer value, gpointer user_data)
+static void session_data_free(struct per_session_data_ws *psd)
 {
-	struct per_session_data_ws *psd = value;
-
-	g_free(psd->json);
-	g_free(psd);
+	l_free(psd->json);
+	l_free(psd);
 }
 
 static void ws_remove(void)
 {
-	g_hash_table_foreach(wstable, session_data_free, NULL);
-	g_hash_table_destroy(wstable);
+	if (timeout) {
+		l_timeout_remove(timeout);
+		timeout = NULL;
+	}
+	l_queue_destroy(wsis, NULL);
+	l_hashmap_destroy(wstable, (l_hashmap_destroy_func_t) session_data_free);
 	lws_context_destroy(context);
-	g_free(host_address);
+	l_free(host_address);
 }
 
-static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
-	gpointer user_data)
-{
-	/* Just remove the watch */
-	return FALSE;
-}
-
-static void on_proto_watch_removed(gpointer user_data)
+static void on_proto_destroyed(void *user_data)
 {
 	struct to_fetch *data = user_data;
 
@@ -971,10 +976,9 @@ static unsigned int ws_async(int sock, const char *uuid,
 {
 	struct to_fetch *data;
 	struct per_session_data_ws *value;
-	GIOChannel *proto_io;
-	gint watch_id;
+	struct l_io *proto_io;
 
-	value = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
+	value = l_hashmap_lookup(wstable, L_INT_TO_PTR(sock));
 	if (!value)
 		return -EINVAL;
 
@@ -983,23 +987,18 @@ static unsigned int ws_async(int sock, const char *uuid,
 	data->user_data = user_data;
 	data->watch_destroy_cb = proto_watch_destroy_cb;
 
-	proto_io = g_io_channel_unix_new(sock);
-	watch_id = g_io_add_watch_full(proto_io,
-		G_PRIORITY_DEFAULT,
-		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
-		on_proto_disconnected,
-		data,
-		on_proto_watch_removed);
-	g_io_channel_unref(proto_io);
+	proto_io = l_io_new(sock);
+	l_io_set_disconnect_handler(proto_io, NULL, data, on_proto_destroyed);
 
-	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), value);
+	l_hashmap_insert(wstable, L_INT_TO_PTR(sock), value);
 
-	return watch_id;
+	return L_PTR_TO_UINT(proto_io);
 }
 
 static void ws_async_stop(int sock, unsigned int watch_id)
 {
-	g_source_remove(watch_id);
+	struct l_io *proto_io = L_UINT_TO_PTR(watch_id);
+	l_io_destroy(proto_io);
 }
 
 struct proto_ops proto_ws = {
