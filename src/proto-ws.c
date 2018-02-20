@@ -70,6 +70,7 @@ struct to_fetch {
 	int proto_sock;
 	void *user_data;
 	void (*watch_cb)(json_raw_t, void *);
+	void (*watch_destroy_cb) (void *);
 };
 
 struct per_session_data_ws {
@@ -939,18 +940,35 @@ static void ws_remove(void)
 	g_free(host_address);
 }
 
+static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
+	gpointer user_data)
+{
+	struct to_fetch *data = user_data;
+
+	if (data->watch_destroy_cb)
+		data->watch_destroy_cb(data->user_data);
+
+	data->watch_cb = NULL;
+	data->user_data = NULL;
+	data->watch_destroy_cb = NULL;
+
+	return FALSE;
+}
+
 /*
  * Watch or poll the cloud to changes in the device.  uuid/token are used
  * by the http protocol in order to constantly fetch specific device data
  * since websockets uses a 'subscription' mechanism there is no need to
  * store these values.
  */
-static unsigned int proto_register_watch(int proto_sock, const char *uuid,
-				const char *token, void (*proto_watch_cb)
-				(json_raw_t, void *), void *user_data)
+static unsigned int ws_async(int proto_sock, const char *uuid,
+	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
+	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
 	struct to_fetch *data;
 	struct per_session_data_ws *value;
+	GIOChannel *proto_io;
+	gint watch_id;
 
 	value = g_hash_table_lookup(wstable, GINT_TO_POINTER(proto_sock));
 	if (!value)
@@ -959,10 +977,18 @@ static unsigned int proto_register_watch(int proto_sock, const char *uuid,
 	data = &value->data;
 	data->watch_cb = proto_watch_cb;
 	data->user_data = user_data;
+	data->watch_destroy_cb = proto_watch_destroy_cb;
+
+	proto_io = g_io_channel_unix_new(proto_sock);
+	watch_id = g_io_add_watch(proto_io,
+		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+		on_proto_disconnected,
+		data);
+	g_io_channel_unref(proto_io);
 
 	g_hash_table_insert(wstable, GINT_TO_POINTER(proto_sock), value);
 
-	return 0;
+	return watch_id;
 }
 
 struct proto_ops proto_ws = {
@@ -977,6 +1003,6 @@ struct proto_ops proto_ws = {
 	.schema = ws_update,
 	.data = ws_data,
 	.fetch = ws_device,
-	.async = proto_register_watch,
+	.async = ws_async,
 	.setdata = ws_update
 };

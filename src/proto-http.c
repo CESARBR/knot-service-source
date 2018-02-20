@@ -76,17 +76,8 @@ struct to_fetch {
 	char token[MESHBLU_TOKEN_SIZE+1];	/* TOKEN + '\0' */
 	void (*proto_watch_cb)(json_raw_t, void *);
 	void *user_data;
+	void (*proto_watch_destroy_cb) (void *);
 };
-
-static gboolean http_hup_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
-{
-	struct to_fetch *fetch_watch = user_data;
-
-	g_free(fetch_watch);
-
-	return FALSE;
-}
 
 static int http2errno(long ehttp)
 {
@@ -541,12 +532,30 @@ static gboolean proto_poll(gpointer user_data)
 	return TRUE;
 }
 
+static void on_proto_poll_destroyed(gpointer user_data)
+{
+	struct to_fetch *fetch_data = user_data;
+
+	if (fetch_data->proto_watch_destroy_cb)
+		fetch_data->proto_watch_destroy_cb(fetch_data->user_data);
+	g_free(fetch_data);
+}
+
+static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
+	gpointer user_data)
+{
+	gint timeout_watch_id = GPOINTER_TO_UINT(user_data);
+	g_source_remove(timeout_watch_id);
+
+	return FALSE;
+}
+
 /*
  * Watch or poll the cloud to changes in the device.
  */
-static unsigned int proto_register_watch(int proto_sock, const char *uuid,
-				const char *token, void (*proto_watch_cb)
-				(json_raw_t, void *), void *user_data)
+static unsigned int http_async(int proto_sock, const char *uuid,
+	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
+	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
 	unsigned int gsource;
 	struct to_fetch *fetch_data;
@@ -558,12 +567,17 @@ static unsigned int proto_register_watch(int proto_sock, const char *uuid,
 	fetch_data->proto_sock = proto_sock;
 	fetch_data->proto_watch_cb = proto_watch_cb;
 	fetch_data->user_data = user_data;
+	fetch_data->proto_watch_destroy_cb = proto_watch_destroy_cb;
 
-	gsource = g_timeout_add_seconds(10, proto_poll, fetch_data);
+	gsource = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 10,
+		proto_poll, fetch_data,
+		on_proto_poll_destroyed);
 
 	proto_io = g_io_channel_unix_new(fetch_data->proto_sock);
-	g_io_add_watch(proto_io, G_IO_HUP | G_IO_NVAL | G_IO_ERR, http_hup_cb,
-			fetch_data);
+	g_io_add_watch(proto_io,
+		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+		on_proto_disconnected,
+		GUINT_TO_POINTER(gsource));
 	g_io_channel_unref(proto_io);
 
 	return gsource;
@@ -583,5 +597,5 @@ struct proto_ops proto_http = {
 	.data = http_data,
 	.fetch = http_fetch,
 	.setdata = http_setdata,
-	.async = proto_register_watch
+	.async = http_async
 };
