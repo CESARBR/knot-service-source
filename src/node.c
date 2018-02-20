@@ -21,8 +21,10 @@
 
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 
 #include <hal/linux_log.h>
 
@@ -54,7 +56,7 @@ static struct node_ops *node_ops[] = {
 	NULL
 };
 
-static GSList *accept_channel_watch_list = NULL;
+static struct l_queue *accept_channel_list = NULL;
 
 static bool is_serial(const struct node_ops *node_ops)
 {
@@ -100,17 +102,6 @@ static void stop_all_node_servers()
 		stop_node_server(node_ops[i]);
 }
 
-static GIOChannel *create_accept_channel(int server_socket)
-{
-	GIOChannel *channel;
-
-	channel = g_io_channel_unix_new(server_socket);
-	g_io_channel_set_close_on_unref(channel, TRUE);
-	g_io_channel_set_flags(channel, G_IO_FLAG_NONBLOCK, NULL);
-
-	return channel;
-}
-
 static void try_accept(struct node_ops* node_ops, int server_socket,
 	on_accepted on_accepted_cb)
 {
@@ -126,8 +117,7 @@ static void try_accept(struct node_ops* node_ops, int server_socket,
 	on_accepted_cb(node_ops, client_socket);
 }
 
-static gboolean on_accept(GIOChannel *channel, GIOCondition condition,
-	gpointer user_data)
+static bool on_accept(struct l_io *channel, void *user_data)
 {
 	struct node_ops *node_ops;
 	on_accepted on_accepted_cb;
@@ -136,71 +126,66 @@ static gboolean on_accept(GIOChannel *channel, GIOCondition condition,
 	node_ops = ((struct on_accept_data *)user_data)->node_ops;
 	on_accepted_cb = ((struct on_accept_data *)user_data)->on_accepted_cb;
 
-	if (condition & (G_IO_NVAL | G_IO_HUP | G_IO_ERR))
-		return FALSE;
-
-	server_socket = g_io_channel_unix_get_fd(channel);
+	server_socket = l_io_get_fd(channel);
 
 	try_accept(node_ops, server_socket, on_accepted_cb);
 
-	return TRUE;
+	return true;
 }
 
-static void on_accept_channel_destroyed(gpointer user_data)
+static void on_accept_channel_destroyed(void *user_data)
 {
-	g_free(user_data);
+	l_free(user_data);
 }
 
-static void add_accept_channel_watch(GIOChannel *channel,
+/*
+ * TODO: consider moving this to node-*.c
+ */
+static int set_nonblocking(int fd)
+{
+	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
+		return -errno;
+	return 0;
+}
+
+static void create_accept_channel(int server_socket,
 	struct node_ops *node_ops, on_accepted on_accepted_cb)
 {
-	guint watch_id;
-	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
+	int err;
+	struct l_io *channel;
 	struct on_accept_data *on_accept_data;
 
-	on_accept_data = g_new0(struct on_accept_data, 1);
+	channel = l_io_new(server_socket);
+	err = set_nonblocking(server_socket);
+	if (err < 0)
+		hal_log_error("Failed to change socket (%d) to non-blocking: %s(%d)",
+			server_socket, strerror(-err), -err);
+	l_io_set_close_on_destroy(channel, true);
+
+	on_accept_data = l_new(struct on_accept_data, 1);
 	on_accept_data->node_ops = node_ops;
 	on_accept_data->on_accepted_cb = on_accepted_cb;
 
-	watch_id = g_io_add_watch_full(channel, G_PRIORITY_DEFAULT, cond,
-		on_accept, on_accept_data, on_accept_channel_destroyed);
-	g_io_channel_unref(channel);
+	l_io_set_read_handler(channel, on_accept, on_accept_data,
+		on_accept_channel_destroyed);
 
-	accept_channel_watch_list = g_slist_prepend(accept_channel_watch_list,
-		GUINT_TO_POINTER(watch_id));
+	l_queue_push_tail(accept_channel_list, channel);
 
-	hal_log_info("node_ops(%p): (%s) watch: %d", node_ops,
-					node_ops->name, watch_id);
+	hal_log_info("node_ops(%p): (%s) created accept channel", node_ops,
+		node_ops->name);
 }
 
-static void remove_accept_channel_watch(guint watch_id)
+static void destroy_all_accept_channels()
 {
-	g_source_remove(watch_id);
-}
-
-static void remove_all_accept_channel_watches()
-{
-	GSList *list;
-	guint watch_id;
-
-	list = accept_channel_watch_list;
-	while (list) {
-		watch_id = GPOINTER_TO_UINT(list->data);
-		remove_accept_channel_watch(watch_id);
-
-		hal_log_info("Removed watch: %d", watch_id);
-
-		list = g_slist_next(list);
-	}
-
-	g_slist_free(accept_channel_watch_list);
+	l_queue_destroy(accept_channel_list, (l_queue_destroy_func_t) l_io_destroy);
 }
 
 int node_start(const char *tty, on_accepted on_accepted_cb)
 {
 	int i;
 	int server_socket;
-	GIOChannel *accept_channel;
+
+	accept_channel_list = l_queue_new();
 
 	/*
 	 * Probing all access technologies: nRF24L01, BTLE, TCP, Unix
@@ -214,8 +199,7 @@ int node_start(const char *tty, on_accepted on_accepted_cb)
 		if (server_socket < 0)
 			continue;
 
-		accept_channel = create_accept_channel(server_socket);
-		add_accept_channel_watch(accept_channel, node_ops[i], on_accepted_cb);
+		create_accept_channel(server_socket, node_ops[i], on_accepted_cb);
 	}
 
 	return 0;
@@ -224,5 +208,5 @@ int node_start(const char *tty, on_accepted on_accepted_cb)
 void node_stop(void)
 {
 	stop_all_node_servers();
-	remove_all_accept_channel_watches();
+	destroy_all_accept_channels();
 }
