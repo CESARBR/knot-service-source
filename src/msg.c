@@ -29,56 +29,60 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <errno.h>
-
-#include <sys/socket.h>
-
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <glib.h>
+#include <unistd.h>
+#include <sys/socket.h>
+
+#include <ell/ell.h>
 
 #include <json-c/json.h>
 
 #include <knot_types.h>
 #include <knot_protocol.h>
-
-#include <unistd.h>
-
 #include <hal/linux_log.h>
 
 #include "proto.h"
 #include "msg.h"
 
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
 struct config {
 	knot_msg_config kmcfg;		/* knot_message_config from cloud */
 	char *hash;			/* Checksum of kmcfg */
-	gboolean confirmed;
+	bool confirmed;
 };
 
+struct proto_watch;
+
 struct trust {
-	gint refs;
+	int refs;
 	pid_t	pid;			/* Peer PID */
 	uint64_t id;			/* Session identification */
-	gboolean rollback;		/* Remove from cloud if TRUE */
+	bool rollback;		/* Remove from cloud if true */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	GSList *schema;			/* knot_schema accepted by cloud */
-	GSList *schema_tmp;		/*
+	struct l_queue *schema;			/* knot_schema accepted by cloud */
+	struct l_queue *schema_tmp;		/*
 					* knot_schema to be submitted to cloud
 					*/
-	GSList *config;			/* knot_config accepted from cloud */
+	struct l_queue *config;			/* knot_config accepted from cloud */
 	const struct proto_ops *proto_ops; /* Cloud driver */
-	GIOChannel *proto_io;		/* Cloud IO channel */
+	struct l_io *proto_io;		/* Cloud IO channel */
+	struct proto_watch *proto_watch;
 };
 
 struct proto_watch {
 	unsigned int id;
-	GIOChannel *node_io;
+	struct l_io *node_io;
+	struct trust *trust;
 };
 
 /* Maps sockets to sessions: online devices only.  */
-static GHashTable *trust_list;
+static struct l_hashmap *trust_map;
 
 /* IoT protocol: http or ws */
 static struct proto_ops *proto;
@@ -95,14 +99,77 @@ static int8_t msg_data(int sock, int proto_sock,
 static int8_t msg_auth(int sock, int proto_sock,
 	const knot_msg_authentication *kmauth);
 static int8_t msg_schema(int sock, int proto_sock,
-	const knot_msg_schema *kmsch, gboolean eof);
-static GSList *msg_config(int sock, json_raw_t json, ssize_t *result);
+	const knot_msg_schema *kmsch, bool eof);
+static struct l_queue *msg_config(int sock, json_raw_t json, ssize_t *result);
 static int8_t msg_config_resp(int sock, const knot_msg_item *rsp);
-static GSList *msg_setdata(int sock, json_raw_t json, ssize_t *result);
+static struct l_queue *msg_setdata(int sock, json_raw_t json, ssize_t *result);
 static int8_t msg_setdata_resp(int sock, int proto_sock,
 	const knot_msg_data *kmdata);
-static GSList *msg_getdata(int sock, json_raw_t json, ssize_t *result);
+static struct l_queue *msg_getdata(int sock, json_raw_t json, ssize_t *result);
 static int fw_push(int sock, knot_msg *kmsg);
+static struct trust *trust_ref(struct trust *trust);
+static void trust_unref(struct trust *trust);
+
+static void queue_concat(struct l_queue *queue, struct l_queue *with)
+{
+	struct l_queue_entry *current;
+
+	if (!queue || !with)
+		return;
+
+	current = (struct l_queue_entry *)l_queue_get_entries(with);
+	while (current) {
+		l_queue_push_tail(queue, current->data);
+		current = current->next;
+	}
+}
+
+static struct l_queue *queue_clone(struct l_queue *queue)
+{
+	struct l_queue *clone = NULL;
+
+	if (!queue)
+		goto done;
+
+	clone = l_queue_new();
+	queue_concat(clone, queue);
+
+done:
+	return clone;
+}
+
+static char *compute_checksum_for_string(enum l_checksum_type type,
+	const char *string, size_t length)
+{
+	char *result = NULL;
+	struct l_checksum *checksum;
+
+	checksum = l_checksum_new(type);
+	if (!checksum)
+		goto fail_create;
+
+	if (!l_checksum_update(checksum, string, length)) {
+		goto fail_update;
+	}
+
+	result = l_checksum_get_string(checksum);
+
+fail_update:
+	l_checksum_free(checksum);
+fail_create:
+	return result;
+}
+
+static void send_message(void *data, void *user_data)
+{
+	int result;
+	knot_msg *msg = data;
+	int node_socket = L_PTR_TO_INT(user_data);
+
+	result = fw_push(node_socket, msg);
+	if (result)
+		hal_log_error("KNOT SEND ERROR");
+}
 
 /*
  * Callback that parses the JSON for config (and in the future, send data)
@@ -114,145 +181,194 @@ static void on_device_changed(json_raw_t device_message, void *user_data)
 	const struct proto_watch *watch = user_data;
 	int node_socket;
 	ssize_t result;
-	GSList *config_messages, *setdata_messages, *getdata_messages;
-	GSList *messages = NULL;
+	struct l_queue *config_messages, *setdata_messages, *getdata_messages;
+	struct l_queue *messages = NULL;
 
-	node_socket = g_io_channel_unix_get_fd(watch->node_io);
+	node_socket = l_io_get_fd(watch->node_io);
 	config_messages = msg_config(node_socket, device_message, &result);
 	setdata_messages = msg_setdata(node_socket, device_message, &result);
 	getdata_messages = msg_getdata(node_socket, device_message, &result);
 
-	messages = g_slist_concat(messages, config_messages);
-	messages = g_slist_concat(messages, setdata_messages);
-	messages = g_slist_concat(messages, getdata_messages);
+	messages = l_queue_new();
+	queue_concat(messages, config_messages);
+	queue_concat(messages, setdata_messages);
+	queue_concat(messages, getdata_messages);
 
-	while (messages) {
-		result = fw_push(node_socket, messages->data);
-		if (result)
-			hal_log_error("KNOT SEND ERROR");
-		messages = g_slist_next(messages);
-	}
-	g_slist_free_full(messages, g_free);
+	l_queue_foreach(messages, send_message, L_INT_TO_PTR(node_socket));
+
+	/*
+	 * Message data will be free'd only when destroying messages
+	 * as it contains references to all messages. The first three
+	 * are freeing l_queue-specific resources.
+	 */
+	l_queue_destroy(config_messages, NULL);
+	l_queue_destroy(setdata_messages, NULL);
+	l_queue_destroy(getdata_messages, NULL);
+	l_queue_destroy(messages, l_free);
 }
 
 static void on_device_watch_destroyed(void *user_data)
 {
 	struct proto_watch *proto_watch = user_data;
-
-	g_io_channel_unref(proto_watch->node_io);
-	g_free(proto_watch);
+	proto_watch->trust->proto_watch = NULL;
+	trust_unref(proto_watch->trust);
+	l_free(proto_watch);
 }
 
-static void add_device_watch(int proto_socket, char *uuid,
-	char *token, GIOChannel *node_channel)
+static struct proto_watch *create_device_watch(struct trust *trust,
+	struct l_io *node_channel)
 {
 	struct proto_watch *proto_watch;
+	int proto_socket;
 
-	proto_watch = g_new0(struct proto_watch, 1);
-	proto_watch->id = proto->async(proto_socket, uuid, token, on_device_changed,
-		proto_watch, on_device_watch_destroyed);
-	proto_watch->node_io = g_io_channel_ref(node_channel);
+	proto_socket = l_io_get_fd(trust->proto_io);
+
+	proto_watch = l_new(struct proto_watch, 1);
+	proto_watch->id = proto->async(proto_socket,
+		trust->uuid,
+		trust->token,
+		on_device_changed,
+		proto_watch,
+		on_device_watch_destroyed);
+	proto_watch->node_io = node_channel;
+	/*
+	 * Retained to remove the device watch from the trust when the
+	 * watch is destroyed by the protocol driver
+	 */
+	proto_watch->trust = trust_ref(trust);
+
+	return proto_watch;
 }
 
-static void config_free(gpointer mem)
+static void remove_device_watch(struct proto_watch *proto_watch)
 {
-	struct config *cfg = mem;
+	int proto_socket;
 
-	g_free(cfg->hash);
-	g_free(cfg);
+	proto_socket = l_io_get_fd(proto_watch->trust->proto_io);
+	proto->async_stop(proto_socket, proto_watch->id);
+}
+
+static void config_free(void *data)
+{
+	struct config *cfg = data;
+
+	l_free(cfg->hash);
+	l_free(cfg);
+}
+
+static void trust_map_create()
+{
+	trust_map = l_hashmap_new();
+}
+
+static void trust_map_destroy()
+{
+	l_hashmap_destroy(trust_map, (l_hashmap_destroy_func_t) trust_unref);
+}
+
+static struct trust *trust_map_get(int id)
+{
+	return l_hashmap_lookup(trust_map, L_INT_TO_PTR(id));
+}
+
+static void trust_map_add(int id, struct trust *trust)
+{
+	l_hashmap_insert(trust_map, L_INT_TO_PTR(id), trust);
+}
+
+static void trust_map_remove(int id)
+{
+	struct trust *trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(id));
+	if (trust)
+		trust_unref(trust);
+}
+
+static void trust_map_replace(int id, struct trust *trust)
+{
+	trust_map_remove(id);
+	trust_map_add(id, trust);
+}
+
+static struct trust *trust_new()
+{
+	struct trust *trust = l_new(struct trust, 1);
+	trust->refs = 1;
+	return trust;
 }
 
 static struct trust *trust_ref(struct trust *trust)
 {
-	g_atomic_int_inc(&trust->refs);
+	atomic_fetch_add(&trust->refs, 1);
 
 	return trust;
 }
 
 static void trust_unref(struct trust *trust)
 {
-	if (!g_atomic_int_dec_and_test(&trust->refs))
+	if (atomic_fetch_sub(&trust->refs, 1) > 1)
 		return;
 
-	g_io_channel_unref(trust->proto_io);
-	g_free(trust->uuid);
-	g_free(trust->token);
-	g_slist_free_full(trust->schema, g_free);
-	g_slist_free_full(trust->schema_tmp, g_free);
-	g_slist_free_full(trust->config, config_free);
-	g_free(trust);
+	l_io_destroy(trust->proto_io);
+	l_free(trust->uuid);
+	l_free(trust->token);
+	l_queue_destroy(trust->schema, l_free);
+	l_queue_destroy(trust->schema_tmp, l_free);
+	l_queue_destroy(trust->config, config_free);
+	l_free(trust);
 }
 
-static struct trust *trust_get(int id)
-{
-	return g_hash_table_lookup(trust_list, GINT_TO_POINTER(id));
-}
-
-static void trust_remove(int id)
-{
-	g_hash_table_remove(trust_list, GINT_TO_POINTER(id));
-}
-
-static GIOChannel *create_node_channel(int node_socket)
-{
-	return g_io_channel_unix_new(node_socket);
-}
-
-static gboolean on_node_channel_disconnected(GIOChannel *channel,
-	GIOCondition cond, gpointer used_data)
+static void on_node_channel_disconnected(struct l_io *channel, void *used_data)
 {
 	struct trust *trust;
 	int node_socket, proto_socket;
 
-	node_socket = g_io_channel_unix_get_fd(channel);
+	node_socket = l_io_get_fd(channel);
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust)
-		return FALSE;
+		return;
 
 	/* Zombie device: registration not complete */
 	if (trust->rollback) {
-		proto_socket = g_io_channel_unix_get_fd(trust->proto_io);
+		proto_socket = l_io_get_fd(trust->proto_io);
 		if (msg_unregister(node_socket, proto_socket) != KNOT_SUCCESS) {
 			hal_log_info("Rollback failed UUID: %s", trust->uuid);
 		}
 	}
 
-	g_hash_table_remove(trust_list, GINT_TO_POINTER(node_socket));
+	if (trust->proto_watch) {
+		remove_device_watch(trust->proto_watch);
+	}
 
-	return FALSE;
+	trust_map_remove(node_socket);
 }
 
-static void on_node_channel_destroyed(gpointer user_data)
+static void on_node_channel_destroyed(void *user_data)
 {
 	struct trust *trust = (struct trust *)user_data;
 	trust_unref(trust);
 }
 
-static void add_node_channel_watch(GIOChannel *channel, struct trust *trust)
+static struct l_io *create_node_channel(int node_socket, struct trust *trust)
 {
-	g_io_add_watch_full(channel,
-		G_PRIORITY_HIGH,
-		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+	struct l_io *channel;
+
+	channel = l_io_new(node_socket);
+	l_io_set_disconnect_handler(channel,
 		on_node_channel_disconnected,
 		trust_ref(trust),
 		on_node_channel_destroyed);
-	g_io_channel_unref(channel);
-}
-
-static GIOChannel *create_proto_channel(int proto_socket)
-{
-	return g_io_channel_unix_new(proto_socket);
+	return channel;
 }
 
 static void trust_create(int node_socket, int proto_socket, char *uuid,
 	char *token, uint64_t device_id, pid_t pid, bool rollback,
-	GSList *schema, GSList *config)
+	struct l_queue *schema, struct l_queue *config)
 {
 	struct trust *trust;
-	GIOChannel *node_channel;
+	struct l_io *node_channel;
 
-	trust = g_new0(struct trust, 1);
+	trust = trust_new();
 	trust->uuid = uuid;
 	trust->token = token;
 	trust->id = device_id;
@@ -260,53 +376,49 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	trust->rollback = rollback;
 	trust->schema = schema;
 	trust->config = config;
-	trust->proto_io = create_proto_channel(proto_socket);
+	/*
+	 * TODO: find a better way to store a reference to the cloud as if it
+	 * disconnects we won't recover.
+	 */
+	trust->proto_io = l_io_new(proto_socket);
 
-	g_hash_table_replace(trust_list, GINT_TO_POINTER(node_socket),
-							trust_ref(trust));
+	trust_map_replace(node_socket, trust);
 
 	/* Add a watch to remove the credential when the client disconnects */
-	node_channel = create_node_channel(node_socket);
-	add_node_channel_watch(node_channel, trust);
+	node_channel = create_node_channel(node_socket, trust);
 
 	/* Add watch to device changes in the cloud */
-	add_device_watch(proto_socket, uuid, token, node_channel);
+	trust->proto_watch = create_device_watch(trust, node_channel);
 }
 
-static int sensor_id_cmp(gconstpointer a, gconstpointer b)
+static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
-	const knot_msg_schema *schema = a;
-	unsigned int sensor_id = GPOINTER_TO_UINT(b);
+	const knot_msg_schema *schema = entry_data;
+	unsigned int sensor_id = L_PTR_TO_UINT(user_data);
 
-	return sensor_id - schema->sensor_id;
+	return sensor_id == schema->sensor_id;
 }
 
 static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
-	int sensor_id)
+	unsigned int sensor_id)
 {
-	GSList *schema_entry;
-
-	schema_entry = g_slist_find_custom(trust->schema,
-		GUINT_TO_POINTER(sensor_id), sensor_id_cmp);
-
-	return schema_entry ? schema_entry->data : NULL;
+	return l_queue_find(trust->schema,
+		schema_sensor_id_cmp,
+		L_UINT_TO_PTR(sensor_id));
 }
 
 static void trust_sensor_schema_free(struct trust *trust)
 {
-	g_slist_free_full(trust->schema, g_free);
+	l_queue_destroy(trust->schema, l_free);
 	trust->schema = NULL;
 }
 
 static knot_msg_schema *trust_get_sensor_schema_tmp(const struct trust *trust,
-	int sensor_id)
+	unsigned int sensor_id)
 {
-	GSList *schema_entry;
-
-	schema_entry = g_slist_find_custom(trust->schema_tmp,
-		GUINT_TO_POINTER(sensor_id), sensor_id_cmp);
-
-	return schema_entry ? schema_entry->data : NULL;
+	return l_queue_find(trust->schema_tmp,
+		schema_sensor_id_cmp,
+		L_UINT_TO_PTR(sensor_id));
 }
 
 static void trust_sensor_schema_tmp_add(struct trust *trust,
@@ -314,13 +426,13 @@ static void trust_sensor_schema_tmp_add(struct trust *trust,
 {
 	knot_msg_schema *schema_copy;
 
-	schema_copy = g_memdup(schema, sizeof(*schema));
-	trust->schema_tmp = g_slist_append(trust->schema_tmp, schema_copy);
+	schema_copy = l_memdup(schema, sizeof(*schema));
+	l_queue_push_tail(trust->schema_tmp, schema_copy);
 }
 
 static void trust_sensor_schema_tmp_free(struct trust *trust)
 {
-	g_slist_free_full(trust->schema_tmp, g_free);
+	l_queue_destroy(trust->schema_tmp, l_free);
 	trust->schema_tmp = NULL;
 }
 
@@ -331,24 +443,28 @@ static void trust_sensor_schema_complete(struct trust *trust)
 	trust->schema_tmp = NULL;
 }
 
-static void trust_config_update(struct trust *trust, GSList *config)
+static void trust_config_update(struct trust *trust, struct l_queue *config)
 {
-	g_slist_free_full(trust->config, config_free);
+	l_queue_destroy(trust->config, config_free);
 	trust->config = config;
+}
+
+static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
+{
+	const struct config *config = entry_data;
+	unsigned int sensor_id = L_PTR_TO_UINT(user_data);
+
+	return config->kmcfg.sensor_id == sensor_id;
 }
 
 static void trust_config_confirm(struct trust *trust, uint8_t sensor_id)
 {
-	GSList *item;
-	struct config *config_item;
+	struct config *config_item = l_queue_find(trust->config,
+		config_sensor_id_cmp,
+		L_UINT_TO_PTR(sensor_id));
 
-	for (item = trust->config; item; item = g_slist_next(item)) {
-		config_item = item->data;
-		if (config_item->kmcfg.sensor_id == sensor_id) {
-			config_item->confirmed = TRUE;
-			break;
-		}
-	}
+	if (config_item)
+		config_item->confirmed = true;
 }
 
 /*
@@ -379,7 +495,7 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 	int8_t result;	
 	const struct trust *trust;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -391,7 +507,7 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 	if (result != KNOT_SUCCESS)
 		goto done;
 
-	trust_remove(node_socket);
+	trust_map_remove(node_socket);
 	result = KNOT_SUCCESS;
 
 done:
@@ -404,7 +520,7 @@ static char *checksum_config(json_object *jobjkey)
 
 	c = json_object_to_json_string(jobjkey);
 
-	return g_compute_checksum_for_string(G_CHECKSUM_SHA1, c, strlen(c));
+	return compute_checksum_for_string(L_CHECKSUM_SHA1, c, strlen(c));
 }
 
 /*
@@ -414,15 +530,16 @@ static char *checksum_config(json_object *jobjkey)
  * No need to check if sensor_id,event_flags and time_sec are positive for
  * they are unsigned from protocol.
  */
-static int config_is_valid(GSList *config_list)
+static int config_is_valid(struct l_queue *config_list)
 {
 	knot_msg_config *config;
 	struct config *cfg;
-	GSList *list;
+	struct l_queue_entry *entry;
 	int diff_int, diff_dec;
 
-	for (list = config_list; list; list = g_slist_next(list)) {
-		cfg = list->data;
+	entry = (struct l_queue_entry *) l_queue_get_entries(config_list);
+	while (entry) {
+		cfg = entry->data;
 		config = &cfg->kmcfg;
 
 		/* Check if event_flags are valid */
@@ -479,6 +596,7 @@ static int config_is_valid(GSList *config_list)
 				 */
 				return KNOT_ERROR_UNKNOWN;
 		}
+		entry = entry->next;
 	}
 	return KNOT_SUCCESS;
 }
@@ -541,8 +659,8 @@ static int parse_device_info(const char *json_str,
 	uuid = json_object_get_string(json_uuid);
 	token = json_object_get_string(json_token);
 
-	*puuid = g_strdup(uuid);
-	*ptoken = g_strdup(token);
+	*puuid = l_strdup(uuid);
+	*ptoken = l_strdup(token);
 
 	err = 0; /* Success */
 done:
@@ -551,10 +669,10 @@ done:
 	return err;
 }
 
-static GSList *parse_device_schema(const char *json_str)
+static struct l_queue *parse_device_schema(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	GSList *list = NULL;
+	struct l_queue *list = NULL;
 	knot_msg_schema *entry;
 	int sensor_id, value_type, unit, type_id, i;
 	const char *name;
@@ -563,6 +681,7 @@ static GSList *parse_device_schema(const char *json_str)
 	if (!jobj)
 		return NULL;
 
+	list = l_queue_new();
 	/* Expected JSON object is in the following format:
 	 *
 	 * {"uuid": ...
@@ -633,7 +752,7 @@ static GSList *parse_device_schema(const char *json_str)
 		 * Validation not required: validation has been performed
 		 * previously when schema has been submitted to the cloud.
 		 */
-		entry = g_new0(knot_msg_schema, 1);
+		entry = l_new(knot_msg_schema, 1);
 		entry->sensor_id = sensor_id;
 		entry->values.value_type = value_type;
 		entry->values.unit = unit;
@@ -641,10 +760,20 @@ static GSList *parse_device_schema(const char *json_str)
 		strncpy(entry->values.name, name,
 						sizeof(entry->values.name) - 1);
 
-		list = g_slist_append(list, entry);
+		l_queue_push_tail(list, entry);
 	}
+
 done:
+	/*
+	 * TODO: should done label be used only for the error case
+	 * as in parse_device_config() and parse_device_setdata()?
+	 */
 	json_object_put(jobj);
+
+	if (l_queue_isempty(list)) {
+		l_queue_destroy(list, NULL);
+		list = NULL;
+	}
 
 	return list;
 }
@@ -655,10 +784,10 @@ done:
  * The mandatory fields "sensor_id" and "event_flags" are missing.
  * Any field that is sent has the wrong type.
  */
-static GSList *parse_device_config(const char *json_str)
+static struct l_queue *parse_device_config(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	GSList *list = NULL;
+	struct l_queue *list = NULL;
 	struct config *entry;
 	int sensor_id, event_flags, time_sec, i;
 	knot_value_types lower_limit, upper_limit;
@@ -667,6 +796,8 @@ static GSList *parse_device_config(const char *json_str)
 	jobj = json_tokener_parse(json_str);
 	if (!jobj)
 		return NULL;
+
+	list = l_queue_new();
 
 	/* Getting 'config' from the device properties:
 	 *
@@ -751,7 +882,7 @@ static GSList *parse_device_config(const char *json_str)
 						&upper_limit);
 		}
 
-		entry = g_new0(struct config, 1);
+		entry = l_new(struct config, 1);
 		entry->kmcfg.sensor_id = sensor_id;
 		entry->kmcfg.values.event_flags = event_flags;
 		entry->kmcfg.values.time_sec = time_sec;
@@ -760,8 +891,9 @@ static GSList *parse_device_config(const char *json_str)
 		memcpy(&(entry->kmcfg.values.upper_limit), &upper_limit,
 						sizeof(knot_value_types));
 		entry->hash = checksum_config(jobjentry);
-		entry->confirmed = FALSE;
-		list = g_slist_append(list, entry);
+		entry->confirmed = false;
+
+		l_queue_push_tail(list, entry);
 	}
 
 	json_object_put(jobj);
@@ -769,7 +901,7 @@ static GSList *parse_device_config(const char *json_str)
 	return list;
 
 done:
-	g_slist_free_full(list, config_free);
+	l_queue_destroy(list, config_free);
 	json_object_put(jobj);
 
 	return NULL;
@@ -782,10 +914,10 @@ done:
  * When/if the user updates the data, the field is erased and the data is sent
  * again, regardless if the value is the same or not.
  */
-static GSList *parse_device_setdata(const char *json_str)
+static struct l_queue *parse_device_setdata(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	GSList *list = NULL;
+	struct l_queue *list = NULL;
 	knot_msg_data *entry;
 	int sensor_id, i;
 	knot_data data;
@@ -794,6 +926,8 @@ static GSList *parse_device_setdata(const char *json_str)
 	jobj = json_tokener_parse(json_str);
 	if (!jobj)
 		return NULL;
+
+	list = l_queue_new();
 
 	/*
 	 * Getting 'set_data' from the device properties:
@@ -841,17 +975,17 @@ static GSList *parse_device_setdata(const char *json_str)
 						&data.values);
 		}
 
-		entry = g_new0(knot_msg_data, 1);
+		entry = l_new(knot_msg_data, 1);
 		entry->sensor_id = sensor_id;
 		memcpy(&(entry->payload), &data, sizeof(knot_data));
-		list = g_slist_append(list, entry);
+		l_queue_push_tail(list, entry);
 	}
 	json_object_put(jobj);
 
 	return list;
 
 done:
-	g_slist_free_full(list, g_free);
+	l_queue_destroy(list, l_free);
 	json_object_put(jobj);
 
 	return NULL;
@@ -860,16 +994,18 @@ done:
 /*
  * Parses the json from the cloud with the get_data.
  */
-static GSList *parse_device_getdata(const char *json_str)
+static struct l_queue *parse_device_getdata(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	GSList *list = NULL;
+	struct l_queue *list = NULL;
 	knot_msg_item *entry;
 	int sensor_id, i;
 
 	jobj = json_tokener_parse(json_str);
 	if (!jobj)
 		return NULL;
+
+	list = l_queue_new();
 
 	/*
 	 * Getting 'get_data' from the device properties
@@ -903,44 +1039,40 @@ static GSList *parse_device_getdata(const char *json_str)
 
 		sensor_id = json_object_get_int(jobjkey);
 
-		entry = g_new0(knot_msg_item, 1);
+		entry = l_new(knot_msg_item, 1);
 		entry->sensor_id = sensor_id;
-		list = g_slist_append(list, entry);
+
+		l_queue_push_tail(list, entry);
 	}
 	json_object_put(jobj);
 
 	return list;
 
 done:
-	g_slist_free_full(list, g_free);
+	l_queue_destroy(list, l_free);
 	json_object_put(jobj);
 
 	return NULL;
 }
 
-static void msg_getdata_update_header(GSList *messages)
+static void update_msg_item_header(void *entry_data, void *user_data)
 {
-	knot_msg_item *kmitem;
-	GSList *message;
-
-	for (message = messages; message; message = g_slist_next(message)) {
-		kmitem = message->data;
-		kmitem->hdr.type = KNOT_MSG_GET_DATA;
-		kmitem->hdr.payload_len = sizeof(kmitem->sensor_id);
-	}
+	knot_msg_item *kmitem = entry_data;
+	kmitem->hdr.type = KNOT_MSG_GET_DATA;
+	kmitem->hdr.payload_len = sizeof(kmitem->sensor_id);
 }
 
 /*
  * Includes the proper header in the getdata messages and returns a list with
  * all the sensor from which the data is requested.
  */
-static GSList *msg_getdata(int node_socket, json_raw_t device_message,
+static struct l_queue *msg_getdata(int node_socket, json_raw_t device_message,
 	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *messages;
+	struct l_queue *messages;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -949,35 +1081,30 @@ static GSList *msg_getdata(int node_socket, json_raw_t device_message,
 	*result = KNOT_SUCCESS;
 
 	messages = parse_device_getdata(device_message.data);
-	msg_getdata_update_header(messages);
+	l_queue_foreach(messages, update_msg_item_header, NULL);
 
 	return messages;
 }
 
-static void msg_setdata_update_header(GSList *messages)
+static void update_msg_data_header(void *entry_data, void *user_data)
 {
-	knot_msg_data *kmdata;
-	GSList *message;
-
-	for (message = messages; message; message = g_slist_next(message)) {
-		kmdata = message->data;
-		kmdata->hdr.type = KNOT_MSG_SET_DATA;
-		kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
-							sizeof(kmdata->payload);
-	}
+	knot_msg_data *kmdata = entry_data;
+	kmdata->hdr.type = KNOT_MSG_SET_DATA;
+	kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
+		sizeof(kmdata->payload);
 }
 
 /*
  * Includes the proper header in the setdata messages and returns a list with
  * all the sensor data that will be sent to the thing.
  */
-static GSList *msg_setdata(int node_socket, json_raw_t device_message,
+static struct l_queue *msg_setdata(int node_socket, json_raw_t device_message,
 	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *messages;
+	struct l_queue *messages;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -986,55 +1113,65 @@ static GSList *msg_setdata(int node_socket, json_raw_t device_message,
 	*result = KNOT_SUCCESS;
 
 	messages = parse_device_setdata(device_message.data);
-	msg_setdata_update_header(messages);
+	l_queue_foreach(messages, update_msg_data_header, NULL);
 
 	return messages;
 }
 
-/*
- * Returns a list of all the configs that changed compared to the stored in
- * current. If the current is empty, returns a list with all the configs that
- * were received by the cloud. If nothing was received from the cloud,
- * returns NULL.
- */
-static GSList *get_changed_config(GSList *current, GSList *received)
+static knot_msg_config *duplicate_msg_config(const knot_msg_config *config)
 {
-	GSList *cur;
-	GSList *rec = received;
-	struct config *rcfg;
-	struct config *ccfg;
-	knot_msg_config *kmsg;
-	GSList *list = NULL;
-	gboolean match;
+	knot_msg_config *new_config = l_new(knot_msg_config, 1);
+	memcpy(new_config, config, sizeof(knot_msg_config));
+	new_config->hdr.type = KNOT_MSG_SET_CONFIG;
+	new_config->hdr.payload_len = sizeof(new_config->sensor_id) +
+		sizeof(new_config->values);
+	return new_config;
+}
 
-	/*If nothing was received from the cloud, returns NULL.*/
-	if (!received)
+static void duplicate_and_append(struct config *config,
+	struct l_queue *msg_config_list)
+{
+	knot_msg_config *msg_config = duplicate_msg_config(&config->kmcfg);
+	l_queue_push_tail(msg_config_list, msg_config);
+}
+
+static struct l_queue *config_to_msg_config_list(struct l_queue *config_list)
+{
+	struct l_queue *msg_config_list;
+
+	if (l_queue_isempty(config_list))
 		return NULL;
 
-	/*
-	 * If there is nothing in the current config list, returns all that was
-	 * received from the cloud
-	 */
-	if (!current) {
-		while (rec) {
-			rcfg = rec->data;
-			kmsg = g_new0(knot_msg_config, 1);
-			memcpy(kmsg, &rcfg->kmcfg, sizeof(knot_msg_config));
-			kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
-			kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
-							sizeof(kmsg->values);
-			list = g_slist_append(list, kmsg);
-			rec = g_slist_next(rec);
-		}
-		return list;
-	}
-	/*
-	 * Compares the received configs with the ones already stored.
-	 * If the hash matches one in the current list, the config did not
-	 * change.
-	 * If no match was found, then either the config for that sensor changed
-	 * or it is a new sensor.
-	 */
+	msg_config_list = l_queue_new();
+
+	l_queue_foreach(config_list,
+		(l_queue_foreach_func_t) duplicate_and_append,
+		msg_config_list);
+
+	return msg_config_list;
+}
+
+static bool config_cmp(struct config *config1, struct config *config2)
+{
+	/* If hashes don't match, either changed or is a new config */
+	return !strcmp(config1->hash, config2->hash);
+}
+
+static bool exists_and_confirmed(struct config *received,
+	struct l_queue *current_list)
+{
+	struct config *current = l_queue_find(current_list,
+		(l_queue_match_func_t) config_cmp,
+		received);
+	return current && current->confirmed;
+}
+
+static struct l_queue *get_changed_config(struct l_queue *current,
+	struct l_queue *received)
+{
+	struct l_queue *received_copy;
+	struct l_queue *changed_configs;
+
 	/*
 	 * TODO:
 	 * If a sensor_id is not in the list anymore, notify the thing.
@@ -1044,39 +1181,16 @@ static GSList *get_changed_config(GSList *current, GSList *received)
 	 * Define which approach is better, the current or when at least one
 	 * config changes, the whole config message should be sent.
 	 */
-	while (rec) {
-		rcfg = rec->data;
-		match = FALSE;
-		for (cur = current; cur; cur = g_slist_next(cur)) {
-			ccfg = cur->data;
-			if (!strcmp(ccfg->hash, rcfg->hash)) {
-				match = TRUE;
-				rcfg->confirmed = ccfg->confirmed;
-				if (!rcfg->confirmed) {
-					kmsg = g_new0(knot_msg_config, 1);
-					memcpy(kmsg, &rcfg->kmcfg,
-						sizeof(knot_msg_config));
-					kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
-					kmsg->hdr.payload_len =
-						sizeof(kmsg->sensor_id) +
-						sizeof(kmsg->values);
-					list = g_slist_append(list, kmsg);
-				}
-				break;
-			}
-		}
-		if (!match) {
-			kmsg = g_new0(knot_msg_config, 1);
-			memcpy(kmsg, &rcfg->kmcfg, sizeof(knot_msg_config));
-			kmsg->hdr.type = KNOT_MSG_SET_CONFIG;
-			kmsg->hdr.payload_len = sizeof(kmsg->sensor_id) +
-							sizeof(kmsg->values);
-			list = g_slist_append(list, kmsg);
-		}
-		rec = g_slist_next(rec);
-	}
+	received_copy = queue_clone(received);
+	l_queue_foreach_remove(received_copy,
+		(l_queue_remove_func_t) exists_and_confirmed,
+		current);
+	changed_configs = config_to_msg_config_list(received_copy);
 
-	return list;
+	if (received_copy)
+		l_queue_destroy(received_copy, NULL);
+	
+	return changed_configs;
 }
 
 /*
@@ -1084,14 +1198,14 @@ static GSList *get_changed_config(GSList *current, GSList *received)
  * checks if any changed, and put them in the list that will be sent to the
  * thing. Returns the list with the messages to be sent or NULL if any error.
  */
-static GSList *msg_config(int node_socket, json_raw_t device_message,
+static struct l_queue *msg_config(int node_socket, json_raw_t device_message,
 	ssize_t *result)
 {
 	struct trust *trust;
-	GSList *config;
-	GSList *changed_config;
+	struct l_queue *config;
+	struct l_queue *changed_config;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1103,7 +1217,7 @@ static GSList *msg_config(int node_socket, json_raw_t device_message,
 	/* config_is_valid() returns 0 if SUCCESS */
 	if (config_is_valid(config)) {
 		hal_log_error("Invalid config message");
-		g_slist_free_full(config, config_free);
+		l_queue_destroy(config, l_free);
 		/*
 		 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 		 * KNOT_INVALID_CONFIG in new protocol
@@ -1262,8 +1376,8 @@ static int proto_mknode(int proto_socket, const char *device_name,
 	goto done;
 
 fail_valid:
-	g_free(*uuid);
-	g_free(*token);
+	l_free(*uuid);
+	l_free(*token);
 done:
 fail_parse:
 	free(response.data);
@@ -1276,7 +1390,7 @@ fail_device:
  * TODO: consider making this part of proto-ws.c signin()
  */
 static int proto_signin(int proto_socket, const char *uuid, const char *token,
-	GSList **schema, GSList **config)
+	struct l_queue **schema, struct l_queue **config)
 {
 	int err, result;
 	json_raw_t response;
@@ -1352,7 +1466,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	 * previously added we just send the uuid/token again.
 	 */
 	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, node_socket);
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
 		hal_log_info("Register: trusted device");
 		msg_credential_create(krsp, trust->uuid, trust->token);
@@ -1381,8 +1495,8 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	goto done;
 
 fail_signin:
-	g_free(uuid);
-	g_free(token);
+	l_free(uuid);
+	l_free(token);
 done:
 fail_create:
 fail_length:
@@ -1393,10 +1507,10 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 				const knot_msg_authentication *kmauth)
 {
 	int8_t result;
-	GSList *schema, *config;
+	struct l_queue *schema, *config;
 	char *uuid, *token;
 
-	if (trust_get(node_socket)) {
+	if (trust_map_get(node_socket)) {
 		hal_log_info("Authenticated already");
 		result = KNOT_SUCCESS;
 		goto done;
@@ -1409,27 +1523,30 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 
 	if (schema == NULL) {
 		result = KNOT_SCHEMA_EMPTY;
-		goto done;
+		goto fail_schema;
 	}
 
 	if (config_is_valid(config)) {
 		hal_log_error("Invalid config message");
-		g_slist_free_full(config, config_free);
+		l_queue_destroy(config, config_free);
 		config = NULL;
 	}
 
 	/*
-	 * g_strndup returns a newly-allocated buffer n + 1 bytes
+	 * l_strndup returns a newly-allocated buffer n + 1 bytes
 	 * long which will always be nul-terminated.
 	 */
-	uuid = g_strndup(kmauth->uuid, sizeof(kmauth->uuid));
-	token = g_strndup(kmauth->token, sizeof(kmauth->token));
+	uuid = l_strndup(kmauth->uuid, sizeof(kmauth->uuid));
+	token = l_strndup(kmauth->token, sizeof(kmauth->token));
 	/* TODO: should we receive the ID? Should we get the socket PID? */
-	trust_create(node_socket, proto_socket, uuid, token, 0, 0, FALSE,
+	trust_create(node_socket, proto_socket, uuid, token, 0, 0, false,
 		schema, config);
 
 	result = KNOT_SUCCESS;
+	goto done;
 
+fail_schema:
+	l_queue_destroy(config, config_free);
 done:
 	return result;
 }
@@ -1454,20 +1571,23 @@ static json_object *create_schema_object(uint8_t sensor_id, uint8_t value_type,
 	return schema;
 }
 
-static json_object *create_schema_list_object(GSList *schema_list)
+static void create_and_append(knot_msg_schema *schema,
+	json_object *schema_list)
 {
-	json_object *jschema, *jschema_list, *jschema_item;
-	GSList *item;
-	knot_msg_schema *schema;
+	json_object *item = create_schema_object(schema->sensor_id, schema->values.value_type,
+		schema->values.unit, schema->values.type_id, schema->values.name);
+	json_object_array_add(schema_list, item);
+}
+
+static json_object *create_schema_list_object(struct l_queue *schema_list)
+{
+	json_object *jschema, *jschema_list;
 
 	jschema = json_object_new_object();
 	jschema_list = json_object_new_array();
-	for (item = schema_list; item; item = g_slist_next(schema_list)) {
-		schema = item->data;
-		jschema_item = create_schema_object(schema->sensor_id, schema->values.value_type,
-			schema->values.unit, schema->values.type_id, schema->values.name);
-		json_object_array_add(jschema_list, jschema_item);
-	}
+	l_queue_foreach(schema_list,
+		(l_queue_foreach_func_t) create_and_append,
+		jschema_list);
 	json_object_object_add(jschema, "schema", jschema_list);
 
 	return jschema;
@@ -1477,7 +1597,7 @@ static json_object *create_schema_list_object(GSList *schema_list)
  * TODO: consider making this part of proto-ws.c signin()
  */
 static int proto_schema(int proto_socket, const char *uuid, const char *token,
-	GSList *schema_list)
+	struct l_queue *schema_list)
 {
 	int result, err;
 	json_object *jschema_list;
@@ -1509,12 +1629,12 @@ done:
 }
 
 static int8_t msg_schema(int node_socket, int proto_socket,
-				const knot_msg_schema *schema, gboolean eof)
+				const knot_msg_schema *schema, bool eof)
 {
 	int8_t result;
 	struct trust *trust;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1526,7 +1646,7 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	 * If schema is being sent means that credentals (UUID/token) has been
 	 * properly received (registration complete).
 	 */
-	trust->rollback = FALSE;
+	trust->rollback = false;
 
 	/*
 	 * {
@@ -1771,7 +1891,7 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1813,7 +1933,7 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 	struct trust *trust;
 	uint8_t sensor_id;
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1927,7 +2047,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = trust_get(node_socket);
+	trust = trust_map_get(node_socket);
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1981,7 +2101,7 @@ ssize_t msg_process(int sock, int proto_sock,
 	knot_msg *krsp = opdu;
 	uint8_t rtype;
 	int8_t result = KNOT_INVALID_DATA;
-	gboolean eof;
+	bool eof;
 
 	/* Verify if output PDU has a min length */
 	if (omtu < sizeof(knot_msg)) {
@@ -2028,7 +2148,7 @@ ssize_t msg_process(int sock, int proto_sock,
 		break;
 	case KNOT_MSG_SCHEMA:
 	case KNOT_MSG_SCHEMA_END:
-		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? TRUE : FALSE;
+		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? true : false;
 		result = msg_schema(sock, proto_sock, &kreq->schema, eof);
 		rtype = KNOT_MSG_SCHEMA_RESP;
 		if (eof)
@@ -2060,12 +2180,12 @@ int msg_start(const char *uuid, struct proto_ops *proto_ops)
 	strncpy(owner_uuid, uuid, sizeof(owner_uuid));
 	proto = proto_ops;
 
-	trust_list = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-							NULL, (GDestroyNotify) trust_unref);
+	trust_map_create();
+
 	return 0;
 }
 
 void msg_stop(void)
 {
-	g_hash_table_destroy(trust_list);
+	trust_map_destroy();
 }
