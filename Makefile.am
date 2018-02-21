@@ -14,7 +14,6 @@ noinst_PROGRAMS = tools/ktool unit/ktest unit/inettest
 include Makefile.modules
 
 src_knotd_SOURCES = src/main.c \
-			src/filewatch.c src/filewatch.h \
 			src/settings.c src/settings.h \
 			src/session.c src/session.h \
 			src/manager.h src/manager.c \
