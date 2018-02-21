@@ -36,7 +36,6 @@
 #include <hal/linux_log.h>
 #include "settings.h"
 #include "manager.h"
-#include "filewatch.h"
 
 static GMainLoop *main_loop;
 
@@ -129,26 +128,6 @@ static int run_as_nobody()
 	return 0;
 }
 
-static void l_on_config_modified()
-{
-	hal_log_info("Configuration file modified. Exiting  ...");
-	/*
-	 * TODO: implement a robust & clean way to reload settings
-	 * instead of force quitting when configuration file changes.
-	 */
-	l_terminate();
-}
-
-static void g_on_config_modified()
-{
-	hal_log_info("Configuration file modified. Exiting  ...");
-	/*
-	 * TODO: implement a robust & clean way to reload settings
-	 * instead of force quitting when configuration file changes.
-	 */
-	g_terminate();
-}
-
 static int detach()
 {
 	if (daemon(0, 0))
@@ -159,7 +138,6 @@ static int detach()
 int main(int argc, char *argv[])
 {
 	int err = EXIT_FAILURE;
-	void *config_watch;
 
 	err = settings_parse(argc, argv, &settings);
 	if (err)
@@ -190,15 +168,6 @@ int main(int argc, char *argv[])
 		goto fail_manager;
 	}
 
-	if (settings->use_ell)
-		config_watch = l_file_watch_add(settings->config_path, l_on_config_modified);
-	else
-		config_watch = g_file_watch_add(settings->config_path, g_on_config_modified);
-	if (config_watch == NULL) {
-		hal_log_error("Failed to add configuration file watcher. Exiting ...");
-		goto fail_config_watch;
-	}
-
 	if (settings->detach) {
 		err = detach();
 		if (err) {
@@ -221,11 +190,6 @@ int main(int argc, char *argv[])
 
 done:
 fail_detach:
-	if (settings->use_ell)
-		l_file_watch_remove(config_watch);
-	else
-		g_file_watch_remove(config_watch);
-fail_config_watch:
 		manager_stop();
 fail_manager:
 	if (settings->use_ell)
