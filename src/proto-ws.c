@@ -67,7 +67,7 @@ static gint conn_index = 0;
 
 /* Struct used to fetch data from cloud and send to THING */
 struct to_fetch {
-	int proto_sock;
+	int sock;
 	void *user_data;
 	void (*watch_cb)(json_raw_t, void *);
 	void (*watch_destroy_cb) (void *);
@@ -943,6 +943,12 @@ static void ws_remove(void)
 static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
 	gpointer user_data)
 {
+	/* Just remove the watch */
+	return FALSE;
+}
+
+static void on_proto_watch_removed(gpointer user_data)
+{
 	struct to_fetch *data = user_data;
 
 	if (data->watch_destroy_cb)
@@ -951,8 +957,6 @@ static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
 	data->watch_cb = NULL;
 	data->user_data = NULL;
 	data->watch_destroy_cb = NULL;
-
-	return FALSE;
 }
 
 /*
@@ -961,7 +965,7 @@ static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
  * since websockets uses a 'subscription' mechanism there is no need to
  * store these values.
  */
-static unsigned int ws_async(int proto_sock, const char *uuid,
+static unsigned int ws_async(int sock, const char *uuid,
 	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
 	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
@@ -970,7 +974,7 @@ static unsigned int ws_async(int proto_sock, const char *uuid,
 	GIOChannel *proto_io;
 	gint watch_id;
 
-	value = g_hash_table_lookup(wstable, GINT_TO_POINTER(proto_sock));
+	value = g_hash_table_lookup(wstable, GINT_TO_POINTER(sock));
 	if (!value)
 		return -EINVAL;
 
@@ -979,16 +983,23 @@ static unsigned int ws_async(int proto_sock, const char *uuid,
 	data->user_data = user_data;
 	data->watch_destroy_cb = proto_watch_destroy_cb;
 
-	proto_io = g_io_channel_unix_new(proto_sock);
-	watch_id = g_io_add_watch(proto_io,
+	proto_io = g_io_channel_unix_new(sock);
+	watch_id = g_io_add_watch_full(proto_io,
+		G_PRIORITY_DEFAULT,
 		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
 		on_proto_disconnected,
-		data);
+		data,
+		on_proto_watch_removed);
 	g_io_channel_unref(proto_io);
 
-	g_hash_table_insert(wstable, GINT_TO_POINTER(proto_sock), value);
+	g_hash_table_insert(wstable, GINT_TO_POINTER(sock), value);
 
 	return watch_id;
+}
+
+static void ws_async_stop(int sock, unsigned int watch_id)
+{
+	g_source_remove(watch_id);
 }
 
 struct proto_ops proto_ws = {
@@ -1004,5 +1015,6 @@ struct proto_ops proto_ws = {
 	.data = ws_data,
 	.fetch = ws_device,
 	.async = ws_async,
+	.async_stop = ws_async_stop,
 	.setdata = ws_update
 };

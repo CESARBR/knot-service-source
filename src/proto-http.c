@@ -532,7 +532,7 @@ static gboolean proto_poll(gpointer user_data)
 	return TRUE;
 }
 
-static void on_proto_poll_destroyed(gpointer user_data)
+static void on_proto_poll_removed(gpointer user_data)
 {
 	struct to_fetch *fetch_data = user_data;
 
@@ -544,10 +544,14 @@ static void on_proto_poll_destroyed(gpointer user_data)
 static gboolean on_proto_disconnected(GIOChannel *io, GIOCondition cond,
 	gpointer user_data)
 {
+	/* Just remove the watch */
+	return FALSE;
+}
+
+static void on_proto_watch_removed(gpointer user_data)
+{
 	gint timeout_watch_id = GPOINTER_TO_UINT(user_data);
 	g_source_remove(timeout_watch_id);
-
-	return FALSE;
 }
 
 /*
@@ -557,7 +561,7 @@ static unsigned int http_async(int proto_sock, const char *uuid,
 	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
 	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
-	unsigned int gsource;
+	unsigned int watch_id, timeout_watch_id;
 	struct to_fetch *fetch_data;
 	GIOChannel *proto_io;
 
@@ -569,18 +573,25 @@ static unsigned int http_async(int proto_sock, const char *uuid,
 	fetch_data->user_data = user_data;
 	fetch_data->proto_watch_destroy_cb = proto_watch_destroy_cb;
 
-	gsource = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 10,
+	timeout_watch_id = g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 10,
 		proto_poll, fetch_data,
-		on_proto_poll_destroyed);
+		on_proto_poll_removed);
 
 	proto_io = g_io_channel_unix_new(fetch_data->proto_sock);
-	g_io_add_watch(proto_io,
+	watch_id = g_io_add_watch_full(proto_io,
+		G_PRIORITY_DEFAULT,
 		G_IO_HUP | G_IO_NVAL | G_IO_ERR,
 		on_proto_disconnected,
-		GUINT_TO_POINTER(gsource));
+		GUINT_TO_POINTER(timeout_watch_id),
+		on_proto_watch_removed);
 	g_io_channel_unref(proto_io);
 
-	return gsource;
+	return watch_id;
+}
+
+static void http_async_stop(int proto_sock, unsigned int watch_id)
+{
+	g_source_remove(watch_id);
 }
 
 struct proto_ops proto_http = {
@@ -597,5 +608,6 @@ struct proto_ops proto_http = {
 	.data = http_data,
 	.fetch = http_fetch,
 	.setdata = http_setdata,
-	.async = http_async
+	.async = http_async,
+	.async_stop = http_async_stop
 };
