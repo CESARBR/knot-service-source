@@ -44,6 +44,12 @@ PKG_CHECK_MODULES(JSON, json-c,
 AC_SUBST(JSON_CFLAGS)
 AC_SUBST(JSON_LIBS)
 
+PKG_CHECK_MODULES(ELL, ell,
+  [AC_DEFINE([HAVE_ELL],[1],[Use ELL])],
+  [AC_MSG_ERROR("ell missing")])
+AC_SUBST(ELL_CFLAGS)
+AC_SUBST(ELL_LIBS)
+
 PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets = 2.1.0],
   [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
   [websockets="no"])
