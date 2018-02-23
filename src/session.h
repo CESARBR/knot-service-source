@@ -19,14 +19,6 @@
  *
  */
 
-#ifndef __SESSION_H__
-#define __SESSION_H__
-
-#include <stdint.h>
-
-#include "node.h"
-#include "proto.h"
-
 typedef ssize_t (*on_data)(int node_socket, int proto_socket,
 	const void *ipdu, size_t ipdulen,
 	void *opdu, size_t opdulen);
@@ -35,5 +27,3 @@ int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
 	int client_socket, on_data on_data);
 
 void session_destroy_all(void);
-
-#endif /* __SESSION_H__ */

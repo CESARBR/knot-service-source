@@ -42,6 +42,7 @@
 
 #include <hal/linux_log.h>
 
+#include "settings.h"
 #include "proto.h"
 
 #define CURL_OP_TIMEOUT					30	/* 30 seconds */

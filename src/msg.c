@@ -45,6 +45,7 @@
 #include <knot_protocol.h>
 #include <hal/linux_log.h>
 
+#include "settings.h"
 #include "proto.h"
 #include "msg.h"
 

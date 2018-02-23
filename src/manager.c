@@ -39,10 +39,10 @@
 
 #include "node.h"
 #include "serial.h"
+#include "settings.h"
 #include "proto.h"
 #include "session.h"
 #include "msg.h"
-#include "settings.h"
 #include "manager.h"
 
 static struct proto_ops *selected_protocol;

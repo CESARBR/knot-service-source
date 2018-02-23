@@ -27,6 +27,9 @@
 
 #include <hal/linux_log.h>
 
+#include "settings.h"
+#include "node.h"
+#include "proto.h"
 #include "session.h"
 
 /*
