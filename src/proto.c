@@ -24,9 +24,11 @@
 #endif
 
 #include <errno.h>
+#include <string.h>
 
 #include <hal/linux_log.h>
 
+#include "settings.h"
 #include "proto.h"
 
 extern struct proto_ops proto_http;

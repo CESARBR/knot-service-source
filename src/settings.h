@@ -19,9 +19,6 @@
  *
  */
 
-#ifndef __SETTINGS_H__
-#define __SETTINGS_H__
-
 struct settings {
 	int use_ell;
 	const char *config_path;
@@ -38,5 +35,3 @@ struct settings {
 
 int settings_parse(int argc, char *argv[], struct settings **settings);
 void settings_free(struct settings *settings);
-
-#endif /* __SETTINGS_H__ */

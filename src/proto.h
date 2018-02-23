@@ -19,13 +19,6 @@
  *
  */
 
-#ifndef __PROTO_H__
-#define __PROTO_H__
-
-#include <string.h>
-
-#include "settings.h"
-
 typedef struct {
 	char *data;
 	size_t size;
@@ -71,5 +64,3 @@ int proto_start(const struct settings *settings, struct proto_ops **proto_ops);
 void proto_stop(void);
 
 void proto_unregister_watch(unsigned int source_id);
-
-#endif /* __PROTO_H__ */

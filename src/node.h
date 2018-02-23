@@ -19,13 +19,8 @@
  *
  */
 
-#ifndef __NODE_H__
-#define __NODE_H__
-
 #include <stdbool.h>
 #include <unistd.h>
-
-#include "settings.h"
 
 /*
  * This 'driver' intends to be an abstraction for Radio technologies or
@@ -54,5 +49,3 @@ typedef bool (*on_accepted)(struct node_ops *node_ops, int client_socket);
 
 int node_start(const char *tty, on_accepted on_accepted_cb);
 void node_stop(void);
-
-#endif /* __NODE_H__ */
