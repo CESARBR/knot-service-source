@@ -1,6 +1,5 @@
 AM_MAKEFLAGS = --no-print-directory
 
-include_HEADERS =
 modules_sources =
 modules_ldadd =
 modules_cflags =
@@ -20,6 +19,7 @@ src_knotd_SOURCES = src/main.c \
 			src/msg.c src/msg.h \
 			src/proto.c src/proto.h \
 			src/node.c src/node.h \
+			src/dbus.c src/dbus.h \
 			$(modules_sources)
 
 src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) @ELL_LIBS@ -lm

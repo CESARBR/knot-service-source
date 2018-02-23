@@ -43,6 +43,7 @@
 #include "proto.h"
 #include "session.h"
 #include "msg.h"
+#include "dbus.h"
 #include "manager.h"
 
 static struct proto_ops *selected_protocol;
@@ -85,11 +86,12 @@ fail_node:
 	proto_stop();
 fail_proto:
 done:
-	return err;
+	return dbus_start();
 }
 
 void manager_stop(void)
 {
+	dbus_stop();
 	session_destroy_all();
 	msg_stop();
 	node_stop();
