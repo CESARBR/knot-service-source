@@ -36,6 +36,7 @@
 #include <knot_protocol.h>
 
 #include <hal/linux_log.h>
+#include <ell/ell.h>
 
 #include "node.h"
 #include "serial.h"
@@ -61,13 +62,90 @@ static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
+static bool property_get_port(struct l_dbus *dbus,
+				     struct l_dbus_message *msg,
+				     struct l_dbus_message_builder *builder,
+				     void *user_data)
+{
+	uint16_t port = UINT16_MAX; /* FIXME */
+
+	l_dbus_message_builder_append_basic(builder, 'q', &port);
+	hal_log_info("GetProperty(Port = %"PRIu32")", port);
+
+	return true;
+}
+
+static bool property_get_url(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	const char *url = "url-unknown";
+
+	l_dbus_message_builder_append_basic(builder, 's', url);
+	hal_log_info("GetProperty(URL = %s)", url);
+
+	return true;
+}
+
+static bool property_get_uuid(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	const char *uuid = "uuid-unknown";
+
+	l_dbus_message_builder_append_basic(builder, 's', uuid);
+	hal_log_info("GetProperty(UUID = %s)", uuid);
+
+	return true;
+}
+
+static bool property_get_token(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	const char *token = "token-unknown";
+
+	l_dbus_message_builder_append_basic(builder, 's', token);
+	hal_log_info("GetProperty(Token = %s)", token);
+
+	return true;
+}
+
+static void setup_interface(struct l_dbus_interface *interface)
+{
+	if (!l_dbus_interface_property(interface, "Port", 0, "q",
+				       property_get_port,
+				       NULL))
+		hal_log_error("Can't add 'Port' property");
+
+	if (!l_dbus_interface_property(interface, "URL", 0, "s",
+				       property_get_url,
+				       NULL))
+		hal_log_error("Can't add 'URL' property");
+
+	if (!l_dbus_interface_property(interface, "UUID", 0, "s",
+				       property_get_uuid,
+				       NULL))
+		hal_log_error("Can't add 'URL' property");
+
+	if (!l_dbus_interface_property(interface, "Token", 0, "s",
+				       property_get_token,
+				       NULL))
+		hal_log_error("Can't add 'URL' property");
+}
+
+
 int manager_start(const struct settings *settings)
 {
+	const char *path = "/";
 	int err;
 
 	err = proto_start(settings, &selected_protocol);
 	if (err < 0)
-		goto fail_proto;
+		return err;
 
 	err = node_start(settings->tty, on_accepted_cb);
 	if (err < 0)
@@ -77,20 +155,48 @@ int manager_start(const struct settings *settings)
 	if (err < 0)
 		goto fail_msg;
 
-	err = 0;
-	goto done;
+	err = dbus_start();
+	if (err)
+		goto fail_dbus;
 
+	/* Manager object */
+	if (!l_dbus_register_interface(dbus_get_bus(),
+				       SETTINGS_INTERFACE,
+				       setup_interface,
+				       NULL, false))
+		hal_log_error("dbus: unable to register %s",
+			      SETTINGS_INTERFACE);
+
+	if (!l_dbus_object_add_interface(dbus_get_bus(),
+					 path,
+					 SETTINGS_INTERFACE,
+					 NULL))
+	    hal_log_error("dbus: unable to add %s to %s",
+					SETTINGS_INTERFACE, path);
+
+	if (!l_dbus_object_add_interface(dbus_get_bus(),
+					 path,
+					 L_DBUS_INTERFACE_PROPERTIES,
+					 NULL))
+	    hal_log_error("dbus: unable to add %s to %s",
+					L_DBUS_INTERFACE_PROPERTIES, path);
+
+	return err;
+
+fail_dbus:
+	msg_stop();
 fail_msg:
 	node_stop();
 fail_node:
 	proto_stop();
-fail_proto:
-done:
-	return dbus_start();
+
+	return err;
 }
 
 void manager_stop(void)
 {
+	l_dbus_unregister_interface(dbus_get_bus(),
+				    SETTINGS_INTERFACE);
 	dbus_stop();
 	session_destroy_all();
 	msg_stop();

@@ -37,6 +37,7 @@
 
 #include <hal/linux_log.h>
 
+#include "settings.h"
 #include "proto.h"
 
 #define MAX_PAYLOAD		4096

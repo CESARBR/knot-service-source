@@ -20,6 +20,7 @@
  */
 
 #define KNOT_SERVICE			"br.org.cesar.knot"
+#define SETTINGS_INTERFACE		"br.org.cesar.knot.Settings1"
 #define DEVICE_INTERFACE		"br.org.cesar.knot.Device1"
 
 int dbus_start(void);
