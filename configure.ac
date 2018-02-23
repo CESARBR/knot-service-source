@@ -59,4 +59,19 @@ AC_SUBST(WEBSOCKETS_LIBS)
 AM_CONDITIONAL(WEBSOCKETS, (test "${websockets}" != "no"))
 AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
 
+AC_ARG_WITH([dbusconfdir], AC_HELP_STRING([--with-dbusconfdir=DIR],
+				[path to D-Bus configuration directory]),
+					[path_dbusconfdir=${withval}])
+
+if (test -z "${path_dbusconfdir}"); then
+	AC_MSG_CHECKING([D-Bus config directory])
+	path_dbusconfdir="`$PKG_CONFIG --variable=sysconfdir dbus-1`"
+	if (test -z "${path_dbusconfdir}"); then
+		AC_MSG_ERROR([D-Bus config directory is required])
+	fi
+	AC_MSG_RESULT([${path_dbusconfdir}])
+fi
+
+AC_SUBST(DBUS_CONFDIR, [${path_dbusconfdir}])
+
 AC_OUTPUT(Makefile)

@@ -10,6 +10,9 @@ AM_LDFLAGS = $(BUILD_LDFLAGS)
 bin_PROGRAMS = src/knotd inetbr/inetbrd
 noinst_PROGRAMS = tools/ktool unit/ktest unit/inettest
 
+dbusdir = @DBUS_CONFDIR@/dbus-1/system.d
+dbus_DATA = src/knot.conf
+
 include Makefile.modules
 
 src_knotd_SOURCES = src/main.c \
