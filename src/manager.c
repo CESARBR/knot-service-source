@@ -45,9 +45,11 @@
 #include "session.h"
 #include "msg.h"
 #include "dbus.h"
+#include "device.h"
 #include "manager.h"
 
 static struct proto_ops *selected_protocol;
+static struct knot_device *device;
 
 static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 {
@@ -181,6 +183,12 @@ int manager_start(const struct settings *settings)
 	    hal_log_error("dbus: unable to add %s to %s",
 					L_DBUS_INTERFACE_PROPERTIES, path);
 
+	/* KNoT D-Bus device objects */
+	err = device_start();
+	if (!err) {
+		/* FIXME: Create device based on cloud devices */
+		device = device_create(UINT64_MAX, "device:unknown");
+	}
 	return err;
 
 fail_dbus:
@@ -195,6 +203,9 @@ fail_node:
 
 void manager_stop(void)
 {
+	device_destroy(device);
+	device_stop();
+
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    SETTINGS_INTERFACE);
 	dbus_stop();
