@@ -1,0 +1,29 @@
+Device hierarchy
+================
+Interface 	org.cesar.knot.Device1
+Object path 	[variable prefix]/dev_xx_xx_xx_xx_xx_xx_xx_xx
+
+Properties
+		uint64 Id [readonly]
+
+		Unique identification exposed to service level. Technology
+		agnostic value to allow mapping a virtual device representation
+		to its actual device.
+
+		string Name [readonly, optional]
+
+		Remote name. PropertiesChanged is be emitted if this
+		value changes.
+
+		boolean Online [readonly]
+
+		Indicates if the remote is currently connected.
+		PropertiesChanged signal is emitted when this value
+		changes.
+
+		boolean Registered [readonly]
+
+		Indicates if the remote is registed to cloud service.
+		PropertiesChanged signal is emitted when this value
+		changes.
+
