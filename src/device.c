@@ -31,6 +31,7 @@ struct knot_device {
 	uint64_t id;
 	char *name;
 	char *path;
+	bool online;
 	bool registered;
 };
 
@@ -68,6 +69,20 @@ static bool property_get_id(struct l_dbus *dbus,
 	return true;
 }
 
+static bool property_get_online(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct knot_device *device = user_data;
+
+	l_dbus_message_builder_append_basic(builder, 'b', &device->online);
+	hal_log_info("%s GetProperty(Online = %d)",
+		     device->path, device->online);
+
+	return true;
+}
+
 static bool property_get_registered(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
@@ -94,10 +109,16 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'Id' property");
 
+	if (!l_dbus_interface_property(interface, "Online", 0, "b",
+				       property_get_online,
+				       NULL))
+		hal_log_error("Can't add 'Online' property");
+
 	if (!l_dbus_interface_property(interface, "Registered", 0, "b",
 				       property_get_registered,
 				       NULL))
 		hal_log_error("Can't add 'Registered' property");
+
 }
 
 int device_start(void)
@@ -127,6 +148,7 @@ struct knot_device *device_create(uint64_t id, const char *name)
 	device = l_new(struct knot_device, 1);
 	device->id = id;
 	device->name = l_strdup(name);
+	device->online = false;
 	device->registered = false;
 
 	device->path = l_strdup_printf("/dev_%"PRIu64, id);
