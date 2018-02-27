@@ -104,12 +104,35 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 	device_destroy(device);
 }
 
-static void property_changed(struct l_dbus_proxy *ellproxy, const char *name,
-				struct l_dbus_message *msg, void *user_data)
+static void property_changed(struct l_dbus_proxy *ellproxy,
+			     const char *propname, struct l_dbus_message *msg,
+			     void *user_data)
 {
-	hal_log_info("property changed: %s (%s %s)", name,
-					l_dbus_proxy_get_path(ellproxy),
-					l_dbus_proxy_get_interface(ellproxy));
+	struct proxy *proxy = user_data;
+	const char *path = l_dbus_proxy_get_path(ellproxy);
+	const char *interface = l_dbus_proxy_get_interface(ellproxy);
+	struct knot_device *device;
+	const char *name;
+
+	if (strcmp(proxy->interface, interface) != 0)
+		return;
+
+	if (strcmp("Name", propname) == 0) {
+		device = l_hashmap_lookup(device_list, ellproxy);
+		if (!device)
+			return;
+
+		if (l_dbus_message_get_arguments(msg, "s", &name))
+			device_set_name(device, name);
+
+	} else if (strcmp("Paired", propname) == 0) {
+		/* TODO: set paired */
+	} else {
+		/* Ignore this property */
+		return;
+	}
+
+	hal_log_info("property changed: %s (%s %s)", propname, path, interface);
 }
 
 static struct proxy *watch_create(const char *service,
@@ -144,6 +167,8 @@ static void watch_remove(struct proxy *proxy)
 int proxy_start(void)
 {
 	device_list = l_hashmap_new();
+
+	hal_log_info("D-Bus Proxy");
 
 	/*
 	 * TODO: Add API to allow registering proxies dynamically.

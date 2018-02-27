@@ -194,3 +194,29 @@ void device_destroy(struct knot_device *device)
 
 	device_free(device);
 }
+
+bool device_set_name(struct knot_device *device, const char *name)
+{
+	struct l_dbus_message_builder *builder;
+	struct l_dbus_message *signal;
+
+	if (!name)
+		return false;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Name");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 's', name);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	if (l_dbus_send(dbus_get_bus(), signal) == 0)
+		return false;
+
+	l_free(device->name);
+	device->name = l_strdup(name);
+
+	return true;
+}

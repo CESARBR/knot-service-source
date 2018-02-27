@@ -27,3 +27,5 @@ void device_stop(void);
 
 struct knot_device *device_create(uint64_t id, const char *name);
 void device_destroy(struct knot_device *device);
+
+bool device_set_name(struct knot_device *device, const char *name);
