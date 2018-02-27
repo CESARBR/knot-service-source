@@ -32,6 +32,7 @@ struct knot_device {
 	char *name;
 	char *path;
 	bool online;
+	bool paired;
 	bool registered;
 };
 
@@ -97,6 +98,20 @@ static bool property_get_registered(struct l_dbus *dbus,
 	return true;
 }
 
+static bool property_get_paired(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct knot_device *device = user_data;
+
+	l_dbus_message_builder_append_basic(builder, 'b', &device->paired);
+	hal_log_info("%s GetProperty(Paired = %d)",
+		     device->path, device->paired);
+
+	return true;
+}
+
 static void device_setup_interface(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
@@ -114,11 +129,15 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'Online' property");
 
+	if (!l_dbus_interface_property(interface, "Paired", 0, "b",
+				       property_get_paired,
+				       NULL))
+		hal_log_error("Can't add 'Paired' property");
+
 	if (!l_dbus_interface_property(interface, "Registered", 0, "b",
 				       property_get_registered,
 				       NULL))
 		hal_log_error("Can't add 'Registered' property");
-
 }
 
 int device_start(void)
