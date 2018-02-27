@@ -80,7 +80,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 
 	/* FIXME: Use 'Id'  read from D-Bus instead of proxy address */
 	id = L_PTR_TO_UINT(ellproxy);
-	device = device_create(id, "device:unknown");
+	device = device_create(ellproxy, id, "device:unknown");
 	l_hashmap_insert(device_list, ellproxy, device);
 }
 

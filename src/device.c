@@ -34,6 +34,8 @@ struct knot_device {
 	bool online;
 	bool paired;
 	bool registered;
+	struct l_dbus_message *msg;
+	struct l_dbus_proxy *proxy;
 };
 
 static void device_free(struct knot_device *device)
@@ -41,6 +43,50 @@ static void device_free(struct knot_device *device)
 	l_free(device->name);
 	l_free(device->path);
 	l_free(device);
+}
+
+static void pair_reply(struct l_dbus_proxy *proxy,
+		       struct l_dbus_message *result,
+		       void *user_data)
+{
+	struct knot_device *device = user_data;
+	struct l_dbus_message *reply;
+
+	if (l_dbus_message_is_error(result)) {
+		const char *name;
+
+		l_dbus_message_get_error(result, &name, NULL);
+
+		l_error("Failed to Pair device %s (%s)",
+					l_dbus_proxy_get_path(device->proxy),
+					name);
+		return;
+	}
+
+	reply = l_dbus_message_new_method_return(device->msg);
+	l_dbus_send(dbus_get_bus(), reply);
+	l_dbus_message_unref(device->msg);
+	device->msg = NULL;
+}
+
+static struct l_dbus_message *method_pair(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct knot_device *device = user_data;
+
+	if (device->paired)
+		return l_dbus_message_new_method_return(msg);
+
+	if (device->msg)
+		return dbus_error_busy(msg);
+
+	device->msg = l_dbus_message_ref(msg);
+
+	l_dbus_proxy_method_call(device->proxy, "Pair",
+				 NULL, pair_reply, device, NULL);
+
+	return NULL;
 }
 
 static bool property_get_name(struct l_dbus *dbus,
@@ -114,6 +160,9 @@ static bool property_get_paired(struct l_dbus *dbus,
 
 static void device_setup_interface(struct l_dbus_interface *interface)
 {
+	l_dbus_interface_method(interface, "Pair", 0,
+				method_pair, "", "", "");
+
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       property_get_name,
 				       NULL))
@@ -160,7 +209,8 @@ void device_stop(void)
 				    DEVICE_INTERFACE);
 }
 
-struct knot_device *device_create(uint64_t id, const char *name)
+struct knot_device *device_create(struct l_dbus_proxy *proxy,
+				  uint64_t id, const char *name)
 {
 	struct knot_device *device;
 
@@ -169,6 +219,7 @@ struct knot_device *device_create(uint64_t id, const char *name)
 	device->name = l_strdup(name);
 	device->online = false;
 	device->registered = false;
+	device->proxy = proxy;
 
 	device->path = l_strdup_printf("/dev_%"PRIu64, id);
 	if (!l_dbus_object_add_interface(dbus_get_bus(),

@@ -27,3 +27,4 @@ int dbus_start(void);
 void dbus_stop(void);
 
 struct l_dbus *dbus_get_bus(void);
+struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg);
