@@ -239,3 +239,28 @@ bool device_set_name(struct knot_device *device, const char *name)
 
 	return true;
 }
+
+bool device_set_paired(struct knot_device *device, bool paired)
+{
+	struct l_dbus_message_builder *builder;
+	struct l_dbus_message *signal;
+
+	if (device->paired == paired)
+		return false;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Paired");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &paired);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	if (l_dbus_send(dbus_get_bus(), signal) == 0)
+		return false;
+
+	device->paired = paired;
+
+	return true;
+}

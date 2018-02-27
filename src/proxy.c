@@ -113,6 +113,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	struct knot_device *device;
 	const char *name;
+	bool paired;
 
 	if (strcmp(proxy->interface, interface) != 0)
 		return;
@@ -126,9 +127,14 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 			device_set_name(device, name);
 
 	} else if (strcmp("Paired", propname) == 0) {
-		/* TODO: set paired */
+		device = l_hashmap_lookup(device_list, ellproxy);
+		if (!device)
+			return;
+
+		if (l_dbus_message_get_arguments(msg, "b", &paired))
+			device_set_paired(device, paired);
 	} else {
-		/* Ignore this property */
+		/* Ignore other properties */
 		return;
 	}
 
