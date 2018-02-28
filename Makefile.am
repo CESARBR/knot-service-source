@@ -28,35 +28,35 @@ src_knotd_SOURCES = src/main.c \
 			src/proxy.c src/proxy.h \
 			$(modules_sources)
 
-src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ -lm
+src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@
+src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
 			inetbr/manager.c inetbr/manager.h \
 			inetbr/inet4.c inetbr/inet4.h \
 			inetbr/inet6.c inetbr/inet6.h unix.h
 
-inetbr_inetbrd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
+inetbr_inetbrd_LDADD = @GLIB_LIBS@ @KNOTHAL_LIBS@ $(modules_ldadd) -lm
 inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
-inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @GLIB_CFLAGS@
+inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @GLIB_CFLAGS@ @KNOTHAL_CFLAGS@
 
 tools_ktool_SOURCES = tools/ktool.c
-tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@
+tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
-tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@ @GLIB_CFLAGS@
+tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@ @GLIB_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 unit_ktest_SOURCES = unit/ktest.c
 
-unit_ktest_LDADD = @GLIB_LIBS@
+unit_ktest_LDADD = @GLIB_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@
 unit_ktest_LDFLAGS = $(AM_LDFLAGS)
-unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
+unit_ktest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 unit_inettest_SOURCES = unit/inettest.c
 
-unit_inettest_LDADD = @GLIB_LIBS@
+unit_inettest_LDADD = @GLIB_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@
 unit_inettest_LDFLAGS = $(AM_LDFLAGS)
-unit_inettest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@
+unit_inettest_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 DISTCLEANFILES =
 
