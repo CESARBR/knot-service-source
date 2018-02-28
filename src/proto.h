@@ -62,5 +62,3 @@ struct proto_ops {
 
 int proto_start(const struct settings *settings, struct proto_ops **proto_ops);
 void proto_stop(void);
-
-void proto_unregister_watch(unsigned int source_id);
