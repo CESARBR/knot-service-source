@@ -16,6 +16,7 @@ dbus_DATA = src/knot.conf
 include Makefile.modules
 
 src_knotd_SOURCES = src/main.c \
+			src/storage.c src/storage.h \
 			src/settings.c src/settings.h \
 			src/session.c src/session.h \
 			src/manager.h src/manager.c \
