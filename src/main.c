@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -142,6 +143,10 @@ int main(int argc, char *argv[])
 	err = settings_parse(argc, argv, &settings);
 	if (err)
 		goto fail_settings;
+
+	if (settings->help)
+		return EXIT_SUCCESS;
+
 
 	hal_log_init("knotd", settings->detach);
 	hal_log_info("KNOT Gateway");

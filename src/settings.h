@@ -20,7 +20,7 @@
  */
 
 struct settings {
-	int use_ell;
+	bool use_ell;
 	const char *config_path;
 
 	char *host;
@@ -29,8 +29,9 @@ struct settings {
 	char *uuid;
 	const char *tty;
 
-	int detach;
-	int run_as_nobody;
+	bool help;
+	bool detach;
+	bool run_as_nobody;
 };
 
 int settings_parse(int argc, char *argv[], struct settings **settings);

@@ -19,74 +19,109 @@
  *
  */
 
-#include "settings.h"
-
+#include <stdlib.h>
+#include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include <stdbool.h>
+#include <sys/stat.h>
+#include <getopt.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 #include <json-c/json.h>
 
-static gboolean use_ell = FALSE;
+#include "settings.h"
+
+static bool use_ell = false;
 static const char *config_path = "/etc/knot/gatewayConfig.json";
 static char *host = NULL;
 static unsigned int port = 0;
 static const char *proto = "ws";
 static const char *tty = NULL;
-static gboolean detach = TRUE;
-static gboolean run_as_nobody = TRUE;
+static bool detach = true;
+static bool run_as_nobody = true;
+static bool help = false;
 
-static GOptionEntry options_spec[] = {
-	{ "ell", 'e', 0, G_OPTION_ARG_NONE, &use_ell,
-					"Use ELL instead of glib" },
-	{ "config", 'c', 0, G_OPTION_ARG_STRING, &config_path,
-					"Configuration file path", "path" },
-	{ "host", 'h', 0, G_OPTION_ARG_STRING, &host,
-					"Cloud server host name", "host" },
-	{ "port", 'p', 0, G_OPTION_ARG_INT, &port,
-					"Cloud server port", "port" },
-	{ "proto", 'P', 0, G_OPTION_ARG_STRING, &proto,
-					"Protocol used to communicate with cloud server, e.g. http or ws",
-					"proto" },
-	{ "tty", 't', 0, G_OPTION_ARG_STRING, &tty,
-					"TTY device path, e.g. /dev/ttyUSB0", "tty" },
-	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
-					G_OPTION_ARG_NONE, &detach,
-					"Disable running in background" },
-	{ "disable-nobody", 'b', G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE,
-					&run_as_nobody, "Disable running as nobody" },
-	{ NULL },
+static void usage(void)
+{
+	printf("knotd - KNoT deamon\n"
+		"Usage:\n");
+	printf("\tknotd [options]\n");
+	printf("Options:\n"
+		"\t-e, --ell               Use ELL instead of glib\n"
+		"\t-c, --config            Configuration file path\n"
+		"\t-h, --host              Cloud server host name\n"
+		"\t-p, --port              Remote port\n"
+		"\t-P, --proto             Protocol used to communicate with cloud server, e.g. http or ws\n"
+		"\t-t, --tty               TTY device path, e.g. /dev/ttyUSB0\n"
+		"\t-n, --nodetach          Disable running in background\n"
+		"\t-b, --disable-nobody    Disable running as nobody\n"
+		"\t-H, --help              Show help options\n");
+}
+
+static const struct option main_options[] = {
+	{ "ell",		no_argument,		NULL, 'e' },
+	{ "config",		required_argument,	NULL, 'c' },
+	{ "host",		required_argument,	NULL, 'h' },
+	{ "port",		required_argument,	NULL, 'p' },
+	{ "proto",		required_argument,	NULL, 'P' },
+	{ "tty",		required_argument,	NULL, 't' },
+	{ "nodetach",		no_argument,		NULL, 'n' },
+	{ "disable-nobody",	no_argument,		NULL, 'b' },
+	{ "help",		no_argument,		NULL, 'H' },
+	{ }
 };
 
 static int parse_args(int argc, char *argv[], struct settings *settings)
 {
-	int err = -EINVAL;
-	GOptionContext *context;
-	GError *gerr = NULL;
+	int opt;
 
-	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, options_spec, NULL);
+	for (;;) {
+		opt = getopt_long(argc, argv, "ec:h:p:P:t:nbH",
+				  main_options, NULL);
+		if (opt < 0)
+			break;
 
-	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		g_printerr("Invalid arguments: %s\n", gerr->message);
-		g_error_free(gerr);
-		goto done;
+		switch (opt) {
+		case 'e':
+			settings->use_ell = true;
+			break;
+		case 'c':
+			settings->config_path = optarg;
+			break;
+		case 'h':
+			settings->host = optarg;
+			break;
+		case 'p':
+			settings->port = atoi(optarg);
+			break;
+		case 'P':
+			settings->proto = optarg;
+			break;
+		case 't':
+			settings->tty = optarg;
+			break;
+		case 'n':
+			settings->detach = false;
+			break;
+		case 'b':
+			settings->run_as_nobody = false;
+			break;
+		case 'H':
+			usage();
+			settings->help = true;
+			return EXIT_SUCCESS;
+		default:
+			return EXIT_FAILURE;
+		}
 	}
 
-	settings->use_ell = use_ell;
-	settings->config_path = config_path;
-	settings->host = host;
-	settings->port = port;
-	settings->proto = proto;
-	settings->tty = tty;
-	settings->detach = detach;
-	settings->run_as_nobody = run_as_nobody;
+	if (argc - optind > 0) {
+		fprintf(stderr, "Invalid command line parameters\n");
+		return EXIT_FAILURE;
+	}
 
-	err = 0;
-
-done:
-	g_option_context_free(context);
-	return err;
+	return EXIT_SUCCESS;
 }
 
 static bool is_valid_config_file(const char *config_path)
@@ -120,7 +155,7 @@ static bool get_as_int(json_object *root, char *name, int *value)
 
 static int parse_config_file(const char *config_path, struct settings *settings)
 {
-	int err = -EINVAL;
+	int err = EXIT_FAILURE;
 	const char *obj_value;
 	json_object *root, *cloud;
 
@@ -141,7 +176,7 @@ static int parse_config_file(const char *config_path, struct settings *settings)
 	/* UUID is mandatory */
 	if (!get_as_string(cloud, "uuid", &obj_value) || obj_value == NULL)
 		goto fail_get_uuid;
-	settings->uuid = g_strdup(obj_value);
+	settings->uuid = l_strdup(obj_value);
 
 	if (settings->host == NULL) {
 		if (!get_as_string(cloud, "serverName", &obj_value))
@@ -150,20 +185,20 @@ static int parse_config_file(const char *config_path, struct settings *settings)
 		/* Allocate, so that we can free it later */
 		obj_value = settings->host;
 	}
-	settings->host = g_strdup(obj_value);
+	settings->host = l_strdup(obj_value);
 
 	if (settings->port == 0) {
 		if (!get_as_int(cloud, "port", (int *)&settings->port))
 			goto fail_get_port;
 	}
 
-	err = 0;
+	err = EXIT_SUCCESS;
 	goto done;
 
 fail_get_port:
-	g_free(settings->host);
+	l_free(settings->host);
 fail_get_host:
-	g_free(settings->uuid);
+	l_free(settings->uuid);
 fail_get_uuid:
 fail_get_cloud:
 done:
@@ -175,38 +210,48 @@ fail_get_root:
 
 int settings_parse(int argc, char *argv[], struct settings **settings)
 {
-	int err = -EINVAL;
+	int err = EXIT_FAILURE;
 
-	*settings = g_new0(struct settings, 1);
+	*settings = l_new(struct settings, 1);
+
+	(*settings)->use_ell = use_ell;
+	(*settings)->config_path = config_path;
+	(*settings)->host = host;
+	(*settings)->port = port;
+	(*settings)->proto = proto;
+	(*settings)->tty = tty;
+	(*settings)->detach = detach;
+	(*settings)->run_as_nobody = run_as_nobody;
+	(*settings)->help = help;
 
 	err = parse_args(argc, argv, *settings);
 	if (err)
 		goto failure;
 
 	if (!is_valid_config_file((*settings)->config_path)) {
-		err = -EINVAL;
-		g_printerr("Missing configuration file\n");
+		err = EXIT_FAILURE;
+		fprintf(stderr, "Missing KNoT configuration file!\n");
 		goto failure;
 	}
 
 	err = parse_config_file((*settings)->config_path, *settings);
 	if (err) {
-		g_printerr("Configuration file is invalid\n");
+		fprintf(stderr, "%s is not a regular file!\n", config_path);
 		goto failure;
 	}
 
-	err = 0;
+	err = EXIT_SUCCESS;
 	goto done;
 
 failure:
-	g_free(*settings);
+	l_free(*settings);
 done:
 	return err;
 }
 
 void settings_free(struct settings *settings)
 {
-	g_free(settings->host);
-	g_free(settings->uuid);
-	g_free(settings);
+	l_free(settings->host);
+	l_free(settings->uuid);
+	l_free(settings);
 }

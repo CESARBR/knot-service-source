@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <ctype.h>
