@@ -35,18 +35,20 @@
 #include "proxy.h"
 
 struct proxy {
-	unsigned int watch_id;
-	struct l_dbus_client *client;
 	char *name;
 	char *path;
 	char *interface;
+	unsigned int watch_id;
+	struct l_dbus_client *client;
+	struct l_hashmap *device_list;
 };
 
-static struct l_hashmap *device_list;
 static struct proxy *proxy;
 
 static void proxy_free(struct proxy *proxy)
 {
+	l_hashmap_destroy(proxy->device_list,
+			  (l_hashmap_destroy_func_t) device_destroy);
 	l_free(proxy->path);
 	l_free(proxy->interface);
 	l_free(proxy);
@@ -62,6 +64,11 @@ static void service_disappeared(struct l_dbus *dbus, void *user_data)
 {
 	struct proxy *proxy = user_data;
 	hal_log_info("Service disappeared: %s", proxy->name);
+
+	/* FIXME: Investigate if proxy should be released */
+	l_hashmap_destroy(proxy->device_list,
+			  (l_hashmap_destroy_func_t) device_destroy);
+	proxy->device_list = NULL;
 }
 
 static void added(struct l_dbus_proxy *ellproxy, void *user_data)
@@ -81,7 +88,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	/* FIXME: Use 'Id'  read from D-Bus instead of proxy address */
 	id = L_PTR_TO_UINT(ellproxy);
 	device = device_create(ellproxy, id, "device:unknown");
-	l_hashmap_insert(device_list, ellproxy, device);
+	l_hashmap_insert(proxy->device_list, ellproxy, device);
 }
 
 static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
@@ -97,7 +104,7 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 	/* Debug purpose only */
 	hal_log_info("proxy removed: %s %s", path, interface);
 
-	device = l_hashmap_remove(device_list, ellproxy);
+	device = l_hashmap_remove(proxy->device_list, ellproxy);
 	if (!device)
 		return;
 
@@ -119,7 +126,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 		return;
 
 	if (strcmp("Name", propname) == 0) {
-		device = l_hashmap_lookup(device_list, ellproxy);
+		device = l_hashmap_lookup(proxy->device_list, ellproxy);
 		if (!device)
 			return;
 
@@ -127,7 +134,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 			device_set_name(device, name);
 
 	} else if (strcmp("Paired", propname) == 0) {
-		device = l_hashmap_lookup(device_list, ellproxy);
+		device = l_hashmap_lookup(proxy->device_list, ellproxy);
 		if (!device)
 			return;
 
@@ -149,6 +156,7 @@ static struct proxy *watch_create(const char *service,
 	proxy = l_new(struct proxy, 1);
 	proxy->path = l_strdup(path);
 	proxy->interface = l_strdup(interface);
+	proxy->device_list = l_hashmap_new();
 	proxy->watch_id = l_dbus_add_service_watch(dbus_get_bus(), service,
 						   service_appeared,
 						   service_disappeared,
@@ -172,7 +180,6 @@ static void watch_remove(struct proxy *proxy)
 
 int proxy_start(void)
 {
-	device_list = l_hashmap_new();
 
 	hal_log_info("D-Bus Proxy");
 
@@ -181,16 +188,14 @@ int proxy_start(void)
 	 * nrfd, iwpand or any other radio should implement a well
 	 * defined interface to report new devices found or created.
 	 */
-	proxy = watch_create("br.org.cesar.knot", NULL, "br.org.cesar.knot.Device1");
+	proxy = watch_create("br.org.cesar.knot.nrf", NULL,
+			     "br.org.cesar.knot.nrf.Device1");
 
 	return device_start();
 }
 
 void proxy_stop(void)
 {
-	l_hashmap_destroy(device_list,
-			  (l_hashmap_destroy_func_t) device_destroy);
-
 	watch_remove(proxy);
 
 	device_stop();
