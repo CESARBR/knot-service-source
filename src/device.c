@@ -222,47 +222,24 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 	device->proxy = proxy;
 
 	device->path = l_strdup_printf("/dev_%"PRIu64, id);
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 device->path,
-					 DEVICE_INTERFACE,
-					 device)) {
-		hal_log_error("dbus: unable to add %s to %s",
-			      DEVICE_INTERFACE, device->path);
 
+	if (!l_dbus_register_object(dbus_get_bus(),
+			       device->path,
+			       device,
+			       (l_dbus_destroy_func_t) device_free,
+			       DEVICE_INTERFACE, device,
+			       L_DBUS_INTERFACE_PROPERTIES, device,
+			       NULL)) {
 		device_free(device);
-		return NULL;
-	}
-
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 device->path,
-					 L_DBUS_INTERFACE_PROPERTIES,
-					 device)) {
-		hal_log_error("dbus: unable to add %s to %s",
-			      L_DBUS_INTERFACE_PROPERTIES, device->path);
-		goto prop_reg_fail;
+		return 0;
 	}
 
 	return device;
-
-prop_reg_fail:
-
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->path,
-				       DEVICE_INTERFACE);
-	device_free(device);
-	return NULL;
 }
 
 void device_destroy(struct knot_device *device)
 {
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->path,
-				       DEVICE_INTERFACE);
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->path,
-				       L_DBUS_INTERFACE_PROPERTIES);
-
-	device_free(device);
+	l_dbus_unregister_object(dbus_get_bus(), device->path);
 }
 
 bool device_set_name(struct knot_device *device, const char *name)
