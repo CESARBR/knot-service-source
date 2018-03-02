@@ -31,6 +31,7 @@ struct knot_device {
 	uint64_t id;
 	char *name;
 	char *path;
+	char *uuid;
 	bool online;
 	bool paired;
 	bool registered;
@@ -42,6 +43,7 @@ static void device_free(struct knot_device *device)
 {
 	l_free(device->name);
 	l_free(device->path);
+	l_free(device->uuid);
 	l_free(device);
 }
 
@@ -98,6 +100,20 @@ static bool property_get_name(struct l_dbus *dbus,
 
 	l_dbus_message_builder_append_basic(builder, 's', device->name);
 	hal_log_info("%s GetProperty(Name = %s)", device->path, device->name);
+
+	return true;
+}
+
+static bool property_get_uuid(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct knot_device *device = user_data;
+	const char *uuid = (device->uuid ? : ""); /* FIXME */
+
+	l_dbus_message_builder_append_basic(builder, 's', uuid);
+	hal_log_info("%s GetProperty(UUID = %s)", device->path, uuid);
 
 	return true;
 }
@@ -168,6 +184,11 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'Name' property");
 
+	if (!l_dbus_interface_property(interface, "UUID", 0, "s",
+				       property_get_uuid,
+				       NULL))
+		hal_log_error("Can't add 'UUID' property");
+
 	if (!l_dbus_interface_property(interface, "Id", 0, "t",
 				       property_get_id,
 				       NULL))
@@ -217,6 +238,7 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 	device = l_new(struct knot_device, 1);
 	device->id = id;
 	device->name = l_strdup(name);
+	device->uuid = NULL; /* FIXME */
 	device->online = false;
 	device->registered = false;
 	device->proxy = proxy;
