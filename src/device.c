@@ -29,13 +29,14 @@
 
 struct knot_device {
 	uint64_t id;
-	char *name;
-	char *path;
-	char *uuid;
-	bool online;
-	bool paired;
-	bool registered;
-	struct l_dbus_message *msg;
+	char *name;			/* Friendly name */
+	char *path;			/* D-Bus object path */
+	char *uuid;			/* Device UUID from cloud */
+	bool connected;			/* Low level radio connection status */
+	bool online;			/* Fog 'Online' property */
+	bool paired;			/* Low level pairing state */
+	bool registered;		/* Registered to cloud */
+	struct l_dbus_message *msg;	/* Pending operation */
 	struct l_dbus_proxy *proxy;
 };
 
@@ -138,10 +139,22 @@ static bool property_get_online(struct l_dbus *dbus,
 				  void *user_data)
 {
 	struct knot_device *device = user_data;
+	bool online;
 
-	l_dbus_message_builder_append_basic(builder, 'b', &device->online);
+	/*
+	 * Online behaviour
+	 * Before registration: 'Online' refers to low level connection status.
+	 * After registration: 'Online' means that the low level connection
+	 * is established and there is an active connection between Fog & knotd.
+	 */
+	if (!device->registered)
+		online = device->connected;
+	else
+		online = device->online;
+
+	l_dbus_message_builder_append_basic(builder, 'b', &online);
 	hal_log_info("%s GetProperty(Online = %d)",
-		     device->path, device->online);
+		     device->path, online);
 
 	return true;
 }
@@ -311,6 +324,33 @@ bool device_set_paired(struct knot_device *device, bool paired)
 		return false;
 
 	device->paired = paired;
+
+	return true;
+}
+
+bool device_set_connected(struct knot_device *device, bool connected)
+{
+	struct l_dbus_message_builder *builder;
+	struct l_dbus_message *signal;
+
+	/* Defines if radio connection is estabished or not */
+
+	if (device->connected == connected)
+		return false;
+
+	device->connected = connected;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Online");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &connected);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	if (l_dbus_send(dbus_get_bus(), signal) == 0)
+		return false;
 
 	return true;
 }

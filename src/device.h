@@ -31,3 +31,4 @@ void device_destroy(struct knot_device *device);
 
 bool device_set_name(struct knot_device *device, const char *name);
 bool device_set_paired(struct knot_device *device, bool paired);
+bool device_set_connected(struct knot_device *device, bool connected);

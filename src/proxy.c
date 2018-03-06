@@ -120,7 +120,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	struct knot_device *device;
 	const char *name;
-	bool paired;
+	bool bvalue;
 
 	if (strcmp(proxy->interface, interface) != 0)
 		return;
@@ -138,8 +138,15 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 		if (!device)
 			return;
 
-		if (l_dbus_message_get_arguments(msg, "b", &paired))
-			device_set_paired(device, paired);
+		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
+			device_set_paired(device, bvalue);
+	} else if (strcmp("Connected", propname) == 0) {
+		device = l_hashmap_lookup(proxy->device_list, ellproxy);
+		if (!device)
+			return;
+
+		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
+			device_set_connected(device, bvalue);
 	} else {
 		/* Ignore other properties */
 		return;
