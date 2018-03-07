@@ -4,7 +4,7 @@ modules_sources =
 modules_ldadd =
 modules_cflags =
 
-AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
+AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS)
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
 bin_PROGRAMS = src/knotd inetbr/inetbrd
@@ -28,7 +28,7 @@ src_knotd_SOURCES = src/main.c \
 			src/proxy.c src/proxy.h \
 			$(modules_sources)
 
-src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ -lm
+src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@
 
@@ -39,12 +39,12 @@ inetbr_inetbrd_SOURCES = inetbr/main.c \
 
 inetbr_inetbrd_LDADD = @GLIB_LIBS@ $(modules_ldadd) -lm
 inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
-inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
+inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @GLIB_CFLAGS@
 
 tools_ktool_SOURCES = tools/ktool.c
 tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
-tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@
+tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@ @GLIB_CFLAGS@
 
 unit_ktest_SOURCES = unit/ktest.c
 

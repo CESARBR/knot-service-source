@@ -30,15 +30,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <glib.h>
-
 #include <ell/ell.h>
 
 #include <hal/linux_log.h>
 #include "settings.h"
 #include "manager.h"
-
-static GMainLoop *main_loop;
 
 static struct settings *settings;
 
@@ -59,19 +55,9 @@ static void l_terminate(void)
 	l_timeout_create(1, main_loop_quit, NULL, NULL);
 }
 
-static void g_terminate(void)
-{
-	g_main_loop_quit(main_loop);
-}
-
 static bool l_main_loop_init()
 {
 	return l_main_init();
-}
-
-static void g_main_loop_init()
-{
-	main_loop = g_main_loop_new(NULL, FALSE);
 }
 
 static void l_signal_handler(struct l_signal *signal, uint32_t signo,
@@ -82,16 +68,6 @@ static void l_signal_handler(struct l_signal *signal, uint32_t signo,
 	case SIGTERM:
 		l_terminate();
 		break;
-	}
-}
-
-static void g_signal_handler(int signo)
-{
-	switch (signo) {
-		case SIGINT:
-		case SIGTERM:
-			g_terminate();
-			break;
 	}
 }
 
@@ -110,16 +86,6 @@ static void l_main_loop_run()
 
 	l_signal_remove(sig);
 	l_main_exit();
-}
-
-static void _g_main_loop_run()
-{
-	signal(SIGTERM, g_signal_handler);
-	signal(SIGINT, g_signal_handler);
-	signal(SIGPIPE, SIG_IGN);
-
-	g_main_loop_run(main_loop);
-	g_main_loop_unref(main_loop);
 }
 
 static int run_as_nobody()
@@ -161,11 +127,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (settings->use_ell) {
-		if (!l_main_loop_init())
-			goto fail_main_loop;
-	} else
-		g_main_loop_init();
+	if (!l_main_loop_init())
+		goto fail_main_loop;
 
 	err = manager_start(settings);
 	if (err) {
@@ -182,11 +145,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (settings->use_ell) {
-		l_main_loop_run();
-	} else {
-		_g_main_loop_run();
-	}
+	l_main_loop_run();
 
 	hal_log_info("Exiting");
 
@@ -195,10 +154,9 @@ int main(int argc, char *argv[])
 
 done:
 fail_detach:
-		manager_stop();
+	manager_stop();
 fail_manager:
-	if (settings->use_ell)
-		l_main_exit();
+	l_main_exit();
 fail_main_loop:
 fail_nobody:
 	hal_log_close();

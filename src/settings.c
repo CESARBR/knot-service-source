@@ -32,7 +32,6 @@
 
 #include "settings.h"
 
-static bool use_ell = false;
 static const char *config_path = "/etc/knot/gatewayConfig.json";
 static char *host = NULL;
 static unsigned int port = 0;
@@ -48,7 +47,6 @@ static void usage(void)
 		"Usage:\n");
 	printf("\tknotd [options]\n");
 	printf("Options:\n"
-		"\t-e, --ell               Use ELL instead of glib\n"
 		"\t-c, --config            Configuration file path\n"
 		"\t-h, --host              Cloud server host name\n"
 		"\t-p, --port              Remote port\n"
@@ -60,7 +58,6 @@ static void usage(void)
 }
 
 static const struct option main_options[] = {
-	{ "ell",		no_argument,		NULL, 'e' },
 	{ "config",		required_argument,	NULL, 'c' },
 	{ "host",		required_argument,	NULL, 'h' },
 	{ "port",		required_argument,	NULL, 'p' },
@@ -77,15 +74,12 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "ec:h:p:P:t:nbH",
+		opt = getopt_long(argc, argv, "c:h:p:P:t:nbH",
 				  main_options, NULL);
 		if (opt < 0)
 			break;
 
 		switch (opt) {
-		case 'e':
-			settings->use_ell = true;
-			break;
 		case 'c':
 			settings->config_path = optarg;
 			break;
@@ -214,7 +208,6 @@ int settings_parse(int argc, char *argv[], struct settings **settings)
 
 	*settings = l_new(struct settings, 1);
 
-	(*settings)->use_ell = use_ell;
 	(*settings)->config_path = config_path;
 	(*settings)->host = host;
 	(*settings)->port = port;

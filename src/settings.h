@@ -20,7 +20,6 @@
  */
 
 struct settings {
-	bool use_ell;
 	const char *config_path;
 
 	char *host;
