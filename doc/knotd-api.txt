@@ -3,6 +3,22 @@ Device hierarchy
 Interface 	org.cesar.knot.Device1
 Object path 	[variable prefix]/dev_xx_xx_xx_xx_xx_xx_xx_xx
 
+Methods 	void Pair(dict properties)
+
+		This method allows to create persistent association. Allowed
+		properties: "PublicKey", "PrivateKey". Keys are optional,
+		binding without keys results on non-secure communication.
+
+		Returns: org.cesar.nrf.Error.AlreadyExists
+			org.cesar.nrf.Error.InvalidArguments
+
+		void Forget()
+
+		This method removes all meta-data associated to this device, and
+		automatically disconnects from it.
+
+		Returns: br.org.cesar.knot.nrf.Error.InProgress
+
 Properties
 		uint64 Id [readonly]
 
@@ -26,4 +42,3 @@ Properties
 		Indicates if the remote is registed to cloud service.
 		PropertiesChanged signal is emitted when this value
 		changes.
-
