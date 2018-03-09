@@ -78,6 +78,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	struct proxy *proxy = user_data;
 	struct knot_device *device;
 	uint64_t id = 0;
+	bool paired = false;
 
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
@@ -88,7 +89,10 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
 		return;
 
-	device = device_create(ellproxy, id, "device:unknown");
+	if (!l_dbus_proxy_get_property(ellproxy, "Paired", "b", &paired))
+		return;
+
+	device = device_create(ellproxy, id, "device:unknown", paired);
 	l_hashmap_insert(proxy->device_list, ellproxy, device);
 }
 

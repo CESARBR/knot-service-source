@@ -26,7 +26,7 @@ void device_stop(void);
 
 
 struct knot_device *device_create(struct l_dbus_proxy *proxy,
-				  uint64_t id, const char *name);
+				  uint64_t id, const char *name, bool paired);
 void device_destroy(struct knot_device *device);
 
 bool device_set_name(struct knot_device *device, const char *name);

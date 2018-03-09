@@ -266,7 +266,7 @@ void device_stop(void)
 }
 
 struct knot_device *device_create(struct l_dbus_proxy *proxy,
-				  uint64_t id, const char *name)
+				  uint64_t id, const char *name, bool paired)
 {
 	struct knot_device *device;
 
@@ -274,6 +274,7 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 	device->id = id;
 	device->name = l_strdup(name);
 	device->uuid = NULL; /* FIXME */
+	device->paired = paired;
 	device->online = false;
 	device->registered = false;
 	device->proxy = proxy;
