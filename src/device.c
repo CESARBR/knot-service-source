@@ -48,7 +48,7 @@ static void device_free(struct knot_device *device)
 	l_free(device);
 }
 
-static void pair_reply(struct l_dbus_proxy *proxy,
+static void method_reply(struct l_dbus_proxy *proxy,
 		       struct l_dbus_message *result,
 		       void *user_data)
 {
@@ -87,7 +87,27 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	device->msg = l_dbus_message_ref(msg);
 
 	l_dbus_proxy_method_call(device->proxy, "Pair",
-				 NULL, pair_reply, device, NULL);
+				 NULL, method_reply, device, NULL);
+
+	return NULL;
+}
+
+static struct l_dbus_message *method_forget(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct knot_device *device = user_data;
+
+	if (!device->paired)
+		return l_dbus_message_new_method_return(msg);
+
+	if (device->msg)
+		return dbus_error_busy(msg);
+
+	device->msg = l_dbus_message_ref(msg);
+
+	l_dbus_proxy_method_call(device->proxy, "Forget",
+				 NULL, method_reply, device, NULL);
 
 	return NULL;
 }
@@ -191,6 +211,8 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 {
 	l_dbus_interface_method(interface, "Pair", 0,
 				method_pair, "", "", "");
+	l_dbus_interface_method(interface, "Forget", 0,
+				method_forget, "", "", "");
 
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       property_get_name,
