@@ -23,11 +23,12 @@
 #define SETTINGS_INTERFACE		"br.org.cesar.knot.Settings1"
 #define DEVICE_INTERFACE		"br.org.cesar.knot.Device1"
 
+struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
+						 const char *emsg);
+struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg);
+struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg);
+
 int dbus_start(void);
 void dbus_stop(void);
 
 struct l_dbus *dbus_get_bus(void);
-
-struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
-						 const char *emsg);
-struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg);
