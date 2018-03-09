@@ -77,7 +77,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	const char *path = l_dbus_proxy_get_path(ellproxy);
 	struct proxy *proxy = user_data;
 	struct knot_device *device;
-	uint64_t id;
+	uint64_t id = 0;
 
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
@@ -85,8 +85,9 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	/* Debug purpose only */
 	hal_log_info("proxy added: %s %s", path, interface);
 
-	/* FIXME: Use 'Id'  read from D-Bus instead of proxy address */
-	id = L_PTR_TO_UINT(ellproxy);
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+		return;
+
 	device = device_create(ellproxy, id, "device:unknown");
 	l_hashmap_insert(proxy->device_list, ellproxy, device);
 }
