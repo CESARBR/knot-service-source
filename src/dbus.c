@@ -75,6 +75,13 @@ void dbus_stop(void)
 
 }
 
+struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
+						 const char *emsg)
+{
+	return l_dbus_message_new_error(msg, KNOT_SERVICE ".AlreadyExists",
+					emsg);
+}
+
 struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg)
 {
 	return l_dbus_message_new_error(msg, KNOT_SERVICE ".InProgress",

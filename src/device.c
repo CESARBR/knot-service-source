@@ -79,7 +79,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	struct knot_device *device = user_data;
 
 	if (device->paired)
-		return l_dbus_message_new_method_return(msg);
+		return dbus_error_already_exists(msg, "Already paired");
 
 	if (device->msg)
 		return dbus_error_busy(msg);
