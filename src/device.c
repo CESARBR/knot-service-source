@@ -28,6 +28,7 @@
 #include "device.h"
 
 struct knot_device {
+	int refs;
 	uint64_t id;
 	char *name;			/* Friendly name */
 	char *path;			/* D-Bus object path */
@@ -46,6 +47,27 @@ static void device_free(struct knot_device *device)
 	l_free(device->path);
 	l_free(device->uuid);
 	l_free(device);
+}
+
+static struct knot_device *device_ref(struct knot_device *device)
+{
+	if (unlikely(!device))
+		return NULL;
+
+	__sync_fetch_and_add(&device->refs, 1);
+
+	return device;
+}
+
+static void device_unref(struct knot_device *device)
+{
+	if (unlikely(!device))
+		return;
+
+	if (__sync_sub_and_fetch(&device->refs, 1))
+		return;
+
+	device_free(device);
 }
 
 static void method_reply(struct l_dbus_proxy *proxy,
@@ -283,8 +305,8 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 
 	if (!l_dbus_register_object(dbus_get_bus(),
 			       device->path,
-			       device,
-			       (l_dbus_destroy_func_t) device_free,
+			       device_ref(device),
+			       (l_dbus_destroy_func_t) device_unref,
 			       DEVICE_INTERFACE, device,
 			       L_DBUS_INTERFACE_PROPERTIES, device,
 			       NULL)) {
@@ -292,12 +314,13 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 		return 0;
 	}
 
-	return device;
+	return device_ref(device);
 }
 
 void device_destroy(struct knot_device *device)
 {
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
+	device_unref(device);
 }
 
 bool device_set_name(struct knot_device *device, const char *name)
