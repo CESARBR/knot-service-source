@@ -1692,8 +1692,9 @@ done:
 static void update_device_getdata(int proto_sock, char *uuid, char *token,
 					uint8_t sensor_id)
 {
-	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	json_object *ajobj, *setdatajobj;
+	json_object *jobj = NULL, *jobjarray = NULL;
+	json_object *jobjentry = NULL, *jobjkey = NULL;
+	json_object *ajobj = NULL, *setdatajobj = NULL;
 	json_raw_t json;
 	const char *jobjstr;
 	int i, err;
@@ -1956,8 +1957,9 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 static void update_device_setdata(int proto_sock, char *uuid, char *token,
 					uint8_t sensor_id)
 {
-	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	json_object *ajobj, *setdatajobj;
+	json_object *jobj = NULL, *jobjarray = NULL;
+        json_object *jobjentry = NULL, *jobjkey = NULL;
+        json_object *ajobj = NULL, *setdatajobj = NULL;
 	json_raw_t json;
 	const char *jobjstr;
 	int i, err;
@@ -2100,7 +2102,7 @@ ssize_t msg_process(int sock, int proto_sock,
 {
 	const knot_msg *kreq = ipdu;
 	knot_msg *krsp = opdu;
-	uint8_t rtype;
+	uint8_t rtype = 0;
 	int8_t result = KNOT_INVALID_DATA;
 	bool eof;
 

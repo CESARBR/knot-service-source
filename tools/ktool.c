@@ -604,7 +604,7 @@ static int cmd_schema(gboolean auth)
 	struct json_object *jobj;
 	struct schema schema;
 	struct stat sb;
-	int err;
+	int err = 0;
 
 	/*
 	 * Checks if the device needs to be authenticated or already is
