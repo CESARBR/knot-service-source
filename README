@@ -12,6 +12,7 @@ such as Bluetooth Low Energy, and Wi-Fi are planned.
 Dependencies:
 knot-protocol-source
 knot-hal-source
+ell >= 0.4
 glib >= 2.28
 json-c
 automake
@@ -27,15 +28,13 @@ How to install dependencies:
 		https://cmake.org/install/
 	After install cmake, install libwebsocket v2.1.0
 		https://github.com/warmcat/libwebsockets/releases/tag/v2.1.0
+	To install libell, you have to clone the repository and follow the instructions:
+		git://git.kernel.org/pub/scm/libs/ell/ell.git
 
 How to build:
-$CFLAGS="-I$(pwd)/../knot-protocol-source/src \
--I$(pwd)/../knot-hal-source" \
-LIBS="$(pwd)/../knot-protocol-source/src/libknotprotocol.a \
-$(pwd)/../knot-hal-source/src/hal/log/libhallog.a" \
-./bootstrap-configure --enable-debug --disable-optimization && make
-
-'CFLAGS' must include your local knot protocol library and knot hal source folders.
+You have to install the knot-protocol-source and the knot-hal-source,
+sothen you can run:
+$./bootstrap-configure && make
 
 Setup before running knotd:
 You need get that file 'https://raw.githubusercontent.com/CESARBR/knot-gateway-webui/master/app/config/gatewayConfig.json'
