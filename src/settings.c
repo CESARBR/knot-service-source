@@ -28,11 +28,11 @@
 #include <getopt.h>
 
 #include <ell/ell.h>
-#include <json-c/json.h>
 
 #include "settings.h"
+#include "storage.h"
 
-static const char *config_path = "/etc/knot/gatewayConfig.json";
+static const char *config_path = "/etc/knot/knotd.conf";
 static char *host = NULL;
 static unsigned int port = 0;
 static const char *proto = "ws";
@@ -84,7 +84,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 			settings->config_path = optarg;
 			break;
 		case 'h':
-			settings->host = optarg;
+			settings->host = l_strdup(optarg);
 			break;
 		case 'p':
 			settings->port = atoi(optarg);
@@ -123,43 +123,10 @@ static bool is_valid_config_file(const char *config_path)
 	return config_path != NULL;
 }
 
-static bool get_as_string(json_object *root, char *name, const char **value)
-{
-	json_object *obj;
-
-	if (!json_object_object_get_ex(root, name, &obj))
-		return false;
-
-	*value = json_object_get_string(obj);
-
-	return true;
-}
-
-static bool get_as_int(json_object *root, char *name, int *value)
-{
-	json_object *obj;
-
-	if (!json_object_object_get_ex(root, name, &obj))
-		return false;
-
-	*value = json_object_get_int(obj);
-
-	return true;
-}
-
 static int parse_config_file(const char *config_path, struct settings *settings)
 {
-	int err = EXIT_FAILURE;
-	const char *obj_value;
-	json_object *root, *cloud;
-
-	/* Load data from config file */
-	root = json_object_from_file(config_path);
-	if (!root)
-		goto fail_get_root;
-
-	if (!json_object_object_get_ex(root, "cloud", &cloud))
-		goto fail_get_cloud;
+	char *host = NULL;
+	char *uuid = NULL;
 
 	/*
 	 * Command line options (host and port) have higher priority
@@ -168,38 +135,32 @@ static int parse_config_file(const char *config_path, struct settings *settings)
 	 */
 
 	/* UUID is mandatory */
-	if (!get_as_string(cloud, "uuid", &obj_value) || obj_value == NULL)
-		goto fail_get_uuid;
-	settings->uuid = l_strdup(obj_value);
+	uuid = storage_read_key_string(config_path, "Cloud","Uuid");
+	if (uuid == NULL)
+		return EXIT_FAILURE;
 
-	if (settings->host == NULL) {
-		if (!get_as_string(cloud, "serverName", &obj_value))
-			goto fail_get_host;
-	} else {
-		/* Allocate, so that we can free it later */
-		obj_value = settings->host;
-	}
-	settings->host = l_strdup(obj_value);
+	if (settings->host == NULL)
+		host = storage_read_key_string(config_path,
+					       "Cloud","ServerName");
 
 	if (settings->port == 0) {
-		if (!get_as_int(cloud, "port", (int *)&settings->port))
+		if (storage_read_key_int(config_path, "Cloud", "Port",
+					 (int *) &settings->port) < 0)
 			goto fail_get_port;
 	}
 
-	err = EXIT_SUCCESS;
-	goto done;
+	if (host)
+		settings->host = host;
+
+	settings->uuid = uuid;
+
+	return EXIT_SUCCESS;
 
 fail_get_port:
-	l_free(settings->host);
-fail_get_host:
-	l_free(settings->uuid);
-fail_get_uuid:
-fail_get_cloud:
-done:
-	/* Free mem allocated for root object */
-	json_object_put(root);
-fail_get_root:
-	return err;
+	l_free(host);
+	l_free(uuid);
+
+	return EXIT_FAILURE;
 }
 
 int settings_parse(int argc, char *argv[], struct settings **settings)
