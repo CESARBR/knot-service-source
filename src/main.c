@@ -108,15 +108,23 @@ int main(int argc, char *argv[])
 
 	err = settings_parse(argc, argv, &settings);
 	if (err)
-		goto fail_settings;
+		return err;
 
 	if (settings->help)
 		return EXIT_SUCCESS;
 
+	if (!l_main_loop_init())
+		goto fail_main_loop;
 
 	hal_log_init("knotd", settings->detach);
 	hal_log_info("KNOT Gateway");
 
+	err = manager_start(settings);
+	if (err) {
+		hal_log_error("Failed to start the manager: %s (%d)",
+			      strerror(-err), -err);
+		goto fail_manager;
+	}
 	/* Set user id to nobody */
 	if (settings->run_as_nobody) {
 		err = run_as_nobody();
@@ -125,15 +133,6 @@ int main(int argc, char *argv[])
 				"%s (%d). Exiting ...", strerror(-err), -err);
 			goto fail_nobody;
 		}
-	}
-
-	if (!l_main_loop_init())
-		goto fail_main_loop;
-
-	err = manager_start(settings);
-	if (err) {
-		hal_log_error("Failed to start the manager: %s (%d)", strerror(-err), -err);
-		goto fail_manager;
 	}
 
 	if (settings->detach) {
@@ -150,17 +149,15 @@ int main(int argc, char *argv[])
 	hal_log_info("Exiting");
 
 	err = EXIT_SUCCESS;
-	goto done;
 
-done:
 fail_detach:
+fail_nobody:
 	manager_stop();
 fail_manager:
 	l_main_exit();
-fail_main_loop:
-fail_nobody:
 	hal_log_close();
+fail_main_loop:
 	settings_free(settings);
-fail_settings:
+
 	return err;
 }
