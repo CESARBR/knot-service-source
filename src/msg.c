@@ -1429,8 +1429,8 @@ fail_signin_no_data:
 static void msg_credential_create(knot_msg_credential *message,
 	const char *uuid, const char *token)
 {
-	strcpy(message->uuid, uuid);
-	strcpy(message->token, token);
+	strncpy(message->uuid, uuid, sizeof(message->uuid));
+	strncpy(message->token, token, sizeof(message->token));
 
 	/* Payload length includes the result, UUID and TOKEN */
 	message->hdr.payload_len = sizeof(*message) - sizeof(knot_msg_header);
