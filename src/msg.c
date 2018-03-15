@@ -1396,6 +1396,7 @@ static int proto_signin(int proto_socket, const char *uuid, const char *token,
 	int err, result;
 	json_raw_t response;
 
+	memset(&response, 0, sizeof(response));
 	err = proto->signin(proto_socket, uuid, token, &response);
 
 	if (!response.data) {
