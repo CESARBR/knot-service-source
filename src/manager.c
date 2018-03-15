@@ -146,20 +146,28 @@ int manager_start(const struct settings *settings)
 	int err;
 
 	err = proto_start(settings, &selected_protocol);
-	if (err < 0)
+	if (err < 0) {
+		hal_log_error("proto_start(): %s", strerror(-err));
 		return err;
+	}
 
 	err = node_start(settings->tty, on_accepted_cb);
-	if (err < 0)
+	if (err < 0) {
+		hal_log_error("node_start(): %s", strerror(-err));
 		goto fail_node;
+	}
 
 	err = msg_start(settings->uuid, selected_protocol);
-	if (err < 0)
+	if (err < 0) {
+		hal_log_error("msg_start(): %s", strerror(-err));
 		goto fail_msg;
+	}
 
 	err = dbus_start();
-	if (err)
+	if (err) {
+		hal_log_error("dbus_start(): %s", strerror(-err));
 		goto fail_dbus;
+	}
 
 	/* Manager object */
 	if (!l_dbus_register_interface(dbus_get_bus(),
