@@ -36,16 +36,13 @@ You have to install the knot-protocol-source and the knot-hal-source,
 sothen you can run:
 $./bootstrap-configure && make
 
-Setup before running knotd:
-You need get that file 'https://raw.githubusercontent.com/CESARBR/knot-gateway-webui/master/app/config/gatewayConfig.json'
-
 How to check for memory leaks and open file descriptors:
 $valgrind --leak-check=full --track-fds=yes ./src/knotd \
---config=$(pwd)/gatewayConfig.json --proto=http
+--config=src/knotd.conf --proto=ws
 
 How to test (Unix sockets):
 $src/knotd
 $tools/ktool connect
 
 How to run 'knotd' specifying host & port:
-$src/knotd --config=gatewayConfig.json --proto=http --host=localhost --port=3000
+$src/knotd --config=./src/knotd.conf --proto=http --host=localhost --port=3000
