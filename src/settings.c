@@ -32,13 +32,13 @@
 #include "settings.h"
 #include "storage.h"
 
-static const char *config_path = "/etc/knot/knotd.conf";
-static char *host = NULL;
-static unsigned int port = 0;
-static const char *proto = "ws";
+#define DEFAULT_CONFIG_PATH "/etc/knot/knotd.conf"
+#define DEFAULT_HOST "localhost"
+#define DEFAULT_PORT 3000
+#define DEFAULT_PROTO "ws"
+
 static const char *tty = NULL;
 static bool detach = true;
-static bool run_as_nobody = true;
 static bool help = false;
 
 static void usage(void)
@@ -104,29 +104,48 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 		case 'H':
 			usage();
 			settings->help = true;
-			return EXIT_SUCCESS;
+			return 0;
 		default:
-			return EXIT_FAILURE;
+			return -EINVAL;
 		}
 	}
 
 	if (argc - optind > 0) {
 		fprintf(stderr, "Invalid command line parameters\n");
-		return EXIT_FAILURE;
+		return -EINVAL;
 	}
 
-	return EXIT_SUCCESS;
+	return 0;
 }
 
-static bool is_valid_config_file(const char *config_path)
+struct settings *settings_load(int argc, char *argv[])
 {
-	return config_path != NULL;
-}
-
-static int parse_config_file(const char *config_path, struct settings *settings)
-{
+	struct settings *settings;
+	struct stat buf;
+	unsigned int port = 0;
 	char *host = NULL;
 	char *uuid = NULL;
+
+	settings = l_new(struct settings, 1);
+
+	settings->config_path = DEFAULT_CONFIG_PATH;
+	settings->host = NULL;
+	settings->port = UINT32_MAX;
+	settings->proto = DEFAULT_PROTO;
+	settings->tty = tty;
+	settings->detach = detach;
+	settings->run_as_nobody = true;
+	settings->help = help;
+	settings->uuid = NULL;
+
+	if (parse_args(argc, argv, settings) < 0)
+		goto failure;
+
+	memset(&buf, 0, sizeof(buf));
+	if (stat(settings->config_path, &buf) < 0) {
+		fprintf(stderr, "Missing KNoT configuration file!\n");
+		goto failure;
+	}
 
 	/*
 	 * Command line options (host and port) have higher priority
@@ -135,72 +154,38 @@ static int parse_config_file(const char *config_path, struct settings *settings)
 	 */
 
 	/* UUID is mandatory */
-	uuid = storage_read_key_string(config_path, "Cloud","Uuid");
-	if (uuid == NULL)
-		return EXIT_FAILURE;
-
-	if (settings->host == NULL)
-		host = storage_read_key_string(config_path,
-					       "Cloud","ServerName");
-
-	if (settings->port == 0) {
-		if (storage_read_key_int(config_path, "Cloud", "Port",
-					 (int *) &settings->port) < 0)
-			goto fail_get_port;
+	uuid = storage_read_key_string(settings->config_path, "Cloud","Uuid");
+	if (uuid == NULL) {
+		fprintf(stderr, "%s UUID missing!\n", settings->config_path);
+		goto failure;
 	}
 
-	if (host)
-		settings->host = host;
+	if (settings->host == NULL) {
+		host = storage_read_key_string(settings->config_path,
+					       "Cloud","ServerName");
+		if(!host)
+			settings->host = l_strdup(DEFAULT_HOST);
+		else
+			settings->host = host;
+	}
+
+	if (settings->port == UINT32_MAX) {
+		if (storage_read_key_int(settings->config_path, "Cloud", "Port",
+					(int *) &port) < 0)
+			settings->port = DEFAULT_PORT;
+		else
+			settings->port = port;
+	}
 
 	settings->uuid = uuid;
 
-	return EXIT_SUCCESS;
-
-fail_get_port:
-	l_free(host);
-	l_free(uuid);
-
-	return EXIT_FAILURE;
-}
-
-int settings_parse(int argc, char *argv[], struct settings **settings)
-{
-	int err = EXIT_FAILURE;
-
-	*settings = l_new(struct settings, 1);
-
-	(*settings)->config_path = config_path;
-	(*settings)->host = host;
-	(*settings)->port = port;
-	(*settings)->proto = proto;
-	(*settings)->tty = tty;
-	(*settings)->detach = detach;
-	(*settings)->run_as_nobody = run_as_nobody;
-	(*settings)->help = help;
-
-	err = parse_args(argc, argv, *settings);
-	if (err)
-		goto failure;
-
-	if (!is_valid_config_file((*settings)->config_path)) {
-		err = EXIT_FAILURE;
-		fprintf(stderr, "Missing KNoT configuration file!\n");
-		goto failure;
-	}
-
-	err = parse_config_file((*settings)->config_path, *settings);
-	if (err) {
-		fprintf(stderr, "%s is not a regular file!\n", config_path);
-		goto failure;
-	}
-
-	err = EXIT_SUCCESS;
 	goto done;
 
 failure:
-	l_free(*settings);
+	settings_free(settings);
+	return NULL;
 done:
-	return err;
+	return settings;
 }
 
 void settings_free(struct settings *settings)

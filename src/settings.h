@@ -33,5 +33,5 @@ struct settings {
 	bool run_as_nobody;
 };
 
-int settings_parse(int argc, char *argv[], struct settings **settings);
+struct settings *settings_load(int argc, char *argv[]);
 void settings_free(struct settings *settings);
