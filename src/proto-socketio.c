@@ -244,7 +244,7 @@ done:
 	json_object_put(jobj);
 }
 
-static void ws_close(int sock)
+static void socketio_close(int sock)
 {
 	struct lws *ws;
 
@@ -272,7 +272,7 @@ static void ws_close(int sock)
 	l_free(psd);
 }
 
-static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
+static int socketio_mknode(int sock, const char *device_json, json_raw_t *json)
 {
 	int err;
 	json_object *jobj, *jarray;
@@ -339,7 +339,7 @@ done:
 	return err;
 }
 
-static int ws_device(int sock, const char *uuid,
+static int socketio_device(int sock, const char *uuid,
 					const char *token, json_raw_t *json)
 {
 	int err;
@@ -400,7 +400,7 @@ done:
 	return err;
 }
 
-static int ws_signin(int sock, const char *uuid, const char *token,
+static int socketio_signin(int sock, const char *uuid, const char *token,
 							json_raw_t *json)
 {
 	int err;
@@ -454,7 +454,7 @@ static int ws_signin(int sock, const char *uuid, const char *token,
 		goto done;
 	}
 
-	err = ws_device(sock, uuid, token, json);
+	err = socketio_device(sock, uuid, token, json);
 
 done:
 	ready = false;
@@ -465,7 +465,7 @@ done:
 	return err;
 }
 
-static int ws_rmnode(int sock, const char *uuid, const char *token,
+static int socketio_rmnode(int sock, const char *uuid, const char *token,
 							json_raw_t *json)
 {
 	int err;
@@ -531,7 +531,7 @@ done:
 	return err;
 }
 
-static int ws_update(int sock, const char *uuid, const char *token,
+static int socketio_update(int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json)
 {
 	int err;
@@ -584,7 +584,7 @@ done:
 	return err;
 }
 
-static int ws_data(int sock, const char *uuid, const char *token,
+static int socketio_data(int sock, const char *uuid, const char *token,
 					const char *jreq, json_raw_t *json)
 {
 	int err;
@@ -853,7 +853,7 @@ static struct lws_protocols protocols[] = {
 	}
 };
 
-static int ws_connect(void)
+static int socketio_connect(void)
 {
 	struct lws_client_connect_info info;
 	struct lws *ws;
@@ -925,7 +925,7 @@ static int ws_connect(void)
 	return sock;
 }
 
-static int ws_probe(const char *host, unsigned int port)
+static int socketio_probe(const char *host, unsigned int port)
 {
 	struct lws_context_creation_info i;
 
@@ -955,7 +955,7 @@ static void session_data_free(struct per_session_data_ws *psd)
 	l_free(psd);
 }
 
-static void ws_remove(void)
+static void socketio_remove(void)
 {
 	if (timeout) {
 		l_timeout_remove(timeout);
@@ -985,7 +985,7 @@ static void on_proto_destroyed(void *user_data)
  * since websockets uses a 'subscription' mechanism there is no need to
  * store these values.
  */
-static unsigned int ws_async(int sock, const char *uuid,
+static unsigned int socketio_async(int sock, const char *uuid,
 	const char *token, void (*proto_watch_cb)	(json_raw_t, void *),
 	void *user_data, void (*proto_watch_destroy_cb) (void *))
 {
@@ -1010,25 +1010,25 @@ static unsigned int ws_async(int sock, const char *uuid,
 	return L_PTR_TO_UINT(proto_io);
 }
 
-static void ws_async_stop(int sock, unsigned int watch_id)
+static void socketio_async_stop(int sock, unsigned int watch_id)
 {
 	struct l_io *proto_io = L_UINT_TO_PTR(watch_id);
 	l_io_destroy(proto_io);
 }
 
-struct proto_ops proto_ws = {
-	.name = "ws",	/* websockets */
-	.probe = ws_probe,
-	.remove = ws_remove,
-	.connect = ws_connect,
-	.close = ws_close,
-	.mknode = ws_mknode,
-	.signin = ws_signin,
-	.rmnode = ws_rmnode,
-	.schema = ws_update,
-	.data = ws_data,
-	.fetch = ws_device,
-	.async = ws_async,
-	.async_stop = ws_async_stop,
-	.setdata = ws_update
+struct proto_ops proto_socketio = {
+	.name = "socketio",	/* SocketIO */
+	.probe = socketio_probe,
+	.remove = socketio_remove,
+	.connect = socketio_connect,
+	.close = socketio_close,
+	.mknode = socketio_mknode,
+	.signin = socketio_signin,
+	.rmnode = socketio_rmnode,
+	.schema = socketio_update,
+	.data = socketio_data,
+	.fetch = socketio_device,
+	.async = socketio_async,
+	.async_stop = socketio_async_stop,
+	.setdata = socketio_update
 };

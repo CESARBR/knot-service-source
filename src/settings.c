@@ -32,10 +32,10 @@
 #include "settings.h"
 #include "storage.h"
 
-#define DEFAULT_CONFIG_PATH "/etc/knot/knotd.conf"
-#define DEFAULT_HOST "localhost"
-#define DEFAULT_PORT 3000
-#define DEFAULT_PROTO "ws"
+#define DEFAULT_CONFIG_PATH		"/etc/knot/knotd.conf"
+#define DEFAULT_HOST			"localhost"
+#define DEFAULT_PORT			3000
+#define DEFAULT_PROTO			"socketio"
 
 static const char *tty = NULL;
 static bool detach = true;
@@ -50,7 +50,7 @@ static void usage(void)
 		"\t-c, --config            Configuration file path\n"
 		"\t-h, --host              Cloud server host name\n"
 		"\t-p, --port              Remote port\n"
-		"\t-P, --proto             Protocol used to communicate with cloud server, e.g. http or ws\n"
+		"\t-P, --proto             Protocol used to communicate with cloud server, e.g. http or socketio\n"
 		"\t-t, --tty               TTY device path, e.g. /dev/ttyUSB0\n"
 		"\t-n, --nodetach          Disable running in background\n"
 		"\t-b, --disable-nobody    Disable running as nobody\n"

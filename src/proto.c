@@ -34,13 +34,13 @@
 
 extern struct proto_ops proto_http;
 #ifdef HAVE_WEBSOCKETS
-extern struct proto_ops proto_ws;
+extern struct proto_ops proto_socketio;
 #endif
 
 static struct proto_ops *proto_ops[] = {
 	&proto_http,
 #ifdef HAVE_WEBSOCKETS
-	&proto_ws,
+	&proto_socketio,
 #endif
 	NULL
 };
