@@ -50,7 +50,7 @@ static void usage(void)
 		"\t-c, --config            Configuration file path\n"
 		"\t-h, --host              Cloud server host name\n"
 		"\t-p, --port              Remote port\n"
-		"\t-P, --proto             Protocol used to communicate with cloud server, e.g. http or socketio\n"
+		"\t-P, --proto             Protocol used to communicate with cloud server: http, socketio, ws\n"
 		"\t-t, --tty               TTY device path, e.g. /dev/ttyUSB0\n"
 		"\t-n, --nodetach          Disable running in background\n"
 		"\t-b, --disable-nobody    Disable running as nobody\n"

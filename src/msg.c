@@ -1360,7 +1360,8 @@ static int proto_mknode(int proto_socket, const char *device_name,
 		goto fail_mknode;
 	}
 
-	if (parse_device_info(response.data, uuid, token) < 0) {
+	if (response.size == 0 ||
+	    (parse_device_info(response.data, uuid, token) < 0)) {
 		hal_log_error("Unexpected response!");
 		result = KNOT_CLOUD_FAILURE;
 		goto fail_parse;

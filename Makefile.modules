@@ -17,7 +17,7 @@ modules_ldadd += @CURL_LIBS@ @JSON_LIBS@
 
 if WEBSOCKETS
 # IoT protocol: Meshblu Websockets
-modules_sources += src/proto-socketio.c
+modules_sources += src/proto-ws.c src/proto-socketio.c
 modules_cflags += @WEBSOCKETS_CFLAGS@
 modules_ldadd += @WEBSOCKETS_LIBS@
 endif
