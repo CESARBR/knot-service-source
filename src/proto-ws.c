@@ -262,7 +262,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	json_object_put(jarray);
 
 	/* TODO: Avoid another allocation */
-	json->data = l_strndup(session->data, session->size);
+	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
 
 	return ret;
@@ -277,7 +277,75 @@ static int ws_device(int sock, const char *uuid,
 static int ws_signin(int sock, const char *uuid,
 		     const char *token, json_raw_t *json)
 {
-	return 0;
+	json_object *jobj, *jarray;
+	const char *jobjstring;
+	struct ws_session *session;
+	struct lws *ws;
+	int ret;
+
+	ws = l_hashmap_lookup(lws_list, L_INT_TO_PTR(sock));
+	if (!ws)
+		return -EINVAL;
+
+	session = lws_wsi_user(ws);
+	if (!session)
+		return -EINVAL;
+
+	/* Identifying a device is by a UUID and a Token */
+	jobj = json_object_new_object();
+	jarray = json_object_new_array();
+	if (!jobj || !jarray) {
+		hal_log_error("JSON: no memory");
+		return -ENOMEM;
+	}
+
+	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
+	json_object_object_add(jobj, "token", json_object_new_string(token));
+
+	json_object_array_add(jarray, json_object_new_string("identity"));
+	json_object_array_add(jarray, jobj);
+
+	jobjstring = json_object_to_json_string(jarray);
+	hal_log_info("WS TX JSON %s", jobjstring);
+
+	session->size = snprintf((char *) &(session->data[LWS_PRE]),
+				WS_RX_BUFFER_SIZE, "%s", jobjstring);
+	ret = wait_for_response(ws);
+	json_object_put(jarray);
+	if (ret != 0)
+		goto done;
+
+	/* TODO: For identity response verify if status is 200 */
+
+	/* Retrieve a device from the Meshblu device registry by it's uuid */
+	jobj = json_object_new_object();
+	jarray = json_object_new_array();
+	if (!jobj || !jarray) {
+		hal_log_error("JSON: no memory");
+		return -ENOMEM;
+	}
+
+	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
+	json_object_array_add(jarray, json_object_new_string("device"));
+	json_object_array_add(jarray, jobj);
+
+	jobjstring = json_object_to_json_string(jarray);
+	hal_log_info("WS TX JSON %s", jobjstring);
+
+	session->size = snprintf((char *) &(session->data[LWS_PRE]),
+				WS_RX_BUFFER_SIZE, "%s", jobjstring);
+
+	ret = wait_for_response(ws);
+	json_object_put(jarray);
+	if (ret != 0)
+		goto done;
+
+	/* TODO: Avoid another allocation */
+	json->data = l_strndup((const char *) session->data, session->size);
+	json->size = session->size;
+
+done:
+	return ret;
 }
 
 static int ws_rmnode(int sock, const char *uuid,
@@ -304,8 +372,7 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 	int index = 0;
 
 	/* TODO: Avoid buffer overflow for 'op' */
-	if (sscanf(in, "%*[^\"]\"%[^\"]\",%n]", op, &index) != 2)
-		/* TODO: report error */
+	if (sscanf(in, "%*[^\"]\"%[^\"]\",%n]", op, &index) != 1)
 		return;
 
 	session->size = MIN(WS_RX_BUFFER_SIZE, len - index - 1); /* skip ']'*/
@@ -313,7 +380,7 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 	strncpy((char *) session->data, &in[index], session->size);
 }
 
-static int callback_lws_raw(struct lws *wsi,
+static int callback_lws_ws(struct lws *wsi,
 			     enum lws_callback_reasons reason,
 			     void *user_data, void *in, size_t len)
 
@@ -350,7 +417,7 @@ static int callback_lws_raw(struct lws *wsi,
 static struct lws_protocols protocols[] = {
 	{
 		"ws",
-		callback_lws_raw,
+		callback_lws_ws,
 		/* user per_session_data_size */
 		WS_RX_BUFFER_SIZE + sizeof(struct ws_session),
 		/* rx_buffer_size */
