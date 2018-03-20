@@ -368,6 +368,15 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 {
 	struct trust *trust;
 	struct l_io *node_channel;
+	struct l_io *proto_io;
+
+	/*
+	 * FIXME: ELL is based on epoll_ctl. Same file
+	 * descriptor can't be used twice.
+	 */
+	proto_io = l_io_new(proto_socket);
+	if (!proto_io)
+		return;
 
 	trust = trust_new();
 	trust->uuid = uuid;
@@ -377,12 +386,11 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 	trust->rollback = rollback;
 	trust->schema = schema;
 	trust->config = config;
+	trust->proto_io = proto_io;
 	/*
 	 * TODO: find a better way to store a reference to the cloud as if it
 	 * disconnects we won't recover.
 	 */
-	trust->proto_io = l_io_new(proto_socket);
-
 	trust_map_replace(node_socket, trust);
 
 	/* Add a watch to remove the credential when the client disconnects */
@@ -1479,7 +1487,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 
 	msg_register_get_device_name(kreq, device_name);
 	result = proto_mknode(proto_socket, device_name, kreq->id,
-		owner_uuid,	&uuid, &token);
+			      owner_uuid, &uuid, &token);
 	if (result != KNOT_SUCCESS)
 		goto fail_create;
 
