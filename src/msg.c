@@ -362,9 +362,10 @@ static struct l_io *create_node_channel(int node_socket, struct trust *trust)
 	return channel;
 }
 
-static void trust_create(int node_socket, int proto_socket, char *uuid,
-	char *token, uint64_t device_id, pid_t pid, bool rollback,
-	struct l_queue *schema, struct l_queue *config)
+static void trust_create(int node_socket, int proto_socket, const char *uuid,
+			 const char *token, uint64_t device_id, pid_t pid,
+			 bool rollback, struct l_queue *schema,
+			 struct l_queue *config)
 {
 	struct trust *trust;
 	struct l_io *node_channel;
@@ -379,8 +380,8 @@ static void trust_create(int node_socket, int proto_socket, char *uuid,
 		return;
 
 	trust = trust_new();
-	trust->uuid = uuid;
-	trust->token = token;
+	trust->uuid = l_strdup(uuid);
+	trust->token = l_strdup(token);
 	trust->id = device_id;
 	trust->pid = pid;
 	trust->rollback = rollback;
@@ -648,11 +649,10 @@ static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
 	}
 }
 
-static int parse_device_info(const char *json_str,
-					char **puuid, char **ptoken)
+static int parse_device_info(const char *json_str, char *uuid, char *token)
 {
 	json_object *jobj, *json_uuid, *json_token;
-	const char *uuid, *token;
+	const char *str;
 	int err = -EINVAL;
 
 	jobj = json_tokener_parse(json_str);
@@ -665,11 +665,10 @@ static int parse_device_info(const char *json_str,
 	if (!json_object_object_get_ex(jobj, "token", &json_token))
 		goto done;
 
-	uuid = json_object_get_string(json_uuid);
-	token = json_object_get_string(json_token);
-
-	*puuid = l_strdup(uuid);
-	*ptoken = l_strdup(token);
+	str = json_object_get_string(json_uuid);
+	strncpy(uuid, str, KNOT_PROTOCOL_UUID_LEN);
+	str = json_object_get_string(json_token);
+	strncpy(token, str, KNOT_PROTOCOL_TOKEN_LEN);
 
 	err = 0; /* Success */
 done:
@@ -1342,7 +1341,7 @@ static bool is_token_valid(const char *token)
  * TODO: consider making this part of proto-ws.c mknode()
  */
 static int proto_mknode(int proto_socket, const char *device_name,
-	uint64_t device_id, const char *owner_uuid, char **uuid, char **token)
+	uint64_t device_id, const char *owner_uuid, char *uuid, char *token)
 {
 	int err, result;
 	json_object *device;
@@ -1376,7 +1375,7 @@ static int proto_mknode(int proto_socket, const char *device_name,
 	}
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (!is_uuid_valid(*uuid) || !is_token_valid(*token)) {
+	if (!is_uuid_valid(uuid) || !is_token_valid(token)) {
 		hal_log_error("Invalid UUID or token!");
 		result = KNOT_CLOUD_FAILURE;
 		goto fail_valid;
@@ -1386,8 +1385,6 @@ static int proto_mknode(int proto_socket, const char *device_name,
 	goto done;
 
 fail_valid:
-	l_free(*uuid);
-	l_free(*token);
 done:
 fail_parse:
 	free(response.data);
@@ -1450,7 +1447,8 @@ static int8_t msg_register(int node_socket, int proto_socket,
 				 knot_msg_credential *krsp)
 {
 	struct trust *trust;
-	char *uuid, *token;
+	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
+	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	int8_t result;
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct ucred cred;
@@ -1486,8 +1484,10 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	}
 
 	msg_register_get_device_name(kreq, device_name);
+	memset(uuid, 0, sizeof(uuid));
+	memset(token, 0, sizeof(token));
 	result = proto_mknode(proto_socket, device_name, kreq->id,
-			      owner_uuid, &uuid, &token);
+			      owner_uuid, uuid, token);
 	if (result != KNOT_SUCCESS)
 		goto fail_create;
 
@@ -1500,7 +1500,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	msg_credential_create(krsp, uuid, token);
 
 	trust_create(node_socket, proto_socket, uuid, token, kreq->id,
-		(cred.pid ? : INT32_MAX), true, NULL, NULL);
+		     (cred.pid ? : INT32_MAX), true, NULL, NULL);
 
 	result = KNOT_SUCCESS;
 	goto done;
@@ -1519,7 +1519,8 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 {
 	int8_t result;
 	struct l_queue *schema, *config;
-	char *uuid, *token;
+	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
+	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 
 	if (trust_map_get(node_socket)) {
 		hal_log_info("Authenticated already");
@@ -1527,8 +1528,16 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 		goto done;
 	}
 
-	result = proto_signin(proto_socket, kmauth->uuid, kmauth->token,
-		&schema, &config);
+	/*
+	 * PDU is not null-terminated. Copy UUID and token to
+	 * a null-terminated string.
+	 */
+	memset(uuid, 0, sizeof(uuid));
+	memset(token, 0, sizeof(token));
+
+	strncpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
+	strncpy(token, kmauth->token, sizeof(kmauth->token));
+	result = proto_signin(proto_socket, uuid, token, &schema, &config);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
@@ -1543,15 +1552,9 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 		config = NULL;
 	}
 
-	/*
-	 * l_strndup returns a newly-allocated buffer n + 1 bytes
-	 * long which will always be nul-terminated.
-	 */
-	uuid = l_strndup(kmauth->uuid, sizeof(kmauth->uuid));
-	token = l_strndup(kmauth->token, sizeof(kmauth->token));
 	/* TODO: should we receive the ID? Should we get the socket PID? */
-	trust_create(node_socket, proto_socket, uuid, token, 0, 0, false,
-		schema, config);
+	trust_create(node_socket, proto_socket,
+		     uuid, token, 0, 0, false, schema, config);
 
 	result = KNOT_SUCCESS;
 	goto done;
