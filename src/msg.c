@@ -482,8 +482,8 @@ static void trust_config_confirm(struct trust *trust, uint8_t sensor_id)
  */
 static int proto_rmnode(int proto_socket, const char *uuid, const char *token)
 {
-	int result, err;
 	json_raw_t response = { NULL, 0 };
+	int result, err;
 
 	err = proto->rmnode(proto_socket, uuid, token, &response);
 	if (err < 0) {
@@ -502,8 +502,8 @@ done:
 
 static int8_t msg_unregister(int node_socket, int proto_socket)
 {
-	int8_t result;	
 	const struct trust *trust;
+	int8_t result;
 
 	trust = trust_map_get(node_socket);
 	if (!trust) {
@@ -542,9 +542,9 @@ static char *checksum_config(json_object *jobjkey)
  */
 static int config_is_valid(struct l_queue *config_list)
 {
+	struct l_queue_entry *entry;
 	knot_msg_config *config;
 	struct config *cfg;
-	struct l_queue_entry *entry;
 	int diff_int, diff_dec;
 
 	entry = (struct l_queue_entry *) l_queue_get_entries(config_list);
@@ -617,8 +617,8 @@ static int config_is_valid(struct l_queue *config_list)
 static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
 {
 	json_object *jobjkey;
-	int32_t ipart, fpart;
 	const char *str;
+	int32_t ipart, fpart;
 
 	jobjkey = jobj;
 	switch (json_object_get_type(jobjkey)) {
@@ -1074,8 +1074,8 @@ static void update_msg_item_header(void *entry_data, void *user_data)
  * Includes the proper header in the getdata messages and returns a list with
  * all the sensor from which the data is requested.
  */
-static struct l_queue *msg_getdata(int node_socket, json_raw_t device_message,
-	ssize_t *result)
+static struct l_queue *msg_getdata(int node_socket,
+				   json_raw_t device_message, ssize_t *result)
 {
 	struct trust *trust;
 	struct l_queue *messages;
@@ -1132,12 +1132,12 @@ static knot_msg_config *duplicate_msg_config(const knot_msg_config *config)
 	memcpy(new_config, config, sizeof(knot_msg_config));
 	new_config->hdr.type = KNOT_MSG_SET_CONFIG;
 	new_config->hdr.payload_len = sizeof(new_config->sensor_id) +
-		sizeof(new_config->values);
+					sizeof(new_config->values);
 	return new_config;
 }
 
 static void duplicate_and_append(struct config *config,
-	struct l_queue *msg_config_list)
+				 struct l_queue *msg_config_list)
 {
 	knot_msg_config *msg_config = duplicate_msg_config(&config->kmcfg);
 	l_queue_push_tail(msg_config_list, msg_config);
@@ -1166,7 +1166,7 @@ static bool config_cmp(struct config *config1, struct config *config2)
 }
 
 static bool exists_and_confirmed(struct config *received,
-	struct l_queue *current_list)
+				 struct l_queue *current_list)
 {
 	struct config *current = l_queue_find(current_list,
 		(l_queue_match_func_t) config_cmp,
@@ -1175,7 +1175,7 @@ static bool exists_and_confirmed(struct config *received,
 }
 
 static struct l_queue *get_changed_config(struct l_queue *current,
-	struct l_queue *received)
+					  struct l_queue *received)
 {
 	struct l_queue *received_copy;
 	struct l_queue *changed_configs;
@@ -1197,7 +1197,7 @@ static struct l_queue *get_changed_config(struct l_queue *current,
 
 	if (received_copy)
 		l_queue_destroy(received_copy, NULL);
-	
+
 	return changed_configs;
 }
 
@@ -1207,7 +1207,7 @@ static struct l_queue *get_changed_config(struct l_queue *current,
  * thing. Returns the list with the messages to be sent or NULL if any error.
  */
 static struct l_queue *msg_config(int node_socket, json_raw_t device_message,
-	ssize_t *result)
+				  ssize_t *result)
 {
 	struct trust *trust;
 	struct l_queue *config;
@@ -1278,7 +1278,7 @@ static int get_socket_credentials(int sock, struct ucred *cred)
 }
 
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
-	size_t length)
+					  size_t length)
 {
 	/* Min PDU len containing at least one char representing name */
 	return length > (sizeof(kreq->hdr) + sizeof(kreq->id));
@@ -1291,7 +1291,7 @@ static bool msg_register_has_valid_device_name(const knot_msg_register *kreq)
 
 /* device_name must have length of KNOT_PROTOCOL_DEVICE_NAME_LEN */
 static void msg_register_get_device_name(const knot_msg_register *kreq,
-	char *device_name)
+					 char *device_name)
 {
 	size_t length;
 	/*
@@ -1307,7 +1307,8 @@ static void msg_register_get_device_name(const knot_msg_register *kreq,
 }
 
 static json_object *create_device_object(const char *device_name,
-	uint64_t device_id, const char *owner_uuid)
+					 uint64_t device_id,
+					 const char *owner_uuid)
 {
 	json_object *device;
 	device = json_object_new_object();
@@ -1316,13 +1317,13 @@ static json_object *create_device_object(const char *device_name,
 	}
 
 	json_object_object_add(device, "type",
-				json_object_new_string("KNOTDevice"));
+			       json_object_new_string("KNOTDevice"));
 	json_object_object_add(device, "name",
-				json_object_new_string(device_name));
+			       json_object_new_string(device_name));
 	json_object_object_add(device, "id",
-				json_object_new_int64(device_id));
+			       json_object_new_int64(device_id));
 	json_object_object_add(device, "owner",
-				json_object_new_string(owner_uuid));
+			       json_object_new_string(owner_uuid));
 
 	return device;
 }
@@ -1341,15 +1342,15 @@ static bool is_token_valid(const char *token)
  * TODO: consider making this part of proto-ws.c mknode()
  */
 static int proto_mknode(int proto_socket, const char *device_name,
-	uint64_t device_id, const char *owner_uuid, char *uuid, char *token)
+			uint64_t device_id, const char *owner_uuid,
+			char *uuid, char *token)
 {
 	int err, result;
 	json_object *device;
 	const char *device_as_string;
 	json_raw_t response;
 
-	device = create_device_object(device_name, device_id,
-		owner_uuid);
+	device = create_device_object(device_name, device_id, owner_uuid);
 	if (!device) {
 		hal_log_error("JSON: no memory");
 		result = KNOT_ERROR_UNKNOWN;
@@ -1397,7 +1398,7 @@ fail_device:
  * TODO: consider making this part of proto-ws.c signin()
  */
 static int proto_signin(int proto_socket, const char *uuid, const char *token,
-	struct l_queue **schema, struct l_queue **config)
+			struct l_queue **schema, struct l_queue **config)
 {
 	int err, result;
 	json_raw_t response;
@@ -1433,7 +1434,7 @@ fail_signin_no_data:
 }
 
 static void msg_credential_create(knot_msg_credential *message,
-	const char *uuid, const char *token)
+				  const char *uuid, const char *token)
 {
 	strncpy(message->uuid, uuid, sizeof(message->uuid));
 	strncpy(message->token, token, sizeof(message->token));
@@ -1443,15 +1444,15 @@ static void msg_credential_create(knot_msg_credential *message,
 }
 
 static int8_t msg_register(int node_socket, int proto_socket,
-				 const knot_msg_register *kreq, size_t ilen,
-				 knot_msg_credential *krsp)
+			   const knot_msg_register *kreq, size_t ilen,
+			   knot_msg_credential *krsp)
 {
-	struct trust *trust;
+	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	int8_t result;
-	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	struct ucred cred;
+	struct trust *trust;
+	int8_t result;
 
 	if (!msg_register_has_valid_length(kreq, ilen)
 		|| !msg_register_has_valid_device_name(kreq)) {
@@ -1467,7 +1468,8 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	 */
 	result = get_socket_credentials(node_socket, &cred);
 	if (result != KNOT_SUCCESS)
-		hal_log_info("sock:%d, pid:%ld", node_socket, (long int) cred.pid);
+		hal_log_info("sock:%d, pid:%ld",
+			     node_socket, (long int) cred.pid);
 
 	/*
 	 * Due to radio packet loss, peer may re-transmits register request
@@ -1515,12 +1517,12 @@ fail_length:
 }
 
 static int8_t msg_auth(int node_socket, int proto_socket,
-				const knot_msg_authentication *kmauth)
+		       const knot_msg_authentication *kmauth)
 {
-	int8_t result;
-	struct l_queue *schema, *config;
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
+	struct l_queue *schema, *config;
+	int8_t result;
 
 	if (trust_map_get(node_socket)) {
 		hal_log_info("Authenticated already");
@@ -1566,21 +1568,22 @@ done:
 }
 
 static json_object *create_schema_object(uint8_t sensor_id, uint8_t value_type,
-	uint8_t unit, uint16_t type_id, const char *name)
+					 uint8_t unit, uint16_t type_id,
+					 const char *name)
 {
 	json_object *schema;
 
 	schema = json_object_new_object();
 	json_object_object_add(schema, "sensor_id",
-		json_object_new_int(sensor_id));
+			       json_object_new_int(sensor_id));
 	json_object_object_add(schema, "value_type",
-		json_object_new_int(value_type));
+			       json_object_new_int(value_type));
 	json_object_object_add(schema, "unit",
-		json_object_new_int(unit));
+			       json_object_new_int(unit));
 	json_object_object_add(schema, "type_id",
-		json_object_new_int(type_id));
+			       json_object_new_int(type_id));
 	json_object_object_add(schema, "name",
-		json_object_new_string(name));
+			       json_object_new_string(name));
 
 	return schema;
 }
@@ -1588,8 +1591,11 @@ static json_object *create_schema_object(uint8_t sensor_id, uint8_t value_type,
 static void create_and_append(knot_msg_schema *schema,
 	json_object *schema_list)
 {
-	json_object *item = create_schema_object(schema->sensor_id, schema->values.value_type,
-		schema->values.unit, schema->values.type_id, schema->values.name);
+	json_object *item = create_schema_object(schema->sensor_id,
+						 schema->values.value_type,
+						 schema->values.unit,
+						 schema->values.type_id,
+						 schema->values.name);
 	json_object_array_add(schema_list, item);
 }
 
@@ -1600,8 +1606,8 @@ static json_object *create_schema_list_object(struct l_queue *schema_list)
 	jschema = json_object_new_object();
 	jschema_list = json_object_new_array();
 	l_queue_foreach(schema_list,
-		(l_queue_foreach_func_t) create_and_append,
-		jschema_list);
+			(l_queue_foreach_func_t) create_and_append,
+			jschema_list);
 	json_object_object_add(jschema, "schema", jschema_list);
 
 	return jschema;
@@ -1611,7 +1617,7 @@ static json_object *create_schema_list_object(struct l_queue *schema_list)
  * TODO: consider making this part of proto-ws.c signin()
  */
 static int proto_schema(int proto_socket, const char *uuid, const char *token,
-	struct l_queue *schema_list)
+			struct l_queue *schema_list)
 {
 	int result, err;
 	json_object *jschema_list;
@@ -1622,8 +1628,8 @@ static int proto_schema(int proto_socket, const char *uuid, const char *token,
 	jschema_list_as_string = json_object_to_json_string(jschema_list);
 
 	memset(&response, 0, sizeof(response));
-	err = proto->schema(proto_socket, uuid, token, jschema_list_as_string,
-		&response);
+	err = proto->schema(proto_socket, uuid, token,
+			    jschema_list_as_string, &response);
 
 	if (response.data)
 		free(response.data);
@@ -1643,7 +1649,7 @@ done:
 }
 
 static int8_t msg_schema(int node_socket, int proto_socket,
-				const knot_msg_schema *schema, bool eof)
+			 const knot_msg_schema *schema, bool eof)
 {
 	int8_t result;
 	struct trust *trust;
@@ -1685,8 +1691,8 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 		goto done;
 	}
 
-	result = proto_schema(proto_socket, trust->uuid, trust->token,
-		trust->schema_tmp);
+	result = proto_schema(proto_socket, trust->uuid,
+			      trust->token, trust->schema_tmp);
 	if (result != KNOT_SUCCESS) {
 		trust_sensor_schema_tmp_free(trust);
 		goto done;
@@ -1703,7 +1709,7 @@ done:
  * Updates the 'devices' db, removing the sensor_id that just sent the data
  */
 static void update_device_getdata(int proto_sock, char *uuid, char *token,
-					uint8_t sensor_id)
+				  uint8_t sensor_id)
 {
 	json_object *jobj = NULL, *jobjarray = NULL;
 	json_object *jobjentry = NULL, *jobjkey = NULL;
@@ -1760,7 +1766,7 @@ static void update_device_getdata(int proto_sock, char *uuid, char *token,
 		 */
 		if (json_object_get_int(jobjkey) != sensor_id) {
 			json_object_array_add(ajobj,
-						json_object_get(jobjentry));
+					      json_object_get(jobjentry));
 			continue;
 		}
 		/*
@@ -1828,7 +1834,7 @@ static json_object *create_data_object(uint8_t sensor_id,
 
 	data = json_object_new_object();
 	json_object_object_add(data, "sensor_id",
-						json_object_new_int(sensor_id));
+			       json_object_new_int(sensor_id));
 
 	switch (value_type) {
 	case KNOT_VALUE_TYPE_INT:
@@ -1837,11 +1843,11 @@ static json_object *create_data_object(uint8_t sensor_id,
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 		json_object_object_add(data, "value",
-					json_object_new_double(knot_data_as_double(value)));
+			json_object_new_double(knot_data_as_double(value)));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(data, "value",
-				json_object_new_boolean(knot_data_as_boolean(value)));
+			json_object_new_boolean(knot_data_as_boolean(value)));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		break;
@@ -1856,13 +1862,14 @@ static json_object *create_data_object(uint8_t sensor_id,
 /*
  * TODO: consider making this part of proto-ws.c signin()
  */
-static int proto_data(int proto_socket, const char *uuid, const char *token,
-	uint8_t sensor_id, uint8_t value_type, const knot_data *value)
+static int proto_data(int proto_socket, const char *uuid,
+		      const char *token, uint8_t sensor_id,
+		      uint8_t value_type, const knot_data *value)
 {
-	int result, err;
 	struct json_object *data;
 	const char *data_as_string;
 	json_raw_t response;
+	int result, err;
 
 	data = create_data_object(sensor_id, value_type, value);
 	if (!data) {
@@ -1893,13 +1900,13 @@ done:
 }
 
 static int8_t msg_data(int node_socket, int proto_socket,
-					const knot_msg_data *kmdata)
+		       const knot_msg_data *kmdata)
 {
-	int8_t result;
-	int err;
-	uint8_t sensor_id;
-	const struct trust *trust;
 	const knot_msg_schema *schema;
+	const struct trust *trust;
+	int err;
+	int8_t result;
+	uint8_t sensor_id;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
@@ -1917,25 +1924,26 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	schema = trust_get_sensor_schema(trust, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
-								sensor_id);
+			     sensor_id);
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
 
 	err = knot_schema_is_valid(schema->values.type_id,
-				schema->values.value_type, schema->values.unit);
+				   schema->values.value_type,
+				   schema->values.unit);
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
-					sensor_id, schema->values.type_id);
+			     sensor_id, schema->values.type_id);
 		result = KNOT_INVALID_DATA;
 		goto done;
 	}
 
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
-				schema->values.unit, schema->values.value_type);
+		     schema->values.unit, schema->values.value_type);
 
 	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
-		schema->values.value_type, kdata);
+			    schema->values.value_type, kdata);
 
 	update_device_getdata(proto_socket, trust->uuid, trust->token, sensor_id);
 
@@ -1968,13 +1976,13 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
  * THING.
  */
 static void update_device_setdata(int proto_sock, char *uuid, char *token,
-					uint8_t sensor_id)
+				  uint8_t sensor_id)
 {
 	json_object *jobj = NULL, *jobjarray = NULL;
         json_object *jobjentry = NULL, *jobjkey = NULL;
         json_object *ajobj = NULL, *setdatajobj = NULL;
-	json_raw_t json;
 	const char *jobjstr;
+	json_raw_t json;
 	int i, err;
 
 	memset(&json, 0, sizeof(json));
@@ -2050,13 +2058,13 @@ done:
  * the 'devices' database.
  */
 static int8_t msg_setdata_resp(int node_socket, int proto_socket,
-					const knot_msg_data *kmdata)
+			       const knot_msg_data *kmdata)
 {
+	const knot_msg_schema *schema;
+	const struct trust *trust;
 	int8_t result;
 	int err;
 	uint8_t sensor_id;
-	const struct trust *trust;
-	const knot_msg_schema *schema;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
@@ -2080,7 +2088,8 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	}
 
 	err = knot_schema_is_valid(schema->values.type_id,
-				schema->values.value_type, schema->values.unit);
+				   schema->values.value_type,
+				   schema->values.unit);
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
@@ -2096,7 +2105,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 								sensor_id);
 
 	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
-		schema->values.value_type, kdata);
+			    schema->values.value_type, kdata);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
@@ -2147,7 +2156,7 @@ ssize_t msg_process(int sock, int proto_sock,
 	case KNOT_MSG_REGISTER_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(sock, proto_sock,
-							&kreq->reg, ilen, &krsp->cred);
+				      &kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
