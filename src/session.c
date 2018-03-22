@@ -21,7 +21,6 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 
 #include <ell/ell.h>
 
@@ -45,7 +44,7 @@ struct session {
 
 	on_data on_data;
 
-	atomic_int refs;
+	int refs;
 };
 
 static struct l_queue *session_list = NULL;
@@ -61,7 +60,12 @@ static void session_free(struct session *session)
 
 static struct session *session_ref(struct session *session)
 {
-	atomic_fetch_add(&session->refs, 1);
+	if (unlikely(!session))
+		return NULL;
+
+	__sync_fetch_and_add(&session->refs, 1);
+
+	return session;
 }
 
 static struct session *session_new(void)
@@ -76,7 +80,10 @@ static struct session *session_new(void)
 
 static void session_unref(struct session *session)
 {
-	if (atomic_fetch_sub(&session->refs, 1) > 1)
+	if (unlikely(!session))
+                return;
+
+        if (__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
 	session_free(session);

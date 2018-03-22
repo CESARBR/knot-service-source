@@ -29,7 +29,6 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
@@ -281,14 +280,20 @@ static void trust_map_replace(int id, struct trust *trust)
 
 static struct trust *trust_ref(struct trust *trust)
 {
-	atomic_fetch_add(&trust->refs, 1);
+	if (unlikely(!trust))
+		return NULL;
+
+	__sync_fetch_and_add(&trust->refs, 1);
 
 	return trust;
 }
 
 static void trust_unref(struct trust *trust)
 {
-	if (atomic_fetch_sub(&trust->refs, 1) > 1)
+	if (unlikely(!trust))
+                return;
+
+        if (__sync_sub_and_fetch(&trust->refs, 1))
 		return;
 
 	l_io_destroy(trust->proto_io);
@@ -1584,7 +1589,7 @@ static json_object *create_schema_object(uint8_t sensor_id, uint8_t value_type,
 }
 
 static void create_and_append(knot_msg_schema *schema,
-	json_object *schema_list)
+			      json_object *schema_list)
 {
 	json_object *item = create_schema_object(schema->sensor_id,
 						 schema->values.value_type,
