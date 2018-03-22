@@ -389,20 +389,28 @@ static void trust_create(int node_socket, int proto_socket, const char *uuid,
 	 * descriptor can't be used twice.
 	 */
 	proto_io = l_io_new(proto_socket);
-	if (!proto_io)
+	if (!proto_io) {
+		hal_log_error("Can't create channel for %d(fd)", proto_socket);
 		return;
+	}
 
 	trust = trust_new(uuid, token, device_id, pid,
 			  rollback, schema, config);
 	trust->proto_io = proto_io;
+
+	/* Add a watch to remove the credential when the client disconnects */
+	node_channel = create_node_channel(node_socket, trust);
+	if (!node_channel) {
+		hal_log_error("Can't add watch for %d (fd)", node_socket);
+		trust_unref(trust);
+		return;
+	}
+
 	/*
 	 * TODO: find a better way to store a reference to the cloud as if it
 	 * disconnects we won't recover.
 	 */
 	trust_map_replace(node_socket, trust);
-
-	/* Add a watch to remove the credential when the client disconnects */
-	node_channel = create_node_channel(node_socket, trust);
 
 	/* Add watch to device changes in the cloud */
 	trust->proto_watch = create_device_watch(trust, node_channel);
