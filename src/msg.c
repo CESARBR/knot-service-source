@@ -90,25 +90,83 @@ static struct proto_ops *proto;
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 
 /* Message processing */
-static int8_t msg_register(int sock, int proto_sock,
-	const knot_msg_register *kreq, size_t ilen,
-	knot_msg_credential *krsp);
 static int8_t msg_unregister(int sock, int proto_sock);
-static int8_t msg_data(int sock, int proto_sock,
-	const knot_msg_data *kmdata);
-static int8_t msg_auth(int sock, int proto_sock,
-	const knot_msg_authentication *kmauth);
-static int8_t msg_schema(int sock, int proto_sock,
-	const knot_msg_schema *kmsch, bool eof);
 static struct l_queue *msg_config(int sock, json_raw_t json, ssize_t *result);
-static int8_t msg_config_resp(int sock, const knot_msg_item *rsp);
 static struct l_queue *msg_setdata(int sock, json_raw_t json, ssize_t *result);
-static int8_t msg_setdata_resp(int sock, int proto_sock,
-	const knot_msg_data *kmdata);
 static struct l_queue *msg_getdata(int sock, json_raw_t json, ssize_t *result);
-static int fw_push(int sock, knot_msg *kmsg);
-static struct trust *trust_ref(struct trust *trust);
-static void trust_unref(struct trust *trust);
+
+static void config_free(void *data)
+{
+	struct config *cfg = data;
+
+	l_free(cfg->hash);
+	l_free(cfg);
+}
+
+static struct trust *trust_ref(struct trust *trust)
+{
+	if (unlikely(!trust))
+		return NULL;
+
+	__sync_fetch_and_add(&trust->refs, 1);
+
+	return trust;
+}
+
+static void trust_unref(struct trust *trust)
+{
+	if (unlikely(!trust))
+                return;
+
+        if (__sync_sub_and_fetch(&trust->refs, 1))
+		return;
+
+	l_io_destroy(trust->proto_io);
+	l_free(trust->uuid);
+	l_free(trust->token);
+	l_queue_destroy(trust->schema, l_free);
+	l_queue_destroy(trust->schema_tmp, l_free);
+	l_queue_destroy(trust->config, config_free);
+	l_free(trust);
+}
+
+static struct trust *trust_new(const char *uuid, const char *token,
+			       uint64_t device_id, pid_t pid, bool rollback,
+			       struct l_queue *schema, struct l_queue *config)
+{
+	struct trust *trust = l_new(struct trust, 1);
+
+	trust->uuid = l_strdup(uuid);
+	trust->token = l_strdup(token);
+	trust->id = device_id;
+	trust->pid = pid;
+	trust->rollback = rollback;
+	trust->schema = schema;
+	trust->config = config;
+	trust->refs = 0;
+
+	return trust_ref(trust);
+}
+
+/*
+ * Sends the messages to the THING. Expects a response from the gateway
+ * acknowledging that the message was successfully received.
+ */
+static int fw_push(int sock, knot_msg *kmsg)
+{
+	ssize_t nbytes;
+	int err;
+
+	nbytes = write(sock, kmsg->buffer, kmsg->hdr.payload_len +
+							sizeof(kmsg->hdr));
+	if (nbytes < 0) {
+		err = errno;
+		hal_log_error("node_ops: %s(%d)", strerror(err), err);
+		return -err;
+	}
+
+	return 0;
+}
 
 static void queue_concat(struct l_queue *queue, struct l_queue *with)
 {
@@ -247,14 +305,6 @@ static void remove_device_watch(struct proto_watch *proto_watch)
 	proto->async_stop(proto_socket, proto_watch->id);
 }
 
-static void config_free(void *data)
-{
-	struct config *cfg = data;
-
-	l_free(cfg->hash);
-	l_free(cfg);
-}
-
 static struct trust *trust_map_get(int id)
 {
 	return l_hashmap_lookup(trust_map, L_INT_TO_PTR(id));
@@ -276,51 +326,6 @@ static void trust_map_replace(int id, struct trust *trust)
 {
 	trust_map_remove(id);
 	trust_map_add(id, trust);
-}
-
-static struct trust *trust_ref(struct trust *trust)
-{
-	if (unlikely(!trust))
-		return NULL;
-
-	__sync_fetch_and_add(&trust->refs, 1);
-
-	return trust;
-}
-
-static void trust_unref(struct trust *trust)
-{
-	if (unlikely(!trust))
-                return;
-
-        if (__sync_sub_and_fetch(&trust->refs, 1))
-		return;
-
-	l_io_destroy(trust->proto_io);
-	l_free(trust->uuid);
-	l_free(trust->token);
-	l_queue_destroy(trust->schema, l_free);
-	l_queue_destroy(trust->schema_tmp, l_free);
-	l_queue_destroy(trust->config, config_free);
-	l_free(trust);
-}
-
-static struct trust *trust_new(const char *uuid, const char *token,
-			       uint64_t device_id, pid_t pid, bool rollback,
-			       struct l_queue *schema, struct l_queue *config)
-{
-	struct trust *trust = l_new(struct trust, 1);
-
-	trust->uuid = l_strdup(uuid);
-	trust->token = l_strdup(token);
-	trust->id = device_id;
-	trust->pid = pid;
-	trust->rollback = rollback;
-	trust->schema = schema;
-	trust->config = config;
-	trust->refs = 0;
-
-	return trust_ref(trust);
 }
 
 static void on_node_channel_disconnected(struct l_io *channel, void *used_data)
@@ -1243,26 +1248,6 @@ static struct l_queue *msg_config(int node_socket,
 	*result = KNOT_SUCCESS;
 
 	return changed_config;
-}
-
-/*
- * Sends the messages to the THING. Expects a response from the gateway
- * acknowledging that the message was successfully received.
- */
-static int fw_push(int sock, knot_msg *kmsg)
-{
-	ssize_t nbytes;
-	int err;
-
-	nbytes = write(sock, kmsg->buffer, kmsg->hdr.payload_len +
-							sizeof(kmsg->hdr));
-	if (nbytes < 0) {
-		err = errno;
-		hal_log_error("node_ops: %s(%d)", strerror(err), err);
-		return -err;
-	}
-
-	return 0;
 }
 
 static int get_socket_credentials(int sock, struct ucred *cred)
