@@ -1295,8 +1295,7 @@ static void msg_register_get_device_name(const knot_msg_register *kreq,
 }
 
 static json_object *create_device_object(const char *device_name,
-					 uint64_t device_id,
-					 const char *owner_uuid)
+					 uint64_t device_id)
 {
 	json_object *device;
 	device = json_object_new_object();
@@ -1329,15 +1328,14 @@ static bool is_token_valid(const char *token)
  * TODO: consider making this part of proto-ws.c mknode()
  */
 static int proto_mknode(int proto_socket, const char *device_name,
-			uint64_t device_id, const char *owner_uuid,
-			char *uuid, char *token)
+			uint64_t device_id, char *uuid, char *token)
 {
 	int err, result;
 	json_object *device;
 	const char *device_as_string;
 	json_raw_t response;
 
-	device = create_device_object(device_name, device_id, owner_uuid);
+	device = create_device_object(device_name, device_id);
 	if (!device) {
 		hal_log_error("JSON: no memory");
 		result = KNOT_ERROR_UNKNOWN;
@@ -1473,8 +1471,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	msg_register_get_device_name(kreq, device_name);
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
-	result = proto_mknode(proto_socket, device_name, kreq->id,
-			      owner_uuid, uuid, token);
+	result = proto_mknode(proto_socket, device_name, kreq->id, uuid, token);
 	if (result != KNOT_SUCCESS)
 		goto fail_create;
 
