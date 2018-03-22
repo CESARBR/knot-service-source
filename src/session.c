@@ -54,22 +54,24 @@ static int connect_proto(struct session *session);
 static void disconnect_proto(struct session *session);
 static void destroy_node_channel(struct l_io *channel);
 
-static struct session *session_new(void)
-{
-	struct session *session;
-	session = l_new(struct session, 1);
-	session->refs = 1;
-	return session;
-}
-
 static void session_free(struct session *session)
 {
 	l_free(session);
 }
 
-static void session_ref(struct session *session)
+static struct session *session_ref(struct session *session)
 {
 	atomic_fetch_add(&session->refs, 1);
+}
+
+static struct session *session_new(void)
+{
+	struct session *session;
+
+	session = l_new(struct session, 1);
+	session->refs = 0;
+
+	return session_ref(session);
 }
 
 static void session_unref(struct session *session)
@@ -81,7 +83,7 @@ static void session_unref(struct session *session)
 }
 
 static void on_proto_channel_disconnected(struct l_io *channel,
-	void *user_data)
+					  void *user_data)
 {
 	struct session *session = user_data;
 
@@ -102,7 +104,7 @@ static void on_proto_channel_destroyed(void *user_data)
 }
 
 static struct l_io *create_proto_channel(int proto_socket,
-	struct session *session)
+					 struct session *session)
 {
 	struct l_io *channel;
 
@@ -132,7 +134,7 @@ static void on_node_channel_destroyed(void *user_data)
 }
 
 static void on_node_channel_destroy_timeout(struct l_timeout *timeout,
-	void *user_data)
+					    void *user_data)
 {
 	struct l_io *channel = user_data;
 
@@ -156,12 +158,12 @@ static void on_node_channel_data_error(struct l_io *channel)
 
 static bool on_node_channel_data(struct l_io *channel, void * user_data)
 {
-	int err;
-	int node_socket, proto_socket;
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
 	uint8_t ipdu[512], opdu[512]; /* FIXME: */
 	ssize_t recvbytes, sentbytes, olen;
+	int node_socket, proto_socket;
+	int err;
 
 	node_socket = l_io_get_fd(channel);
 
@@ -213,7 +215,7 @@ static bool on_node_channel_data(struct l_io *channel, void * user_data)
 }
 
 static struct l_io *create_node_channel(int node_socket,
-	struct session *session)
+					struct session *session)
 {
 	struct l_io *channel;
 
@@ -284,10 +286,11 @@ int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
 	session->node_channel = create_node_channel(client_socket, session);
 
 	hal_log_info("node:%p proto:%p",
-		session->node_channel, session->proto_channel);
+		     session->node_channel, session->proto_channel);
 
 	if (!session_list)
 		session_list = l_queue_new();
+
 	l_queue_push_tail(session_list, session);
 
 	return 0;
