@@ -399,11 +399,9 @@ static struct lws_protocols protocols[] = {
 		0,
 		/* user */
 		NULL,
-		/* 0 indicates restrict send() size to .rx_buffer_size */
-		0,
 	},
 	{
-		NULL, NULL, 0, 0, 0, NULL, 0			/* end of list */
+		NULL, NULL, 0, 0, 0, NULL	/* end of list */
 	}
 };
 
