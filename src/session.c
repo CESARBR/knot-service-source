@@ -49,10 +49,6 @@ struct session {
 
 static struct l_queue *session_list = NULL;
 
-static int connect_proto(struct session *session);
-static void disconnect_proto(struct session *session);
-static void destroy_node_channel(struct l_io *channel);
-
 static void session_free(struct session *session)
 {
 	l_free(session);
@@ -89,6 +85,24 @@ static void session_unref(struct session *session)
 	session_free(session);
 }
 
+static void destroy_node_channel(struct l_io *channel)
+{
+	l_io_destroy(channel);
+}
+
+static void disconnect_proto(struct session *session)
+{
+	int proto_socket;
+
+	if (!session->proto_channel)
+		return;
+
+	proto_socket = l_io_get_fd(session->proto_channel);
+	session->proto_ops->close(proto_socket);
+
+	/* Channel cleanup will be held at disconnect callback */
+}
+
 static void on_proto_channel_disconnected(struct l_io *channel,
 					  void *user_data)
 {
@@ -121,6 +135,23 @@ static struct l_io *create_proto_channel(int proto_socket,
 	session_ref(session);
 
 	return channel;
+}
+
+static int connect_proto(struct session *session)
+{
+	int proto_socket;
+
+	proto_socket = session->proto_ops->connect();
+	if (proto_socket < 0) {
+		hal_log_info("Cloud connect(): %s(%d)",
+			     strerror(-proto_socket), -proto_socket);
+		return proto_socket;
+	}
+
+	/* Keep one reference to call sign-off */
+	session->proto_channel = create_proto_channel(proto_socket, session);
+
+	return 0;
 }
 
 static void on_node_channel_disconnected(struct l_io *channel, void *user_data)
@@ -236,41 +267,6 @@ static struct l_io *create_node_channel(int node_socket,
 				    on_node_channel_destroyed);
 
 	return channel;
-}
-
-static void destroy_node_channel(struct l_io *channel)
-{
-	l_io_destroy(channel);
-}
-
-static int connect_proto(struct session *session)
-{
-	int proto_socket;
-
-	proto_socket = session->proto_ops->connect();
-	if (proto_socket < 0) {
-		hal_log_info("Cloud connect(): %s(%d)",
-			     strerror(-proto_socket), -proto_socket);
-		return proto_socket;
-	}
-
-	/* Keep one reference to call sign-off */
-	session->proto_channel = create_proto_channel(proto_socket, session);
-
-	return 0;
-}
-
-static void disconnect_proto(struct session *session)
-{
-	int proto_socket;
-
-	if (!session->proto_channel)
-		return;
-
-	proto_socket = l_io_get_fd(session->proto_channel);
-	session->proto_ops->close(proto_socket);
-
-	/* Channel cleanup will be held at disconnect callback */
 }
 
 int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
