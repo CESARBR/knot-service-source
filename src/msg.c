@@ -1448,8 +1448,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	if (!msg_register_has_valid_length(kreq, ilen)
 		|| !msg_register_has_valid_device_name(kreq)) {
 		hal_log_error("Missing device name!");
-		result = KNOT_REGISTER_INVALID_DEVICENAME;
-		goto fail_length;
+		return KNOT_REGISTER_INVALID_DEVICENAME;
 	}
 
 	/*
@@ -1472,8 +1471,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
 		hal_log_info("Register: trusted device");
 		msg_credential_create(krsp, trust->uuid, trust->token);
-		result = KNOT_SUCCESS;
-		goto done;
+		return KNOT_SUCCESS;
 	}
 
 	msg_register_get_device_name(kreq, device_name);
@@ -1481,29 +1479,20 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	memset(token, 0, sizeof(token));
 	result = proto_mknode(proto_socket, device_name, kreq->id, uuid, token);
 	if (result != KNOT_SUCCESS)
-		goto fail_create;
+		return result;
 
 	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
 
 	result = proto_signin(proto_socket, uuid, token, NULL, NULL);
 	if (result != KNOT_SUCCESS)
-		goto fail_signin;
+		return result;
 
 	msg_credential_create(krsp, uuid, token);
 
 	trust_create(node_socket, proto_socket, uuid, token, kreq->id,
 		     (cred.pid ? : INT32_MAX), true, NULL, NULL);
 
-	result = KNOT_SUCCESS;
-	goto done;
-
-fail_signin:
-	l_free(uuid);
-	l_free(token);
-done:
-fail_create:
-fail_length:
-	return result;
+	return KNOT_SUCCESS;
 }
 
 static int8_t msg_auth(int node_socket, int proto_socket,
