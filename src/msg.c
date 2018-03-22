@@ -140,7 +140,7 @@ done:
 }
 
 static char *compute_checksum_for_string(enum l_checksum_type type,
-	const char *string, size_t length)
+					 const char *string, size_t length)
 {
 	char *result = NULL;
 	struct l_checksum *checksum;
@@ -149,9 +149,8 @@ static char *compute_checksum_for_string(enum l_checksum_type type,
 	if (!checksum)
 		goto fail_create;
 
-	if (!l_checksum_update(checksum, string, length)) {
+	if (!l_checksum_update(checksum, string, length))
 		goto fail_update;
-	}
 
 	result = l_checksum_get_string(checksum);
 
@@ -163,9 +162,9 @@ fail_create:
 
 static void send_message(void *data, void *user_data)
 {
-	int result;
 	knot_msg *msg = data;
 	int node_socket = L_PTR_TO_INT(user_data);
+	int result;
 
 	result = fw_push(node_socket, msg);
 	if (result)
@@ -180,10 +179,10 @@ static void send_message(void *data, void *user_data)
 static void on_device_changed(json_raw_t device_message, void *user_data)
 {
 	const struct proto_watch *watch = user_data;
-	int node_socket;
-	ssize_t result;
 	struct l_queue *config_messages, *setdata_messages, *getdata_messages;
 	struct l_queue *messages = NULL;
+	ssize_t result;
+	int node_socket;
 
 	node_socket = l_io_get_fd(watch->node_io);
 	config_messages = msg_config(node_socket, device_message, &result);
@@ -338,16 +337,16 @@ static void on_node_channel_disconnected(struct l_io *channel, void *used_data)
 		}
 	}
 
-	if (trust->proto_watch) {
+	if (trust->proto_watch)
 		remove_device_watch(trust->proto_watch);
-	}
 
 	trust_map_remove(node_socket);
 }
 
 static void on_node_channel_destroyed(void *user_data)
 {
-	struct trust *trust = (struct trust *)user_data;
+	struct trust *trust = (struct trust *) user_data;
+
 	trust_unref(trust);
 }
 
@@ -356,10 +355,13 @@ static struct l_io *create_node_channel(int node_socket, struct trust *trust)
 	struct l_io *channel;
 
 	channel = l_io_new(node_socket);
+	if (!channel)
+		return NULL;
+
 	l_io_set_disconnect_handler(channel,
-		on_node_channel_disconnected,
-		trust_ref(trust),
-		on_node_channel_destroyed);
+				    on_node_channel_disconnected,
+				    trust_ref(trust),
+				    on_node_channel_destroyed);
 	return channel;
 }
 
@@ -408,8 +410,8 @@ static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
 	unsigned int sensor_id)
 {
 	return l_queue_find(trust->schema,
-		schema_sensor_id_cmp,
-		L_UINT_TO_PTR(sensor_id));
+			    schema_sensor_id_cmp,
+			    L_UINT_TO_PTR(sensor_id));
 }
 
 static void trust_sensor_schema_free(struct trust *trust)
@@ -419,15 +421,15 @@ static void trust_sensor_schema_free(struct trust *trust)
 }
 
 static knot_msg_schema *trust_get_sensor_schema_tmp(const struct trust *trust,
-	unsigned int sensor_id)
+						    unsigned int sensor_id)
 {
 	return l_queue_find(trust->schema_tmp,
-		schema_sensor_id_cmp,
-		L_UINT_TO_PTR(sensor_id));
+			    schema_sensor_id_cmp,
+			    L_UINT_TO_PTR(sensor_id));
 }
 
 static void trust_sensor_schema_tmp_add(struct trust *trust,
-	const knot_msg_schema *schema)
+					const knot_msg_schema *schema)
 {
 	knot_msg_schema *schema_copy;
 
@@ -465,8 +467,8 @@ static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 static void trust_config_confirm(struct trust *trust, uint8_t sensor_id)
 {
 	struct config *config_item = l_queue_find(trust->config,
-		config_sensor_id_cmp,
-		L_UINT_TO_PTR(sensor_id));
+						  config_sensor_id_cmp,
+						  L_UINT_TO_PTR(sensor_id));
 
 	if (config_item)
 		config_item->confirmed = true;
@@ -874,8 +876,8 @@ static struct l_queue *parse_device_config(const char *json_str)
 		/* If 'upper_limit' is defined, gets it. */
 
 		memset(&upper_limit, 0, sizeof(knot_value_types));
-		if (json_object_object_get_ex(jobjentry, "upper_limit",
-								&jobjkey)){
+		if (json_object_object_get_ex(jobjentry,
+					      "upper_limit", &jobjkey)) {
 			jtype = json_object_get_type(jobjkey);
 			if (jtype != json_type_int &&
 					jtype != json_type_double &&
@@ -1033,8 +1035,8 @@ static struct l_queue *parse_device_getdata(const char *json_str)
 			goto done;
 
 		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry, "sensor_id",
-								&jobjkey))
+		if (!json_object_object_get_ex(jobjentry,
+					       "sensor_id", &jobjkey))
 			goto done;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
@@ -1101,8 +1103,8 @@ static void update_msg_data_header(void *entry_data, void *user_data)
  * Includes the proper header in the setdata messages and returns a list with
  * all the sensor data that will be sent to the thing.
  */
-static struct l_queue *msg_setdata(int node_socket, json_raw_t device_message,
-	ssize_t *result)
+static struct l_queue *msg_setdata(int node_socket,
+				   json_raw_t device_message, ssize_t *result)
 {
 	struct trust *trust;
 	struct l_queue *messages;
@@ -1113,6 +1115,7 @@ static struct l_queue *msg_setdata(int node_socket, json_raw_t device_message,
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
 	}
+
 	*result = KNOT_SUCCESS;
 
 	messages = parse_device_setdata(device_message.data);
@@ -1148,8 +1151,8 @@ static struct l_queue *config_to_msg_config_list(struct l_queue *config_list)
 	msg_config_list = l_queue_new();
 
 	l_queue_foreach(config_list,
-		(l_queue_foreach_func_t) duplicate_and_append,
-		msg_config_list);
+			(l_queue_foreach_func_t) duplicate_and_append,
+			msg_config_list);
 
 	return msg_config_list;
 }
@@ -1164,8 +1167,8 @@ static bool exists_and_confirmed(struct config *received,
 				 struct l_queue *current_list)
 {
 	struct config *current = l_queue_find(current_list,
-		(l_queue_match_func_t) config_cmp,
-		received);
+					      (l_queue_match_func_t) config_cmp,
+					      received);
 	return current && current->confirmed;
 }
 
@@ -1186,8 +1189,8 @@ static struct l_queue *get_changed_config(struct l_queue *current,
 	 */
 	received_copy = queue_clone(received);
 	l_queue_foreach_remove(received_copy,
-		(l_queue_remove_func_t) exists_and_confirmed,
-		current);
+			       (l_queue_remove_func_t) exists_and_confirmed,
+			       current);
 	changed_configs = config_to_msg_config_list(received_copy);
 
 	if (received_copy)
@@ -1201,8 +1204,8 @@ static struct l_queue *get_changed_config(struct l_queue *current,
  * checks if any changed, and put them in the list that will be sent to the
  * thing. Returns the list with the messages to be sent or NULL if any error.
  */
-static struct l_queue *msg_config(int node_socket, json_raw_t device_message,
-				  ssize_t *result)
+static struct l_queue *msg_config(int node_socket,
+				  json_raw_t device_message, ssize_t *result)
 {
 	struct trust *trust;
 	struct l_queue *config;
@@ -1307,9 +1310,8 @@ static json_object *create_device_object(const char *device_name,
 {
 	json_object *device;
 	device = json_object_new_object();
-	if (!device) {
+	if (!device)
 		return NULL;
-	}
 
 	json_object_object_add(device, "type",
 			       json_object_new_string("KNOTDevice"));
@@ -1412,13 +1414,11 @@ static int proto_signin(int proto_socket, const char *uuid, const char *token,
 		goto fail_signin;
 	}
 
-	if (schema != NULL) {
+	if (schema != NULL)
 		*schema = parse_device_schema(response.data);
-	}
 
-	if (config != NULL) {
+	if (config != NULL)
 		*config = parse_device_config(response.data);
-	}
 
 	result = KNOT_SUCCESS;
 
@@ -2009,7 +2009,6 @@ static void update_device_setdata(int proto_sock, char *uuid, char *token,
 
 	if (json_object_get_type(jobjarray) != json_type_array)
 		goto done;
-
 
 	for (i = 0; i < json_object_array_length(jobjarray); i++) {
 
