@@ -54,7 +54,7 @@ static int connect_proto(struct session *session);
 static void disconnect_proto(struct session *session);
 static void destroy_node_channel(struct l_io *channel);
 
-static struct session *session_new()
+static struct session *session_new(void)
 {
 	struct session *session;
 	session = l_new(struct session, 1);
@@ -108,7 +108,7 @@ static struct l_io *create_proto_channel(int proto_socket,
 
 	channel = l_io_new(proto_socket);
 	l_io_set_disconnect_handler(channel, on_proto_channel_disconnected,
-		session, on_proto_channel_destroyed);
+				    session, on_proto_channel_destroyed);
 	session_ref(session);
 
 	return channel;
@@ -135,6 +135,7 @@ static void on_node_channel_destroy_timeout(struct l_timeout *timeout,
 	void *user_data)
 {
 	struct l_io *channel = user_data;
+
 	destroy_node_channel(channel);
 }
 
@@ -148,9 +149,9 @@ static void on_node_channel_data_error(struct l_io *channel)
 	destroying = true;
 
 	l_timeout_create(1,
-		on_node_channel_destroy_timeout,
-		channel,
-		NULL);
+			 on_node_channel_destroy_timeout,
+			 channel,
+			 NULL);
 }
 
 static bool on_node_channel_data(struct l_io *channel, void * user_data)
@@ -187,13 +188,13 @@ static bool on_node_channel_data(struct l_io *channel, void * user_data)
 	proto_socket = l_io_get_fd(session->proto_channel);
 
 	olen = session->on_data(node_socket, proto_socket,
-		ipdu, recvbytes,
-		opdu, sizeof(opdu));
+				ipdu, recvbytes,
+				opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
 		hal_log_error("KNOT IoT proto error: %s(%zd)",
-						strerror(-olen), -olen);
+			      strerror(-olen), -olen);
 		on_node_channel_data_error(channel);
 		return false;
 	}
@@ -206,7 +207,7 @@ static bool on_node_channel_data(struct l_io *channel, void * user_data)
 	sentbytes = node_ops->send(node_socket, opdu, olen);
 	if (sentbytes < 0)
 		hal_log_error("node_ops: %s(%zd)",
-					strerror(-sentbytes), -sentbytes);
+			      strerror(-sentbytes), -sentbytes);
 
 	return true;
 }
@@ -221,9 +222,9 @@ static struct l_io *create_node_channel(int node_socket,
 
 	l_io_set_read_handler(channel, on_node_channel_data, session, NULL);
 	l_io_set_disconnect_handler(channel,
-		on_node_channel_disconnected,
-		session,
-		on_node_channel_destroyed);
+				    on_node_channel_disconnected,
+				    session,
+				    on_node_channel_destroyed);
 
 	return channel;
 }
@@ -240,7 +241,7 @@ static int connect_proto(struct session *session)
 	proto_socket = session->proto_ops->connect();
 	if (proto_socket < 0) {
 		hal_log_info("Cloud connect(): %s(%d)",
-					 strerror(-proto_socket), -proto_socket);
+			     strerror(-proto_socket), -proto_socket);
 		return proto_socket;
 	}
 
@@ -264,7 +265,7 @@ static void disconnect_proto(struct session *session)
 }
 
 int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
-	int client_socket, on_data on_data)
+		   int client_socket, on_data on_data)
 {
 	struct session *session;
 	int err;
@@ -294,7 +295,7 @@ int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
 
 static void session_destroy(struct session *session, void *user_data)
 {
-	/* 
+	/*
 	 * Sessions are destroyed and removed from list when the node
 	 * channel is destroyed.
 	 */
@@ -308,8 +309,8 @@ void session_destroy_all(void)
 	 * Wait it clear the list beforing freeing it.
 	 */
 	l_queue_foreach(session_list,
-		(l_queue_foreach_func_t) session_destroy,
-		NULL);
+			(l_queue_foreach_func_t) session_destroy,
+			NULL);
 	l_queue_destroy(session_list, NULL);
 	session_list = NULL;
 }
