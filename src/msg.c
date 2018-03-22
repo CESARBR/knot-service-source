@@ -257,16 +257,6 @@ static void config_free(void *data)
 	l_free(cfg);
 }
 
-static void trust_map_create()
-{
-	trust_map = l_hashmap_new();
-}
-
-static void trust_map_destroy()
-{
-	l_hashmap_destroy(trust_map, (l_hashmap_destroy_func_t) trust_unref);
-}
-
 static struct trust *trust_map_get(int id)
 {
 	return l_hashmap_lookup(trust_map, L_INT_TO_PTR(id));
@@ -290,13 +280,6 @@ static void trust_map_replace(int id, struct trust *trust)
 	trust_map_add(id, trust);
 }
 
-static struct trust *trust_new()
-{
-	struct trust *trust = l_new(struct trust, 1);
-	trust->refs = 1;
-	return trust;
-}
-
 static struct trust *trust_ref(struct trust *trust)
 {
 	atomic_fetch_add(&trust->refs, 1);
@@ -316,6 +299,24 @@ static void trust_unref(struct trust *trust)
 	l_queue_destroy(trust->schema_tmp, l_free);
 	l_queue_destroy(trust->config, config_free);
 	l_free(trust);
+}
+
+static struct trust *trust_new(const char *uuid, const char *token,
+			       uint64_t device_id, pid_t pid, bool rollback,
+			       struct l_queue *schema, struct l_queue *config)
+{
+	struct trust *trust = l_new(struct trust, 1);
+
+	trust->uuid = l_strdup(uuid);
+	trust->token = l_strdup(token);
+	trust->id = device_id;
+	trust->pid = pid;
+	trust->rollback = rollback;
+	trust->schema = schema;
+	trust->config = config;
+	trust->refs = 0;
+
+	return trust_ref(trust);
 }
 
 static void on_node_channel_disconnected(struct l_io *channel, void *used_data)
@@ -379,14 +380,8 @@ static void trust_create(int node_socket, int proto_socket, const char *uuid,
 	if (!proto_io)
 		return;
 
-	trust = trust_new();
-	trust->uuid = l_strdup(uuid);
-	trust->token = l_strdup(token);
-	trust->id = device_id;
-	trust->pid = pid;
-	trust->rollback = rollback;
-	trust->schema = schema;
-	trust->config = config;
+	trust = trust_new(uuid, token, device_id, pid,
+			  rollback, schema, config);
 	trust->proto_io = proto_io;
 	/*
 	 * TODO: find a better way to store a reference to the cloud as if it
@@ -2205,12 +2200,12 @@ int msg_start(const char *uuid, struct proto_ops *proto_ops)
 	strncpy(owner_uuid, uuid, sizeof(owner_uuid));
 	proto = proto_ops;
 
-	trust_map_create();
+	trust_map = l_hashmap_new();
 
 	return 0;
 }
 
 void msg_stop(void)
 {
-	trust_map_destroy();
+	l_hashmap_destroy(trust_map, (l_hashmap_destroy_func_t) trust_unref);
 }
