@@ -4,12 +4,6 @@ modules_sources += src/node-unix.c
 modules_sources += src/node-tcp.c
 modules_sources += src/node-tcp6.c
 
-# Target: x86
-# Serial proxy. Using an Arduino acting like a SPI <-> Serial
-# proxy this approach allows debugging and developing on
-# x86 machines using serial connection to connect to nRF24L01 radio.
-modules_sources += src/node-serial.c
-
 # IoT protocol: Meshblu HTTP/REST
 modules_sources += src/proto-http.c
 modules_cflags += @CURL_CFLAGS@ @JSON_CFLAGS@

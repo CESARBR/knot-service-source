@@ -37,7 +37,6 @@
 #define DEFAULT_PORT			3000
 #define DEFAULT_PROTO			"socketio"
 
-static const char *tty = NULL;
 static bool detach = true;
 static bool help = false;
 
@@ -51,7 +50,6 @@ static void usage(void)
 		"\t-h, --host              Cloud server host name\n"
 		"\t-p, --port              Remote port\n"
 		"\t-P, --proto             Protocol used to communicate with cloud server: http, socketio, ws\n"
-		"\t-t, --tty               TTY device path, e.g. /dev/ttyUSB0\n"
 		"\t-n, --nodetach          Disable running in background\n"
 		"\t-b, --disable-nobody    Disable running as nobody\n"
 		"\t-H, --help              Show help options\n");
@@ -62,7 +60,6 @@ static const struct option main_options[] = {
 	{ "host",		required_argument,	NULL, 'h' },
 	{ "port",		required_argument,	NULL, 'p' },
 	{ "proto",		required_argument,	NULL, 'P' },
-	{ "tty",		required_argument,	NULL, 't' },
 	{ "nodetach",		no_argument,		NULL, 'n' },
 	{ "disable-nobody",	no_argument,		NULL, 'b' },
 	{ "help",		no_argument,		NULL, 'H' },
@@ -74,7 +71,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "c:h:p:P:t:nbH",
+		opt = getopt_long(argc, argv, "c:h:p:P:nbH",
 				  main_options, NULL);
 		if (opt < 0)
 			break;
@@ -91,9 +88,6 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 			break;
 		case 'P':
 			settings->proto = optarg;
-			break;
-		case 't':
-			settings->tty = optarg;
 			break;
 		case 'n':
 			settings->detach = false;
@@ -132,7 +126,6 @@ struct settings *settings_load(int argc, char *argv[])
 	settings->host = NULL;
 	settings->port = UINT32_MAX;
 	settings->proto = DEFAULT_PROTO;
-	settings->tty = tty;
 	settings->detach = detach;
 	settings->run_as_nobody = true;
 	settings->help = help;

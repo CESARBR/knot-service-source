@@ -40,7 +40,6 @@
 #include <ell/ell.h>
 
 #include "node.h"
-#include "serial.h"
 #include "settings.h"
 #include "proto.h"
 #include "session.h"
@@ -151,7 +150,7 @@ int manager_start(const struct settings *settings)
 		return err;
 	}
 
-	err = node_start(settings->tty, on_accepted_cb);
+	err = node_start(on_accepted_cb);
 	if (err < 0) {
 		hal_log_error("node_start(): %s", strerror(-err));
 		goto fail_node;

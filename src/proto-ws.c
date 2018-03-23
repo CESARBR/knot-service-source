@@ -378,7 +378,7 @@ static int callback_lws_ws(struct lws *wsi,
 	case LWS_CALLBACK_CLIENT_RECEIVE:
 		session->got_response = true;
 		parse(session, in, len);
-		hal_log_info("Received: (%s)", in);
+		hal_log_info("Received: (%s)", (const char *) in);
 		break;
 	default:
 		break;

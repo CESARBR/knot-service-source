@@ -47,5 +47,5 @@ typedef bool (*on_accepted)(struct node_ops *node_ops, int client_socket);
  * event loop system.
  */
 
-int node_start(const char *tty, on_accepted on_accepted_cb);
+int node_start(on_accepted on_accepted_cb);
 void node_stop(void);

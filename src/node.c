@@ -29,7 +29,6 @@
 #include <hal/linux_log.h>
 
 #include "node.h"
-#include "serial.h"
 
 struct on_accept_data {
 	struct node_ops *node_ops;
@@ -43,37 +42,20 @@ struct on_accept_data {
 extern struct node_ops unix_ops;
 extern struct node_ops tcp_ops;
 extern struct node_ops tcp6_ops;
-extern struct node_ops serial_ops;
 
 static struct node_ops *node_ops[] = {
 	&unix_ops,
 	&tcp_ops,
 	&tcp6_ops,
-#if 0
-	// Remove temporarly: causing excessive interruptions
-	&serial_ops,
-#endif
 	NULL
 };
 
 static struct l_queue *accept_channel_list = NULL;
 
-static bool is_serial(const struct node_ops *node_ops)
-{
-	return strcmp("Serial", node_ops->name) == 0;
-}
-
-static int start_node_server(const char *tty, const struct node_ops *node_ops)
+static int start_node_server(const struct node_ops *node_ops)
 {
 	int err = -EIO;
 	int server_socket;
-
-	if (is_serial(node_ops)) {
-		if (tty == NULL)
-			/* Ignore Serial driver if port is not informed */
-			return err;
-		serial_load_config(tty);
-	}
 
 	err = node_ops->probe();
 	if (err < 0)
@@ -183,7 +165,7 @@ static void destroy_all_accept_channels(void)
 			(l_queue_destroy_func_t) l_io_destroy);
 }
 
-int node_start(const char *tty, on_accepted on_accepted_cb)
+int node_start(on_accepted on_accepted_cb)
 {
 	int server_socket;
 	int i;
@@ -198,7 +180,7 @@ int node_start(const char *tty, on_accepted on_accepted_cb)
 	 * streams from/to KNOT nodes.
 	 */
 	for (i = 0; node_ops[i]; i++) {
-		server_socket = start_node_server(tty, node_ops[i]);
+		server_socket = start_node_server(node_ops[i]);
 		if (server_socket < 0)
 			continue;
 
