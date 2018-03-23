@@ -62,7 +62,7 @@ PKG_CHECK_MODULES(KNOTHAL, hal,
 AC_SUBST(KNOTHAL_CFLAGS)
 AC_SUBST(KNOTHAL_LIBS)
 
-PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets = 2.1.0],
+PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets >= 2.1.0],
   [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
   [websockets="no"])
 AC_SUBST(WEBSOCKETS_CFLAGS)
