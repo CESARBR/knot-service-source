@@ -62,14 +62,12 @@ struct trust {
 	int refs;
 	pid_t	pid;			/* Peer PID */
 	uint64_t id;			/* Session identification */
-	bool rollback;		/* Remove from cloud if true */
+	bool rollback;			/* Remove from cloud if true */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	struct l_queue *schema;			/* knot_schema accepted by cloud */
-	struct l_queue *schema_tmp;		/*
-					* knot_schema to be submitted to cloud
-					*/
-	struct l_queue *config;			/* knot_config accepted from cloud */
+	struct l_queue *schema;		/* Schema accepted by cloud */
+	struct l_queue *schema_tmp;	/* Schema to be submitted to cloud */
+	struct l_queue *config;		/* knot_config accepted from cloud */
 	const struct proto_ops *proto_ops; /* Cloud driver */
 	struct l_io *proto_io;		/* Cloud IO channel */
 	struct proto_watch *proto_watch;
@@ -175,7 +173,7 @@ static void queue_concat(struct l_queue *queue, struct l_queue *with)
 	if (!queue || !with)
 		return;
 
-	current = (struct l_queue_entry *)l_queue_get_entries(with);
+	current = (struct l_queue_entry *) l_queue_get_entries(with);
 	while (current) {
 		l_queue_push_tail(queue, current->data);
 		current = current->next;
@@ -184,36 +182,35 @@ static void queue_concat(struct l_queue *queue, struct l_queue *with)
 
 static struct l_queue *queue_clone(struct l_queue *queue)
 {
-	struct l_queue *clone = NULL;
+	struct l_queue *clone;
 
 	if (!queue)
-		goto done;
+		return NULL;
 
 	clone = l_queue_new();
 	queue_concat(clone, queue);
 
-done:
 	return clone;
 }
 
 static char *compute_checksum_for_string(enum l_checksum_type type,
 					 const char *string, size_t length)
 {
-	char *result = NULL;
 	struct l_checksum *checksum;
+	char *result = NULL;
 
 	checksum = l_checksum_new(type);
 	if (!checksum)
-		goto fail_create;
+		return NULL;
 
 	if (!l_checksum_update(checksum, string, length))
-		goto fail_update;
+		goto fail;
 
 	result = l_checksum_get_string(checksum);
 
-fail_update:
+fail:
 	l_checksum_free(checksum);
-fail_create:
+
 	return result;
 }
 
@@ -236,8 +233,10 @@ static void send_message(void *data, void *user_data)
 static void on_device_changed(json_raw_t device_message, void *user_data)
 {
 	const struct proto_watch *watch = user_data;
-	struct l_queue *config_messages, *setdata_messages, *getdata_messages;
-	struct l_queue *messages = NULL;
+	struct l_queue *config_messages;
+	struct l_queue *setdata_messages;
+	struct l_queue *getdata_messages;
+	struct l_queue *messages;
 	ssize_t result;
 	int node_socket;
 
@@ -273,7 +272,7 @@ static void on_device_watch_destroyed(void *user_data)
 }
 
 static struct proto_watch *create_device_watch(struct trust *trust,
-	struct l_io *node_channel)
+					       struct l_io *node_channel)
 {
 	struct proto_watch *proto_watch;
 	int proto_socket;
@@ -282,11 +281,11 @@ static struct proto_watch *create_device_watch(struct trust *trust,
 
 	proto_watch = l_new(struct proto_watch, 1);
 	proto_watch->id = proto->async(proto_socket,
-		trust->uuid,
-		trust->token,
-		on_device_changed,
-		proto_watch,
-		on_device_watch_destroyed);
+				       trust->uuid,
+				       trust->token,
+				       on_device_changed,
+				       proto_watch,
+				       on_device_watch_destroyed);
 	proto_watch->node_io = node_channel;
 	/*
 	 * Retained to remove the device watch from the trust when the
@@ -695,7 +694,7 @@ done:
 static struct l_queue *parse_device_schema(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list = NULL;
+	struct l_queue *list;
 	knot_msg_schema *entry;
 	int sensor_id, value_type, unit, type_id, i;
 	const char *name;
@@ -810,7 +809,7 @@ done:
 static struct l_queue *parse_device_config(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list = NULL;
+	struct l_queue *list;
 	struct config *entry;
 	int sensor_id, event_flags, time_sec, i;
 	knot_value_types lower_limit, upper_limit;
@@ -940,7 +939,7 @@ done:
 static struct l_queue *parse_device_setdata(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list = NULL;
+	struct l_queue *list;
 	knot_msg_data *entry;
 	int sensor_id, i;
 	knot_data data;
@@ -1020,7 +1019,7 @@ done:
 static struct l_queue *parse_device_getdata(const char *json_str)
 {
 	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list = NULL;
+	struct l_queue *list;
 	knot_msg_item *entry;
 	int sensor_id, i;
 
@@ -1114,7 +1113,7 @@ static void update_msg_data_header(void *entry_data, void *user_data)
 	knot_msg_data *kmdata = entry_data;
 	kmdata->hdr.type = KNOT_MSG_SET_DATA;
 	kmdata->hdr.payload_len = sizeof(kmdata->sensor_id) +
-		sizeof(kmdata->payload);
+					sizeof(kmdata->payload);
 }
 
 /*
@@ -1306,6 +1305,7 @@ static json_object *create_device_object(const char *device_name,
 					 uint64_t device_id)
 {
 	json_object *device;
+
 	device = json_object_new_object();
 	if (!device)
 		return NULL;
@@ -1338,52 +1338,46 @@ static bool is_token_valid(const char *token)
 static int proto_mknode(int proto_socket, const char *device_name,
 			uint64_t device_id, char *uuid, char *token)
 {
-	int err, result;
 	json_object *device;
 	const char *device_as_string;
 	json_raw_t response;
+	int err, result;
 
+	memset(&response, 0, sizeof(response));
 	device = create_device_object(device_name, device_id);
 	if (!device) {
 		hal_log_error("JSON: no memory");
 		result = KNOT_ERROR_UNKNOWN;
-		goto fail_device;
+		goto fail;
 	}
 
 	device_as_string = json_object_to_json_string(device);
-	memset(&response, 0, sizeof(response));
 	err = proto->mknode(proto_socket, device_as_string, &response);
 	json_object_put(device);
 
 	if (err < 0) {
 		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
 		result = KNOT_CLOUD_FAILURE;
-		goto fail_mknode;
+		goto fail;
 	}
 
 	if (response.size == 0 ||
 	    (parse_device_info(response.data, uuid, token) < 0)) {
 		hal_log_error("Unexpected response!");
 		result = KNOT_CLOUD_FAILURE;
-		goto fail_parse;
+		goto fail;
 	}
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
 	if (!is_uuid_valid(uuid) || !is_token_valid(token)) {
 		hal_log_error("Invalid UUID or token!");
 		result = KNOT_CLOUD_FAILURE;
-		goto fail_valid;
+		goto fail;
 	}
 
 	result = KNOT_SUCCESS;
-	goto done;
-
-fail_valid:
-done:
-fail_parse:
+fail:
 	free(response.data);
-fail_mknode:
-fail_device:
 	return result;
 }
 
@@ -1393,21 +1387,21 @@ fail_device:
 static int proto_signin(int proto_socket, const char *uuid, const char *token,
 			struct l_queue **schema, struct l_queue **config)
 {
-	int err, result;
 	json_raw_t response;
+	int err, result;
 
 	memset(&response, 0, sizeof(response));
 	err = proto->signin(proto_socket, uuid, token, &response);
 
 	if (!response.data) {
 		result = KNOT_CLOUD_FAILURE;
-		goto fail_signin_no_data;
+		goto fail;
 	}
 
 	if (err < 0) {
 		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		goto fail_signin;
+		goto fail;
 	}
 
 	if (schema != NULL)
@@ -1418,9 +1412,8 @@ static int proto_signin(int proto_socket, const char *uuid, const char *token,
 
 	result = KNOT_SUCCESS;
 
-fail_signin:
+fail:
 	free(response.data);
-fail_signin_no_data:
 	return result;
 }
 
@@ -1505,8 +1498,7 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 
 	if (trust_map_get(node_socket)) {
 		hal_log_info("Authenticated already");
-		result = KNOT_SUCCESS;
-		goto done;
+		return KNOT_SUCCESS;
 	}
 
 	/*
@@ -1520,11 +1512,11 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	strncpy(token, kmauth->token, sizeof(kmauth->token));
 	result = proto_signin(proto_socket, uuid, token, &schema, &config);
 	if (result != KNOT_SUCCESS)
-		goto done;
+		return result;
 
 	if (schema == NULL) {
 		result = KNOT_SCHEMA_EMPTY;
-		goto fail_schema;
+		goto fail;
 	}
 
 	if (config_is_valid(config)) {
@@ -1537,12 +1529,10 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	trust_create(node_socket, proto_socket,
 		     uuid, token, 0, 0, false, schema, config);
 
-	result = KNOT_SUCCESS;
-	goto done;
+	return KNOT_SUCCESS;
 
-fail_schema:
+fail:
 	l_queue_destroy(config, config_free);
-done:
 	return result;
 }
 
@@ -1598,10 +1588,10 @@ static json_object *create_schema_list_object(struct l_queue *schema_list)
 static int proto_schema(int proto_socket, const char *uuid, const char *token,
 			struct l_queue *schema_list)
 {
-	int result, err;
 	json_object *jschema_list;
 	const char *jschema_list_as_string;
 	json_raw_t response;
+	int result, err;
 
 	jschema_list = create_schema_list_object(schema_list);
 	jschema_list_as_string = json_object_to_json_string(jschema_list);
@@ -1618,12 +1608,9 @@ static int proto_schema(int proto_socket, const char *uuid, const char *token,
 	if (err < 0) {
 		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
 		result = KNOT_CLOUD_FAILURE;
-		goto done;
-	}
+	} else
+		result = KNOT_SUCCESS;
 
-	result = KNOT_SUCCESS;
-
-done:
 	return result;
 }
 
@@ -1807,7 +1794,8 @@ static bool knot_data_as_boolean(const knot_data *data)
 }
 
 static json_object *create_data_object(uint8_t sensor_id,
-	uint8_t value_type, const knot_data *value)
+				       uint8_t value_type,
+				       const knot_data *value)
 {
 	json_object *data;
 
@@ -1869,10 +1857,8 @@ static int proto_data(int proto_socket, const char *uuid,
 	if (err < 0) {
 		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
 		result = KNOT_CLOUD_FAILURE;
-		goto done;
-	}
-
-	result = KNOT_SUCCESS;
+	} else
+		result = KNOT_SUCCESS;
 
 done:
 	return result;
