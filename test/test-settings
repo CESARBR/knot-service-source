@@ -23,11 +23,11 @@ if (cmd == "info"):
 
 if (cmd == "uuid"):
 	print ("Uuid ...")
-	uuid = props.Get("br.org.cesar.knot.Settings1", "UUID")
+	uuid = props.Get("br.org.cesar.knot.Settings1", "Uuid")
 	print ("Current Uuid: %s" % uuid)
 	value = dbus.String(sys.argv[2])
-	props.Set("br.org.cesar.knot.Settings1", "UUID", value)
-	uuid = props.Get("br.org.cesar.knot.Settings1", "UUID")
+	props.Set("br.org.cesar.knot.Settings1", "Uuid", value)
+	uuid = props.Get("br.org.cesar.knot.Settings1", "Uuid")
 	print ("Current Uuid: %s" % uuid)
 
 	sys.exit(0)

@@ -97,7 +97,7 @@ static bool property_get_uuid(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->uuid);
-	hal_log_info("GetProperty(UUID = %s)", settings->uuid);
+	hal_log_info("GetProperty(Uuid = %s)", settings->uuid);
 
 	return true;
 }
@@ -116,7 +116,7 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 
 	l_free(settings->uuid);
 	settings->uuid = l_strdup(uuid);
-	hal_log_info("SetProperty(UUID = %s)", settings->uuid);
+	hal_log_info("SetProperty(Uuid = %s)", settings->uuid);
 
 	return l_dbus_message_new_method_return(message);
 }
@@ -146,7 +146,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'URL' property");
 
-	if (!l_dbus_interface_property(interface, "UUID", 0, "s",
+	if (!l_dbus_interface_property(interface, "Uuid", 0, "s",
 				       property_get_uuid,
 				       property_set_uuid))
 		hal_log_error("Can't add 'URL' property");
