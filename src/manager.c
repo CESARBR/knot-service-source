@@ -76,7 +76,7 @@ static bool property_get_port(struct l_dbus *dbus,
 	return true;
 }
 
-static bool property_get_url(struct l_dbus *dbus,
+static bool property_get_host(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
@@ -84,7 +84,7 @@ static bool property_get_url(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->host);
-	hal_log_info("GetProperty(URL = %s)", settings->host);
+	hal_log_info("GetProperty(Host = %s)", settings->host);
 
 	return true;
 }
@@ -141,20 +141,20 @@ static void setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'Port' property");
 
-	if (!l_dbus_interface_property(interface, "URL", 0, "s",
-				       property_get_url,
+	if (!l_dbus_interface_property(interface, "Host", 0, "s",
+				       property_get_host,
 				       NULL))
-		hal_log_error("Can't add 'URL' property");
+		hal_log_error("Can't add 'Host' property");
 
 	if (!l_dbus_interface_property(interface, "Uuid", 0, "s",
 				       property_get_uuid,
 				       property_set_uuid))
-		hal_log_error("Can't add 'URL' property");
+		hal_log_error("Can't add 'Uuid' property");
 
 	if (!l_dbus_interface_property(interface, "Token", 0, "s",
 				       property_get_token,
 				       NULL))
-		hal_log_error("Can't add 'URL' property");
+		hal_log_error("Can't add 'Token' property");
 }
 
 int manager_start(struct settings *settings)
