@@ -68,10 +68,10 @@ static bool property_get_port(struct l_dbus *dbus,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
 {
-	uint16_t port = UINT16_MAX; /* FIXME */
+	struct settings *settings = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 'q', &port);
-	hal_log_info("GetProperty(Port = %"PRIu32")", port);
+	l_dbus_message_builder_append_basic(builder, 'q', &settings->port);
+	hal_log_info("GetProperty(Port = %"PRIu32")", settings->port);
 
 	return true;
 }
@@ -81,10 +81,10 @@ static bool property_get_url(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	const char *url = "url-unknown";
+	struct settings *settings = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 's', url);
-	hal_log_info("GetProperty(URL = %s)", url);
+	l_dbus_message_builder_append_basic(builder, 's', settings->host);
+	hal_log_info("GetProperty(URL = %s)", settings->host);
 
 	return true;
 }
@@ -94,10 +94,10 @@ static bool property_get_uuid(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	const char *uuid = "uuid-unknown";
+	struct settings *settings = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 's', uuid);
-	hal_log_info("GetProperty(UUID = %s)", uuid);
+	l_dbus_message_builder_append_basic(builder, 's', settings->uuid);
+	hal_log_info("GetProperty(UUID = %s)", settings->uuid);
 
 	return true;
 }
@@ -108,12 +108,15 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 					l_dbus_property_complete_cb_t complete,
 					void *user_data)
 {
+	struct settings *settings = user_data;
 	const char *uuid;
 
 	if (!l_dbus_message_iter_get_variant(new_value, "s", &uuid))
 		return dbus_error_invalid_args(message);
 
-	hal_log_info("SetProperty(UUID = %s)", uuid);
+	l_free(settings->uuid);
+	settings->uuid = l_strdup(uuid);
+	hal_log_info("SetProperty(UUID = %s)", settings->uuid);
 
 	return l_dbus_message_new_method_return(message);
 }
@@ -154,10 +157,8 @@ static void setup_interface(struct l_dbus_interface *interface)
 		hal_log_error("Can't add 'URL' property");
 }
 
-
-int manager_start(const struct settings *settings)
+int manager_start(struct settings *settings)
 {
-	const char *path = "/";
 	int err;
 
 	err = proto_start(settings, &selected_protocol);
@@ -192,19 +193,12 @@ int manager_start(const struct settings *settings)
 		hal_log_error("dbus: unable to register %s",
 			      SETTINGS_INTERFACE);
 
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 path,
-					 SETTINGS_INTERFACE,
-					 NULL))
-	    hal_log_error("dbus: unable to add %s to %s",
-					SETTINGS_INTERFACE, path);
-
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 path,
-					 L_DBUS_INTERFACE_PROPERTIES,
-					 NULL))
-	    hal_log_error("dbus: unable to add %s to %s",
-					L_DBUS_INTERFACE_PROPERTIES, path);
+	if (!l_dbus_register_object(dbus_get_bus(),
+				    "/",
+				    settings, NULL,
+				    SETTINGS_INTERFACE, settings,
+				    L_DBUS_INTERFACE_PROPERTIES, settings,
+				    NULL))
 
 	return proxy_start();
 

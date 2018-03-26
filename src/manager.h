@@ -19,5 +19,5 @@
  *
  */
 
-int manager_start(const struct settings *settings);
+int manager_start(struct settings *settings);
 void manager_stop(void);
