@@ -61,9 +61,6 @@ struct trust {
 	struct l_queue *schema;		/* Schema accepted by cloud */
 	struct l_queue *schema_tmp;	/* Schema to be submitted to cloud */
 	struct l_queue *config;		/* knot_config accepted from cloud */
-	const struct proto_ops *proto_ops; /* Cloud driver */
-	struct l_io *proto_io;		/* Cloud IO channel */
-	struct proto_watch *proto_watch;
 };
 
 struct proto_watch {
@@ -74,11 +71,6 @@ struct proto_watch {
 
 /* Maps sockets to sessions: online devices only.  */
 static struct l_hashmap *trust_map;
-
-/* Message processing */
-static int8_t msg_unregister(int sock, int proto_sock);
-static struct l_queue *msg_setdata(int sock, json_raw_t json, ssize_t *result);
-static struct l_queue *msg_getdata(int sock, json_raw_t json, ssize_t *result);
 
 static struct trust *trust_ref(struct trust *trust)
 {
@@ -98,7 +90,6 @@ static void trust_unref(struct trust *trust)
         if (__sync_sub_and_fetch(&trust->refs, 1))
 		return;
 
-	l_io_destroy(trust->proto_io);
 	l_free(trust->uuid);
 	l_free(trust->token);
 	l_queue_destroy(trust->schema, l_free);
@@ -125,6 +116,7 @@ static struct trust *trust_new(const char *uuid, const char *token,
 	return trust_ref(trust);
 }
 
+#if 0
 /*
  * Sends the messages to the THING. Expects a response from the gateway
  * acknowledging that the message was successfully received.
@@ -183,7 +175,6 @@ static void send_message(void *data, void *user_data)
 		hal_log_error("KNOT SEND ERROR");
 }
 
-#if 0
 /*
  * Callback that parses the JSON for config (and in the future, send data)
  * messages. It is called from the protocol that is used to communicate with
@@ -264,119 +255,6 @@ static void remove_device_watch(struct proto_watch *proto_watch)
 }
 #endif
 
-static struct trust *trust_map_get(int id)
-{
-	return l_hashmap_lookup(trust_map, L_INT_TO_PTR(id));
-}
-
-static void trust_map_add(int id, struct trust *trust)
-{
-	l_hashmap_insert(trust_map, L_INT_TO_PTR(id), trust);
-}
-
-static void trust_map_remove(int id)
-{
-	struct trust *trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(id));
-	if (trust)
-		trust_unref(trust);
-}
-
-static void trust_map_replace(int id, struct trust *trust)
-{
-	trust_map_remove(id);
-	trust_map_add(id, trust);
-}
-
-static void on_node_channel_disconnected(struct l_io *channel, void *used_data)
-{
-	struct trust *trust;
-	int node_socket, proto_socket;
-
-	node_socket = l_io_get_fd(channel);
-
-	trust = trust_map_get(node_socket);
-	if (!trust)
-		return;
-
-	/* Zombie device: registration not complete */
-	if (trust->rollback) {
-		proto_socket = l_io_get_fd(trust->proto_io);
-		if (msg_unregister(node_socket, proto_socket) != KNOT_SUCCESS) {
-			hal_log_info("Rollback failed UUID: %s", trust->uuid);
-		}
-	}
-#if 0
-	if (trust->proto_watch)
-		remove_device_watch(trust->proto_watch);
-#endif
-
-	trust_map_remove(node_socket);
-}
-
-static void on_node_channel_destroyed(void *user_data)
-{
-	struct trust *trust = (struct trust *) user_data;
-
-	trust_unref(trust);
-}
-
-static struct l_io *create_node_channel(int node_socket, struct trust *trust)
-{
-	struct l_io *channel;
-
-	channel = l_io_new(node_socket);
-	if (!channel)
-		return NULL;
-
-	l_io_set_disconnect_handler(channel,
-				    on_node_channel_disconnected,
-				    trust_ref(trust),
-				    on_node_channel_destroyed);
-	return channel;
-}
-
-static void trust_create(int node_socket, int proto_socket, const char *uuid,
-			 const char *token, uint64_t device_id, pid_t pid,
-			 bool rollback, struct l_queue *schema,
-			 struct l_queue *config)
-{
-	struct trust *trust;
-	struct l_io *node_channel;
-	struct l_io *proto_io;
-
-	/*
-	 * FIXME: ELL is based on epoll_ctl. Same file
-	 * descriptor can't be used twice.
-	 */
-	proto_io = l_io_new(proto_socket);
-	if (!proto_io) {
-		hal_log_error("Can't create channel for %d(fd)", proto_socket);
-		return;
-	}
-
-	trust = trust_new(uuid, token, device_id, pid,
-			  rollback, schema, config);
-	trust->proto_io = proto_io;
-
-	/* Add a watch to remove the credential when the client disconnects */
-	node_channel = create_node_channel(node_socket, trust);
-	if (!node_channel) {
-		hal_log_error("Can't add watch for %d (fd)", node_socket);
-		trust_unref(trust);
-		return;
-	}
-
-	/*
-	 * TODO: find a better way to store a reference to the cloud as if it
-	 * disconnects we won't recover.
-	 */
-	trust_map_replace(node_socket, trust);
-#if 0
-	/* Add watch to device changes in the cloud */
-	trust->proto_watch = create_device_watch(trust, node_channel);
-#endif
-}
-
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
 	const knot_msg_schema *schema = entry_data;
@@ -429,12 +307,6 @@ static void trust_sensor_schema_complete(struct trust *trust)
 	trust->schema_tmp = NULL;
 }
 
-static void trust_config_update(struct trust *trust, struct l_queue *config)
-{
-	l_queue_destroy(trust->config, l_free);
-	trust->config = config;
-}
-
 static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
 	const knot_msg_config *config = entry_data;
@@ -445,10 +317,10 @@ static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 
 static int8_t msg_unregister(int node_socket, int proto_socket)
 {
-	const struct trust *trust;
+	struct trust *trust;
 	int8_t result;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -460,7 +332,7 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 	if (result != KNOT_SUCCESS)
 		goto done;
 
-	trust_map_remove(node_socket);
+	trust_unref(trust);
 	result = KNOT_SUCCESS;
 
 done:
@@ -709,7 +581,7 @@ static struct l_queue *msg_getdata(int node_socket,
 	struct trust *trust;
 	struct l_queue *messages;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -741,7 +613,7 @@ static struct l_queue *msg_setdata(int node_socket,
 	struct trust *trust;
 	struct l_queue *messages;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -827,7 +699,7 @@ static struct l_queue *msg_config(int node_socket,
 	struct l_queue *config = NULL;
 	struct l_queue *changed_config = NULL;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -944,7 +816,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	 * previously added we just send the uuid/token again.
 	 */
 	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, node_socket);
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
 		hal_log_info("Register: trusted device");
 		msg_credential_create(krsp, trust->uuid, trust->token);
@@ -966,8 +838,10 @@ static int8_t msg_register(int node_socket, int proto_socket,
 
 	msg_credential_create(krsp, uuid, token);
 
-	trust_create(node_socket, proto_socket, uuid, token, kreq->id,
-		     (cred.pid ? : INT32_MAX), true, NULL, NULL);
+	trust = trust_new(uuid, token, kreq->id,
+			  (cred.pid ? : INT32_MAX), true, NULL, NULL);
+
+	l_hashmap_insert(trust_map, L_INT_TO_PTR(node_socket), trust);
 
 	return KNOT_SUCCESS;
 }
@@ -977,10 +851,13 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 {
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct l_queue *schema, *config;
+	struct l_queue *schema;
+	struct l_queue *config;
+	struct trust *trust;
 	int8_t result;
 
-	if (trust_map_get(node_socket)) {
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
+	if (trust) {
 		hal_log_info("Authenticated already");
 		return KNOT_SUCCESS;
 	}
@@ -1010,8 +887,8 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	}
 
 	/* TODO: should we receive the ID? Should we get the socket PID? */
-	trust_create(node_socket, proto_socket,
-		     uuid, token, 0, 0, false, schema, config);
+	trust = trust_new(uuid, token, 0, 0, false, schema, config);
+	l_hashmap_insert(trust_map, L_INT_TO_PTR(node_socket), trust);
 
 	return KNOT_SUCCESS;
 
@@ -1026,7 +903,7 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	int8_t result;
 	struct trust *trust;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1091,7 +968,7 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1134,7 +1011,7 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 	struct trust *trust;
 	uint8_t sensor_id;
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -1171,7 +1048,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = trust_map_get(node_socket);
+	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
 		hal_log_info("Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
