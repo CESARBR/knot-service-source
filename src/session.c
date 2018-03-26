@@ -28,6 +28,8 @@
 
 #include "settings.h"
 #include "node.h"
+#include <knot_types.h>
+#include <knot_protocol.h>
 #include "proto.h"
 #include "session.h"
 

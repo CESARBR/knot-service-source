@@ -31,6 +31,8 @@
 #include <ell/ell.h>
 #include <json-c/json.h>
 
+#include <knot_types.h>
+#include <knot_protocol.h>
 #include <hal/linux_log.h>
 #include "settings.h"
 #include "proto.h"

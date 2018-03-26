@@ -19,7 +19,7 @@
  *
  */
 
-int msg_start(const char *uuid, struct proto_ops *proto_ops);
+int msg_start(void);
 void msg_stop(void);
 
 ssize_t msg_process(int sock, int proto_sock,

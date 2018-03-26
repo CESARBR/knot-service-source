@@ -280,7 +280,7 @@ int manager_start(struct settings *settings)
 		goto fail_node;
 	}
 
-	err = msg_start(settings->uuid, selected_protocol);
+	err = msg_start();
 	if (err < 0) {
 		hal_log_error("msg_start(): %s", strerror(-err));
 		goto fail_msg;

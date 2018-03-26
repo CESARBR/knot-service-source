@@ -62,3 +62,17 @@ struct proto_ops {
 
 int proto_start(const struct settings *settings, struct proto_ops **proto_ops);
 void proto_stop(void);
+
+int proto_mknode(int proto_socket, const char *device_name,
+			uint64_t device_id, char *uuid, char *token);
+int proto_rmnode(int proto_socket, const char *uuid, const char *token);
+int proto_signin(int proto_socket, const char *uuid, const char *token,
+			struct l_queue **schema, struct l_queue **config);
+int proto_schema(int proto_socket, const char *uuid,
+		 const char *token, struct l_queue *schema_list);
+int proto_data(int proto_socket, const char *uuid,
+		      const char *token, uint8_t sensor_id,
+		      uint8_t value_type, const knot_data *value);
+void proto_getdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
+void proto_setdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
+
