@@ -102,6 +102,22 @@ static bool property_get_uuid(struct l_dbus *dbus,
 	return true;
 }
 
+static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
+					struct l_dbus_message *message,
+					struct l_dbus_message_iter *new_value,
+					l_dbus_property_complete_cb_t complete,
+					void *user_data)
+{
+	const char *uuid;
+
+	if (!l_dbus_message_iter_get_variant(new_value, "s", &uuid))
+		return dbus_error_invalid_args(message);
+
+	hal_log_info("SetProperty(UUID = %s)", uuid);
+
+	return l_dbus_message_new_method_return(message);
+}
+
 static bool property_get_token(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
@@ -129,7 +145,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 
 	if (!l_dbus_interface_property(interface, "UUID", 0, "s",
 				       property_get_uuid,
-				       NULL))
+				       property_set_uuid))
 		hal_log_error("Can't add 'URL' property");
 
 	if (!l_dbus_interface_property(interface, "Token", 0, "s",

@@ -1,0 +1,33 @@
+#!/usr/bin/python
+from optparse import OptionParser, make_option
+import sys
+import dbus
+
+bus = dbus.SystemBus()
+
+if (len(sys.argv) < 1):
+        print("Usage: %s <command>" % (sys.argv[0]))
+        print("")
+        print("  info")
+        print("  uuid [Uuid]")
+        sys.exit(1)
+
+props = dbus.Interface(bus.get_object("br.org.cesar.knot", "/"), "org.freedesktop.DBus.Properties")
+
+cmd = sys.argv[1]
+print ("Command: %s" % cmd)
+
+if (cmd == "info"):
+	print (props.GetAll("br.org.cesar.knot.Settings1"))
+	sys.exit(0)
+
+if (cmd == "uuid"):
+	print ("Uuid ...")
+	uuid = props.Get("br.org.cesar.knot.Settings1", "UUID")
+	print ("Current Uuid: %s" % uuid)
+	value = dbus.String(sys.argv[2])
+	props.Set("br.org.cesar.knot.Settings1", "UUID", value)
+	uuid = props.Get("br.org.cesar.knot.Settings1", "UUID")
+	print ("Current Uuid: %s" % uuid)
+
+	sys.exit(0)
