@@ -63,6 +63,24 @@ static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
+static void emit_signal_string(const char *path,
+			       const char *prop, const char *newval)
+{
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   path,
+					   SETTINGS_INTERFACE,
+					   prop);
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 's', &newval);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
+}
+
 static bool property_get_port(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
@@ -103,7 +121,7 @@ static bool property_get_uuid(struct l_dbus *dbus,
 }
 
 static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
-					struct l_dbus_message *message,
+					struct l_dbus_message *msg,
 					struct l_dbus_message_iter *new_value,
 					l_dbus_property_complete_cb_t complete,
 					void *user_data)
@@ -112,13 +130,15 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 	const char *uuid;
 
 	if (!l_dbus_message_iter_get_variant(new_value, "s", &uuid))
-		return dbus_error_invalid_args(message);
+		return dbus_error_invalid_args(msg);
 
 	l_free(settings->uuid);
 	settings->uuid = l_strdup(uuid);
 	hal_log_info("SetProperty(Uuid = %s)", settings->uuid);
 
-	return l_dbus_message_new_method_return(message);
+	emit_signal_string(l_dbus_message_get_path(msg), "Uuid", uuid);
+
+	return l_dbus_message_new_method_return(msg);
 }
 
 static bool property_get_token(struct l_dbus *dbus,
