@@ -46,6 +46,7 @@
 #include "msg.h"
 #include "dbus.h"
 #include "proxy.h"
+#include "storage.h"
 #include "manager.h"
 
 static struct proto_ops *selected_protocol;
@@ -127,6 +128,7 @@ static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
 	settings->port = port;
 	hal_log_info("Set('Port' = %" PRIu16")", port);
 
+	storage_write_key_int(settings->config_path, "Cloud", "Port", port);
 	emit_signal_uint16(l_dbus_message_get_path(msg), "Port", port);
 
 	return l_dbus_message_new_method_return(msg);
@@ -161,6 +163,7 @@ static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
 	settings->host = l_strdup(host);
 	hal_log_info("Set('Host' = %s)", settings->host);
 
+	storage_write_key_string(settings->config_path, "Cloud", "Host", host);
 	emit_signal_string(l_dbus_message_get_path(msg), "Host", host);
 
 	return l_dbus_message_new_method_return(msg);
@@ -195,6 +198,7 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 	settings->uuid = l_strdup(uuid);
 	hal_log_info("Set('Uuid' = %s)", settings->uuid);
 
+	storage_write_key_string(settings->config_path, "Cloud", "Uuid", uuid);
 	emit_signal_string(l_dbus_message_get_path(msg), "Uuid", uuid);
 
 	return l_dbus_message_new_method_return(msg);
