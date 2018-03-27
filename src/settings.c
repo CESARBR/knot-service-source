@@ -155,7 +155,7 @@ struct settings *settings_load(int argc, char *argv[])
 
 	if (settings->host == NULL) {
 		host = storage_read_key_string(settings->config_path,
-					       "Cloud","ServerName");
+					       "Cloud","Host");
 		if(!host)
 			settings->host = l_strdup(DEFAULT_HOST);
 		else
