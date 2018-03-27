@@ -105,7 +105,7 @@ static bool property_get_port(struct l_dbus *dbus,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
 {
-	struct settings *settings = user_data;
+	const struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 'q', &settings->port);
 	hal_log_info("Get('Port' = %"PRIu16")", settings->port);
@@ -139,7 +139,7 @@ static bool property_get_host(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	struct settings *settings = user_data;
+	const struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->host);
 	hal_log_info("Get('Host' = %s)", settings->host);
@@ -174,7 +174,7 @@ static bool property_get_uuid(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	struct settings *settings = user_data;
+	const struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->uuid);
 	hal_log_info("Get('Uuid' = %s)", settings->uuid);
@@ -209,12 +209,35 @@ static bool property_get_token(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	const char *token = "token-unknown";
+	const struct settings *settings = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 's', token);
-	hal_log_info("Get('Token' = %s)", token);
+	l_dbus_message_builder_append_basic(builder, 's', settings->token);
+	hal_log_info("Get('Token' = %s)", settings->token);
 
 	return true;
+}
+
+static struct l_dbus_message *property_set_token(struct l_dbus *dbus,
+					struct l_dbus_message *msg,
+					struct l_dbus_message_iter *new_value,
+					l_dbus_property_complete_cb_t complete,
+					void *user_data)
+{
+	struct settings *settings = user_data;
+	const char *token;
+
+	if (!l_dbus_message_iter_get_variant(new_value, "s", &token))
+		return dbus_error_invalid_args(msg);
+
+	l_free(settings->token);
+	settings->token = l_strdup(token);
+	hal_log_info("Set('Token' = %s)", settings->token);
+
+	storage_write_key_string(settings->config_path,
+				 "Cloud", "Token", token);
+	emit_signal_string(l_dbus_message_get_path(msg), "Token", token);
+
+	return l_dbus_message_new_method_return(msg);
 }
 
 static void setup_interface(struct l_dbus_interface *interface)
@@ -236,7 +259,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 
 	if (!l_dbus_interface_property(interface, "Token", 0, "s",
 				       property_get_token,
-				       NULL))
+				       property_set_token))
 		hal_log_error("Can't add 'Token' property");
 }
 

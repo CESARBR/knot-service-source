@@ -54,3 +54,14 @@ if (cmd == "port"):
 	print ("New Uuid: %u" % port)
 
 	sys.exit(0)
+
+if (cmd == "token"):
+	print ("Token ...")
+	token = props.Get("br.org.cesar.knot.Settings1", "Token")
+	print ("Current Token: %s" % token)
+	value = dbus.String(sys.argv[2])
+	props.Set("br.org.cesar.knot.Settings1", "Token", value)
+	token = props.Get("br.org.cesar.knot.Settings1", "Token")
+	print ("New Token: %s" % token)
+
+	sys.exit(0)

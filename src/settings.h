@@ -26,6 +26,7 @@ struct settings {
 	unsigned int port;
 	const char *proto;
 	char *uuid;
+	char *token;
 
 	bool help;
 	bool detach;

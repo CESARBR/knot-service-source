@@ -119,6 +119,7 @@ struct settings *settings_load(int argc, char *argv[])
 	unsigned int port = 0;
 	char *host = NULL;
 	char *uuid = NULL;
+	char *token = NULL;
 
 	settings = l_new(struct settings, 1);
 
@@ -130,6 +131,7 @@ struct settings *settings_load(int argc, char *argv[])
 	settings->run_as_nobody = true;
 	settings->help = help;
 	settings->uuid = NULL;
+	settings->token = NULL;
 
 	if (parse_args(argc, argv, settings) < 0)
 		goto failure;
@@ -146,10 +148,16 @@ struct settings *settings_load(int argc, char *argv[])
 	 * not be read from command line due security reason.
 	 */
 
-	/* UUID is mandatory */
+	/* UUID & Token are  mandatory */
 	uuid = storage_read_key_string(settings->config_path, "Cloud","Uuid");
 	if (uuid == NULL) {
 		fprintf(stderr, "%s UUID missing!\n", settings->config_path);
+		goto failure;
+	}
+
+	token = storage_read_key_string(settings->config_path, "Cloud","Token");
+	if (token == NULL) {
+		fprintf(stderr, "%s Token missing!\n", settings->config_path);
 		goto failure;
 	}
 
@@ -171,6 +179,7 @@ struct settings *settings_load(int argc, char *argv[])
 	}
 
 	settings->uuid = uuid;
+	settings->token = token;
 
 	goto done;
 
@@ -185,5 +194,6 @@ void settings_free(struct settings *settings)
 {
 	l_free(settings->host);
 	l_free(settings->uuid);
+	l_free(settings->token);
 	l_free(settings);
 }
