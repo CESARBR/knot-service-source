@@ -33,6 +33,17 @@ if (cmd == "uuid"):
 
 	sys.exit(0)
 
+if (cmd == "host"):
+	print ("Host ...")
+	host = props.Get("br.org.cesar.knot.Settings1", "Host")
+	print ("Current Host: %s" % host)
+	value = dbus.String(sys.argv[2])
+	props.Set("br.org.cesar.knot.Settings1", "Host", value)
+	host = props.Get("br.org.cesar.knot.Settings1", "Host")
+	print ("New Host: %s" % host)
+
+	sys.exit(0)
+
 if (cmd == "port"):
 	print ("Uuid ...")
 	port = props.Get("br.org.cesar.knot.Settings1", "Port")

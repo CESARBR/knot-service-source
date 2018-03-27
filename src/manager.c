@@ -145,6 +145,27 @@ static bool property_get_host(struct l_dbus *dbus,
 	return true;
 }
 
+static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
+					struct l_dbus_message *msg,
+					struct l_dbus_message_iter *new_value,
+					l_dbus_property_complete_cb_t complete,
+					void *user_data)
+{
+	struct settings *settings = user_data;
+	const char *host;
+
+	if (!l_dbus_message_iter_get_variant(new_value, "s", &host))
+		return dbus_error_invalid_args(msg);
+
+	l_free(settings->host);
+	settings->host = l_strdup(host);
+	hal_log_info("SetProperty(Host = %s)", settings->host);
+
+	emit_signal_string(l_dbus_message_get_path(msg), "Host", host);
+
+	return l_dbus_message_new_method_return(msg);
+}
+
 static bool property_get_uuid(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
@@ -201,7 +222,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 
 	if (!l_dbus_interface_property(interface, "Host", 0, "s",
 				       property_get_host,
-				       NULL))
+				       property_set_host))
 		hal_log_error("Can't add 'Host' property");
 
 	if (!l_dbus_interface_property(interface, "Uuid", 0, "s",
