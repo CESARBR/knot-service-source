@@ -107,7 +107,7 @@ static bool property_get_port(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 'q', &settings->port);
-	hal_log_info("GetProperty(Port = %"PRIu16")", settings->port);
+	hal_log_info("Get('Port' = %"PRIu16")", settings->port);
 
 	return true;
 }
@@ -125,7 +125,7 @@ static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
 		return dbus_error_invalid_args(msg);
 
 	settings->port = port;
-	hal_log_info("SetProperty(Port = %" PRIu16")", port);
+	hal_log_info("Set('Port' = %" PRIu16")", port);
 
 	emit_signal_uint16(l_dbus_message_get_path(msg), "Port", port);
 
@@ -140,7 +140,7 @@ static bool property_get_host(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->host);
-	hal_log_info("GetProperty(Host = %s)", settings->host);
+	hal_log_info("Get('Host' = %s)", settings->host);
 
 	return true;
 }
@@ -159,7 +159,7 @@ static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
 
 	l_free(settings->host);
 	settings->host = l_strdup(host);
-	hal_log_info("SetProperty(Host = %s)", settings->host);
+	hal_log_info("Set('Host' = %s)", settings->host);
 
 	emit_signal_string(l_dbus_message_get_path(msg), "Host", host);
 
@@ -174,7 +174,7 @@ static bool property_get_uuid(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', settings->uuid);
-	hal_log_info("GetProperty(Uuid = %s)", settings->uuid);
+	hal_log_info("Get('Uuid' = %s)", settings->uuid);
 
 	return true;
 }
@@ -193,7 +193,7 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 
 	l_free(settings->uuid);
 	settings->uuid = l_strdup(uuid);
-	hal_log_info("SetProperty(Uuid = %s)", settings->uuid);
+	hal_log_info("Set('Uuid' = %s)", settings->uuid);
 
 	emit_signal_string(l_dbus_message_get_path(msg), "Uuid", uuid);
 
@@ -208,7 +208,7 @@ static bool property_get_token(struct l_dbus *dbus,
 	const char *token = "token-unknown";
 
 	l_dbus_message_builder_append_basic(builder, 's', token);
-	hal_log_info("GetProperty(Token = %s)", token);
+	hal_log_info("Get('Token' = %s)", token);
 
 	return true;
 }
