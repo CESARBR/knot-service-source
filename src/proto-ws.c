@@ -51,9 +51,19 @@ struct ws_session {
 	unsigned char data[0];	/* WS_RX_BUFFER_SIZE */
 };
 
+/* Used to remove an entry from lws_list */
+static bool lws_list_cmp(const void *key, void *value, void *user_data)
+{
+	return (value == user_data ? true : false);
+}
+
 static int wait_for_response(struct lws *ws)
 {
 	struct ws_session *session;
+	struct lws *lws;
+	int sock;
+
+	sock = lws_get_socket_fd(ws);
 
 	lws_callback_on_writable(ws);
 
@@ -61,18 +71,31 @@ static int wait_for_response(struct lws *ws)
 	if (session)
 		session->got_response = false;
 
-	while (session == NULL) {
-		/* User data (session) is NULL while not connected */
-		lws_service(context, 0);
-		session = lws_wsi_user(ws);
+	/*
+	 * User data (session) is NULL while not connected.
+	 * User data(session) is NOT valid while WSI is destroyed.
+	 */
+	lws = l_hashmap_lookup(lws_list, L_INT_TO_PTR(sock));
+	while (lws) {
 
-		/* FIXME: add timeout */
+		/* lws engine: process events */
+		lws_service(context, 0);
+
+		/* Might be destroyed: connection error */
+		lws = l_hashmap_lookup(lws_list, L_INT_TO_PTR(sock));
+		if (lws == NULL)
+			break;
+
+		session = lws_wsi_user(lws);
+		/* Still connecting? */
+		if (session == NULL)
+			continue;
+
+		if (session->got_response)
+			break;
 	}
 
-	while (!session->got_response)
-		lws_service(context, 0);
-
-	return 0;
+	return (lws ? 0 : -EIO);
 }
 
 static void ws_close(int sock)
@@ -383,8 +406,21 @@ static int callback_lws_ws(struct lws *wsi,
 		hal_log_info("Received: (%s)", (const char *) in);
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-	case LWS_CALLBACK_CLOSED:
+		break;
+	case LWS_CALLBACK_WSI_CREATE: // always protocol[0]
+		hal_log_info("WSI: %p created", wsi);
+		break;
+	case LWS_CALLBACK_WSI_DESTROY: // always protocol[0]
+		/*
+		 * l_hashmap_remove() can't be used at this point. socket is
+		 * invalid already. lws_get_socket_fd() will return -1.
+		 */
+		l_hashmap_foreach_remove(lws_list, lws_list_cmp, wsi);
+		hal_log_info("WSI: %p destroyed", wsi);
+		break;
 	case LWS_CALLBACK_ESTABLISHED:
+		break;
+	case LWS_CALLBACK_CLOSED:
 	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
 	case LWS_CALLBACK_CLOSED_HTTP:
 	case LWS_CALLBACK_RECEIVE:
@@ -406,9 +442,6 @@ static int callback_lws_ws(struct lws *wsi,
 	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
 	case LWS_CALLBACK_PROTOCOL_INIT:
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
-	case LWS_CALLBACK_WSI_CREATE: // always protocol[0]
-	case LWS_CALLBACK_WSI_DESTROY: // always protocol[0]
-	case LWS_CALLBACK_GET_THREAD_ID:
 	case LWS_CALLBACK_ADD_POLL_FD:
 	case LWS_CALLBACK_DEL_POLL_FD:
 	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
@@ -438,6 +471,7 @@ static int callback_lws_ws(struct lws *wsi,
 	case LWS_CALLBACK_HTTP_PMO:
 	case LWS_CALLBACK_CLIENT_HTTP_WRITEABLE:
 	case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
+	case LWS_CALLBACK_GET_THREAD_ID:
 		break;
 	default:
 		break;
@@ -484,9 +518,10 @@ static int ws_connect(void)
 
 	ws = lws_client_connect_via_info(&info);
 
-	sock = lws_get_socket_fd((struct lws *) ws);
+	sock = lws_get_socket_fd(ws);
 	l_hashmap_insert(lws_list, L_INT_TO_PTR(sock), ws);
 
+	hal_log_info("WSI: %p key:(%d) %p", ws, sock, L_INT_TO_PTR(sock));
 	/* TODO: Create thread for each connected client */
 	wait_for_response(ws);
 
