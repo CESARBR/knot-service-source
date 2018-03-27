@@ -265,6 +265,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 
 int manager_start(struct settings *settings)
 {
+	const char *path = "/";
 	int err;
 
 	err = proto_start(settings, &selected_protocol);
@@ -300,11 +301,12 @@ int manager_start(struct settings *settings)
 			      SETTINGS_INTERFACE);
 
 	if (!l_dbus_register_object(dbus_get_bus(),
-				    "/",
+				    path,
 				    settings, NULL,
 				    SETTINGS_INTERFACE, settings,
 				    L_DBUS_INTERFACE_PROPERTIES, settings,
 				    NULL))
+		hal_log_error("dbus: unable to register object %s", path);
 
 	return proxy_start();
 
