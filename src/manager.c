@@ -81,6 +81,24 @@ static void emit_signal_string(const char *path,
 	l_dbus_send(dbus_get_bus(), signal);
 }
 
+static void emit_signal_uint16(const char *path,
+			       const char *prop, uint16_t newval)
+{
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   path,
+					   SETTINGS_INTERFACE,
+					   prop);
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'q', &newval);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
+}
+
 static bool property_get_port(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
@@ -89,9 +107,29 @@ static bool property_get_port(struct l_dbus *dbus,
 	struct settings *settings = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 'q', &settings->port);
-	hal_log_info("GetProperty(Port = %"PRIu32")", settings->port);
+	hal_log_info("GetProperty(Port = %"PRIu16")", settings->port);
 
 	return true;
+}
+
+static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
+					struct l_dbus_message *msg,
+					struct l_dbus_message_iter *new_value,
+					l_dbus_property_complete_cb_t complete,
+					void *user_data)
+{
+	struct settings *settings = user_data;
+	uint16_t port;
+
+	if (!l_dbus_message_iter_get_variant(new_value, "q", &port))
+		return dbus_error_invalid_args(msg);
+
+	settings->port = port;
+	hal_log_info("SetProperty(Port = %" PRIu16")", port);
+
+	emit_signal_uint16(l_dbus_message_get_path(msg), "Port", port);
+
+	return l_dbus_message_new_method_return(msg);
 }
 
 static bool property_get_host(struct l_dbus *dbus,
@@ -158,7 +196,7 @@ static void setup_interface(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Port", 0, "q",
 				       property_get_port,
-				       NULL))
+				       property_set_port))
 		hal_log_error("Can't add 'Port' property");
 
 	if (!l_dbus_interface_property(interface, "Host", 0, "s",
