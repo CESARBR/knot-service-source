@@ -74,7 +74,7 @@ static void emit_signal_string(const char *path,
 					   SETTINGS_INTERFACE,
 					   prop);
 	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 's', &newval);
+	l_dbus_message_builder_append_basic(builder, 's', newval);
 	l_dbus_message_builder_finalize(builder);
 	l_dbus_message_builder_destroy(builder);
 
