@@ -51,11 +51,6 @@ struct session {
 
 static struct l_queue *session_list = NULL;
 
-static void session_free(struct session *session)
-{
-	l_free(session);
-}
-
 static struct session *session_ref(struct session *session)
 {
 	if (unlikely(!session))
@@ -84,16 +79,14 @@ static void session_unref(struct session *session)
         if (__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
-	session_free(session);
-}
-
-static void destroy_node_channel(struct l_io *channel)
-{
-	l_io_destroy(channel);
+	l_io_destroy(session->node_channel);
+	l_io_destroy(session->proto_channel);
+	l_free(session);
 }
 
 static void disconnect_proto(struct session *session)
 {
+	struct l_io *channel;
 	int proto_socket;
 
 	if (!session->proto_channel)
@@ -101,6 +94,10 @@ static void disconnect_proto(struct session *session)
 
 	proto_socket = l_io_get_fd(session->proto_channel);
 	session->proto_ops->close(proto_socket);
+
+	channel = session->proto_channel;
+	session->proto_channel = NULL;
+	l_io_destroy(channel);
 
 	/* Channel cleanup will be held at disconnect callback */
 }
@@ -116,7 +113,10 @@ static void on_proto_channel_disconnected(struct l_io *channel,
 	 * In this case, radio transport should be left
 	 * connected.
 	 */
-	session->proto_channel = NULL;
+	if (session->proto_channel) {
+		session->proto_channel = NULL;
+		l_io_destroy(channel);
+	}
 }
 
 static void on_proto_channel_destroyed(void *user_data)
@@ -132,10 +132,15 @@ static struct l_io *create_proto_channel(int proto_socket,
 	struct l_io *channel;
 
 	channel = l_io_new(proto_socket);
-	l_io_set_disconnect_handler(channel, on_proto_channel_disconnected,
-				    session, on_proto_channel_destroyed);
-	session_ref(session);
+	if (channel == NULL) {
+		hal_log_error("Can't create proto channel");
+		return NULL;
+	}
 
+	l_io_set_disconnect_handler(channel,
+				    on_proto_channel_disconnected,
+				    session_ref(session),
+				    on_proto_channel_destroyed);
 	return channel;
 }
 
@@ -162,14 +167,23 @@ static void on_node_channel_disconnected(struct l_io *channel, void *user_data)
 
 	disconnect_proto(session);
 
-	session->node_channel = NULL;
+	/*
+	 * Remove initiated disconnection:
+	 * Destroy ELL channel and remove tracked session
+	 */
+	if (session->node_channel) {
+		session->node_channel = NULL;
+
+		l_io_destroy(channel);
+		l_queue_remove(session_list, session);
+		session_unref(session);
+	}
 }
 
 static void on_node_channel_destroyed(void *user_data)
 {
 	struct session *session = user_data;
 
-	l_queue_remove(session_list, session);
 	session_unref(session);
 }
 
@@ -178,7 +192,7 @@ static void on_node_channel_destroy_timeout(struct l_timeout *timeout,
 {
 	struct l_io *channel = user_data;
 
-	destroy_node_channel(channel);
+	l_io_destroy(channel);
 }
 
 static void on_node_channel_data_error(struct l_io *channel)
@@ -260,12 +274,18 @@ static struct l_io *create_node_channel(int node_socket,
 	struct l_io *channel;
 
 	channel = l_io_new(node_socket);
+	if (channel == NULL) {
+		hal_log_error("Can't create node channel");
+		return NULL;
+	}
+
 	l_io_set_close_on_destroy(channel, true);
 
-	l_io_set_read_handler(channel, on_node_channel_data, session, NULL);
+	l_io_set_read_handler(channel, on_node_channel_data,
+			      session, NULL);
 	l_io_set_disconnect_handler(channel,
 				    on_node_channel_disconnected,
-				    session,
+				    session_ref(session),
 				    on_node_channel_destroyed);
 
 	return channel;
@@ -303,11 +323,26 @@ int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
 
 static void session_destroy(struct session *session, void *user_data)
 {
+	struct l_io *channel;
 	/*
 	 * Sessions are destroyed and removed from list when the node
 	 * channel is destroyed.
 	 */
-	destroy_node_channel(session->node_channel);
+	if (session->proto_channel) {
+		channel = session->proto_channel;
+		session->proto_channel = NULL; /* Lock: destroying */
+
+		/* Destroy calls disconnect & destroyed callbacks */
+		l_io_destroy(channel);
+	}
+
+	if (session->node_channel) {
+		channel = session->node_channel;
+		session->node_channel = NULL; /* Lock: destroying */
+
+		/* Destroy calls disconnect & destroyed callbacks */
+		l_io_destroy(channel);
+	}
 }
 
 void session_destroy_all(void)
@@ -319,6 +354,6 @@ void session_destroy_all(void)
 	l_queue_foreach(session_list,
 			(l_queue_foreach_func_t) session_destroy,
 			NULL);
-	l_queue_destroy(session_list, NULL);
+	l_queue_destroy(session_list, (l_queue_destroy_func_t) session_unref);
 	session_list = NULL;
 }
