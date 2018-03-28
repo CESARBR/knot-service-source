@@ -50,12 +50,12 @@ static struct node_ops *node_ops[] = {
 	NULL
 };
 
-static struct l_queue *accept_channel_list = NULL;
+static struct l_queue *channel_list = NULL;
 
-static int start_node_server(const struct node_ops *node_ops)
+static int node_listen(const struct node_ops *node_ops)
 {
-	int err = -EIO;
 	int server_socket;
+	int err;
 
 	err = node_ops->probe();
 	if (err < 0)
@@ -65,26 +65,14 @@ static int start_node_server(const struct node_ops *node_ops)
 	if (server_socket < 0) {
 		hal_log_error("%p listen(): %s(%d)", node_ops,
 			strerror(-server_socket), -server_socket);
+
 		node_ops->remove();
 	}
 
 	return server_socket;
 }
 
-static void stop_node_server(const struct node_ops *node_ops)
-{
-	node_ops->remove();
-}
-
-static void stop_all_node_servers(void)
-{
-	int i;
-	/* Remove only previously loaded modules */
-	for (i = 0; node_ops[i]; i++)
-		stop_node_server(node_ops[i]);
-}
-
-static void try_accept(struct node_ops* node_ops,
+static void try_accept(struct node_ops *node_ops,
 		       int server_socket, on_accepted on_accepted_cb)
 {
 	int client_socket;
@@ -101,23 +89,16 @@ static void try_accept(struct node_ops* node_ops,
 
 static bool on_accept(struct l_io *channel, void *user_data)
 {
-	struct node_ops *node_ops;
-	on_accepted on_accepted_cb;
+	struct on_accept_data *on_accept_data = user_data;
+	struct node_ops *node_ops = on_accept_data->node_ops;
+	on_accepted on_accepted_cb = on_accept_data->on_accepted_cb;
 	int server_socket;
-
-	node_ops = ((struct on_accept_data *)user_data)->node_ops;
-	on_accepted_cb = ((struct on_accept_data *)user_data)->on_accepted_cb;
 
 	server_socket = l_io_get_fd(channel);
 
 	try_accept(node_ops, server_socket, on_accepted_cb);
 
 	return true;
-}
-
-static void on_accept_channel_destroyed(void *user_data)
-{
-	l_free(user_data);
 }
 
 /*
@@ -127,15 +108,16 @@ static int set_nonblocking(int fd)
 {
 	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
 		return -errno;
+
 	return 0;
 }
 
-static void create_accept_channel(int server_socket,
-				  struct node_ops *node_ops,
-				  on_accepted on_accepted_cb)
+static void create_channel(int server_socket,
+			   struct node_ops *node_ops,
+			   on_accepted on_accepted_cb)
 {
-	struct l_io *channel;
 	struct on_accept_data *on_accept_data;
+	struct l_io *channel;
 	int err;
 
 	channel = l_io_new(server_socket);
@@ -150,19 +132,12 @@ static void create_accept_channel(int server_socket,
 	on_accept_data->node_ops = node_ops;
 	on_accept_data->on_accepted_cb = on_accepted_cb;
 
-	l_io_set_read_handler(channel, on_accept, on_accept_data,
-			      on_accept_channel_destroyed);
+	l_io_set_read_handler(channel, on_accept, on_accept_data, l_free);
 
-	l_queue_push_tail(accept_channel_list, channel);
+	l_queue_push_tail(channel_list, channel);
 
 	hal_log_info("node_ops(%p): (%s) created accept channel",
 		     node_ops, node_ops->name);
-}
-
-static void destroy_all_accept_channels(void)
-{
-	l_queue_destroy(accept_channel_list,
-			(l_queue_destroy_func_t) l_io_destroy);
 }
 
 int node_start(on_accepted on_accepted_cb)
@@ -170,7 +145,7 @@ int node_start(on_accepted on_accepted_cb)
 	int server_socket;
 	int i;
 
-	accept_channel_list = l_queue_new();
+	channel_list = l_queue_new();
 
 	/*
 	 * Probing all access technologies: nRF24L01, BTLE, TCP, Unix
@@ -180,11 +155,11 @@ int node_start(on_accepted on_accepted_cb)
 	 * streams from/to KNOT nodes.
 	 */
 	for (i = 0; node_ops[i]; i++) {
-		server_socket = start_node_server(node_ops[i]);
+		server_socket = node_listen(node_ops[i]);
 		if (server_socket < 0)
 			continue;
 
-		create_accept_channel(server_socket, node_ops[i], on_accepted_cb);
+		create_channel(server_socket, node_ops[i], on_accepted_cb);
 	}
 
 	return 0;
@@ -192,6 +167,12 @@ int node_start(on_accepted on_accepted_cb)
 
 void node_stop(void)
 {
-	stop_all_node_servers();
-	destroy_all_accept_channels();
+	int i;
+
+	l_queue_destroy(channel_list,
+			(l_queue_destroy_func_t) l_io_destroy);
+
+	/* Remove only previously loaded modules */
+	for (i = 0; node_ops[i]; i++)
+		node_ops[i]->remove();
 }
