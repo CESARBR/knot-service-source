@@ -109,8 +109,9 @@ static struct trust *trust_new(const char *uuid, const char *token,
 	trust->id = device_id;
 	trust->pid = pid;
 	trust->rollback = rollback;
-	trust->schema = schema;
-	trust->config = config;
+	trust->schema = (schema ? : l_queue_new());
+	trust->schema_tmp = l_queue_new();
+	trust->config = (config ? : l_queue_new());
 	trust->refs = 0;
 
 	return trust_ref(trust);

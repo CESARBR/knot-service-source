@@ -314,11 +314,15 @@ done:
 static int ws_update(int sock, const char *uuid, const char *token,
 		     const char *jreq, json_raw_t *json)
 {
-	json_object *jobj, *jarray;
+	json_object *jobj_uuid;
+	json_object *jobj_schema;
+	json_object *jobj_set;
+	json_object *jarray_out;
+	json_object *jarray_in;
 	const char *jobjstring;
 	struct ws_session *session;
 	struct lws *ws;
-	int ret;
+	int ret = -ENOMEM;
 
 	ws = l_hashmap_lookup(lws_list, L_INT_TO_PTR(sock));
 	if (!ws)
@@ -328,33 +332,63 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	if (!session)
 		return -EINVAL;
 
-	jobj = json_object_new_object();
-	jarray = json_object_new_array();
-	if (!jobj || !jarray) {
-		hal_log_error("JSON: no memory");
-		return -ENOMEM;
+	/*
+	 * Based on Meshblu WebSockets API.
+	 * https://meshblu-websocket.readme.io/docs/update
+	 */
+	jarray_out = json_object_new_array();
+	if (jarray_out == NULL)
+		goto fail;
+
+	json_object_array_add(jarray_out, json_object_new_string("update"));
+
+	jarray_in = json_object_new_array();
+	if (jarray_in == NULL)
+		goto fail;
+
+	json_object_array_add(jarray_out, jarray_in);
+
+	jobj_uuid = json_object_new_object();
+	if (jobj_uuid == NULL)
+		goto fail;
+
+	/* Add UUID to internal array */
+	json_object_array_add(jarray_in, jobj_uuid);
+
+	jobj_set = json_object_new_object();
+	if (jobj_set == NULL)
+		goto fail;
+
+	/* Add "$set" to internal array */
+	json_object_array_add(jarray_in, jobj_set);
+
+	jobj_schema = json_tokener_parse(jreq);
+	if (jobj_schema == NULL) {
+		ret = -EINVAL;
+		goto fail;
 	}
 
-	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
-	json_object_array_add(jarray, json_object_new_string("update"));
-	json_object_array_add(jarray, jobj);
+	json_object_object_add(jobj_uuid, "uuid", json_object_new_string(uuid));
+	json_object_object_add(jobj_set, "$set", jobj_schema);
 
-	jobjstring = json_object_to_json_string(jarray);
+	jobjstring = json_object_to_json_string(jarray_out);
 	hal_log_info("WS TX JSON %s", jobjstring);
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
 	ret = wait_for_response(ws);
-	json_object_put(jarray);
 	if (ret != 0)
-		goto done;
+		goto fail;
 
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
 
-done:
+fail:
+	hal_log_error("WS(update): %s(%d)", strerror(-ret), -ret);
+	json_object_put(jarray_out);
+
 	return ret;
 }
 
