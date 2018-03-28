@@ -597,8 +597,8 @@ static int ws_probe(const char *host, unsigned int port)
 static void ws_remove(void)
 {
 	/* FIXME: */
-	l_hashmap_destroy(lws_list, NULL);
 	lws_context_destroy(context);
+	l_hashmap_destroy(lws_list, NULL);
 }
 
 struct proto_ops proto_ws = {
