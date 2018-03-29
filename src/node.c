@@ -72,7 +72,7 @@ static int node_listen(const struct node_ops *node_ops)
 	return server_socket;
 }
 
-static void try_accept(struct node_ops *node_ops,
+static bool try_accept(struct node_ops *node_ops,
 		       int server_socket, on_accepted on_accepted_cb)
 {
 	int client_socket;
@@ -81,10 +81,15 @@ static void try_accept(struct node_ops *node_ops,
 	if (client_socket < 0) {
 		hal_log_error("%p accept(): %s(%d)",
 			node_ops, strerror(-client_socket), -client_socket);
-		return;
+		return false;
 	}
 
-	on_accepted_cb(node_ops, client_socket);
+	if (on_accepted_cb(node_ops, client_socket) == false) {
+		close(client_socket);
+		return false;
+	}
+
+	return true;
 }
 
 static bool on_accept(struct l_io *channel, void *user_data)
@@ -96,9 +101,7 @@ static bool on_accept(struct l_io *channel, void *user_data)
 
 	server_socket = l_io_get_fd(channel);
 
-	try_accept(node_ops, server_socket, on_accepted_cb);
-
-	return true;
+	return try_accept(node_ops, server_socket, on_accepted_cb);
 }
 
 /*
