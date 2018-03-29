@@ -29,6 +29,7 @@ src_knotd_SOURCES = src/main.c \
 			src/dbus.c src/dbus.h \
 			src/device.c src/device.h \
 			src/proxy.c src/proxy.h \
+			src/util.c src/util.h \
 			$(modules_sources)
 
 src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ -lm
