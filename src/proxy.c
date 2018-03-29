@@ -95,7 +95,13 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 		return;
 
 	device = device_create(ellproxy, id, "device:unknown", paired);
-	l_hashmap_insert(proxy->device_list, ellproxy, device);
+	if (device) {
+		l_hashmap_insert(proxy->device_list, ellproxy, device);
+		return;
+	}
+
+	/* Critical error: probably D-Bus object is not registered properly */
+	hal_log_error("Can't create device: %"PRIu64, id);
 }
 
 static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
