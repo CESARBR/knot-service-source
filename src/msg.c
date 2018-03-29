@@ -503,21 +503,6 @@ static struct l_queue *msg_config(int node_socket,
 }
 #endif
 
-static int get_socket_credentials(int sock, struct ucred *cred)
-{
-	socklen_t sklen;
-
-	memset(cred, 0, sizeof(struct ucred));
-	sklen = sizeof(struct ucred);
-	if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, cred, &sklen) == -1) {
-		hal_log_error("getsockopt(%d): %s(%d)", sock,
-			strerror(errno), errno);
-		return KNOT_ERROR_UNKNOWN;
-	}
-
-	return KNOT_SUCCESS;
-}
-
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
 					  size_t length)
 {
@@ -579,7 +564,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	 * only. For other socket types additional authentication mechanism
 	 * will be required.
 	 */
-	result = get_socket_credentials(node_socket, &cred);
+	result = util_get_credentials(node_socket, &cred);
 	if (result != KNOT_SUCCESS)
 		hal_log_info("sock:%d, pid:%ld",
 			     node_socket, (long int) cred.pid);

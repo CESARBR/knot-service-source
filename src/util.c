@@ -19,6 +19,18 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#ifndef  _GNU_SOURCE
+#define  _GNU_SOURCE
+#endif
+
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include <ell/ell.h>
 
 #include <knot_types.h>
@@ -98,5 +110,17 @@ int8_t util_config_is_valid(struct l_queue *config_list)
 		}
 		entry = entry->next;
 	}
+	return KNOT_SUCCESS;
+}
+
+int8_t util_get_credentials(int sock, struct ucred *cred)
+{
+	socklen_t sklen;
+
+	memset(cred, 0, sizeof(struct ucred));
+	sklen = sizeof(struct ucred);
+	if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, cred, &sklen) == -1)
+		return KNOT_ERROR_UNKNOWN;
+
 	return KNOT_SUCCESS;
 }
