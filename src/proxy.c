@@ -59,6 +59,7 @@ static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
 	struct proxy *proxy = user_data;
 	hal_log_info("Service appeared: %s", proxy->name);
+	proxy->device_list = l_hashmap_new();
 }
 
 static void service_disappeared(struct l_dbus *dbus, void *user_data)
@@ -170,7 +171,7 @@ static struct proxy *watch_create(const char *service,
 	proxy->name = l_strdup(service);
 	proxy->path = l_strdup(path);
 	proxy->interface = l_strdup(interface);
-	proxy->device_list = l_hashmap_new();
+	proxy->device_list = NULL;
 	proxy->watch_id = l_dbus_add_service_watch(dbus_get_bus(), service,
 						   service_appeared,
 						   service_disappeared,
