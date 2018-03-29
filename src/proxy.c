@@ -49,6 +49,7 @@ static void proxy_free(struct proxy *proxy)
 {
 	l_hashmap_destroy(proxy->device_list,
 			  (l_hashmap_destroy_func_t) device_destroy);
+	l_free(proxy->name);
 	l_free(proxy->path);
 	l_free(proxy->interface);
 	l_free(proxy);
@@ -166,6 +167,7 @@ static struct proxy *watch_create(const char *service,
 	struct proxy *proxy;
 
 	proxy = l_new(struct proxy, 1);
+	proxy->name = l_strdup(service);
 	proxy->path = l_strdup(path);
 	proxy->interface = l_strdup(interface);
 	proxy->device_list = l_hashmap_new();
