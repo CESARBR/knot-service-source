@@ -55,7 +55,8 @@ static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 {
 	int err;
 
-	err = session_create(node_ops, selected_protocol, client_socket, msg_process);
+	err = session_create(node_ops, selected_protocol,
+			     client_socket, msg_process);
 	if (err < 0) {
 		/* FIXME: Stop knotd if cloud if not available */
 		return false;

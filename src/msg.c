@@ -265,17 +265,11 @@ static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 }
 
 static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
-	unsigned int sensor_id)
+						unsigned int sensor_id)
 {
 	return l_queue_find(trust->schema,
 			    schema_sensor_id_cmp,
 			    L_UINT_TO_PTR(sensor_id));
-}
-
-static void trust_sensor_schema_free(struct trust *trust)
-{
-	l_queue_destroy(trust->schema, l_free);
-	trust->schema = NULL;
 }
 
 static knot_msg_schema *trust_get_sensor_schema_tmp(const struct trust *trust,
@@ -303,7 +297,8 @@ static void trust_sensor_schema_tmp_free(struct trust *trust)
 
 static void trust_sensor_schema_complete(struct trust *trust)
 {
-	trust_sensor_schema_free(trust);
+	l_queue_destroy(trust->schema, l_free);
+	trust->schema = NULL;
 	trust->schema = trust->schema_tmp;
 	trust->schema_tmp = NULL;
 }
