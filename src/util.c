@@ -32,7 +32,7 @@
  * No need to check if sensor_id,event_flags and time_sec are positive for
  * they are unsigned from protocol.
  */
-int util_config_is_valid(struct l_queue *config_list)
+int8_t util_config_is_valid(struct l_queue *config_list)
 {
 	struct l_queue_entry *entry;
 	knot_msg_config *config;

@@ -654,10 +654,12 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 		goto fail;
 	}
 
-	if (util_config_is_valid(config)) {
+	result = util_config_is_valid(config);
+	if (result) {
 		hal_log_error("Invalid config message");
 		l_queue_destroy(config, l_free);
 		config = NULL;
+		goto fail;
 	}
 
 	/* TODO: should we receive the ID? Should we get the socket PID? */
