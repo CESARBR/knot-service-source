@@ -49,8 +49,6 @@
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-struct proto_watch;
-
 struct trust {
 	int refs;
 	pid_t	pid;			/* Peer PID */
@@ -61,12 +59,6 @@ struct trust {
 	struct l_queue *schema;		/* Schema accepted by cloud */
 	struct l_queue *schema_tmp;	/* Schema to be submitted to cloud */
 	struct l_queue *config;		/* knot_config accepted from cloud */
-};
-
-struct proto_watch {
-	unsigned int id;
-	struct l_io *node_io;
-	struct trust *trust;
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -116,145 +108,6 @@ static struct trust *trust_new(const char *uuid, const char *token,
 
 	return trust_ref(trust);
 }
-
-#if 0
-/*
- * Sends the messages to the THING. Expects a response from the gateway
- * acknowledging that the message was successfully received.
- */
-static int fw_push(int sock, knot_msg *kmsg)
-{
-	ssize_t nbytes;
-	int err;
-
-	nbytes = write(sock, kmsg->buffer, kmsg->hdr.payload_len +
-							sizeof(kmsg->hdr));
-	if (nbytes < 0) {
-		err = errno;
-		hal_log_error("node_ops: %s(%d)", strerror(err), err);
-		return -err;
-	}
-
-	return 0;
-}
-
-static void queue_concat(struct l_queue *queue, struct l_queue *with)
-{
-	struct l_queue_entry *current;
-
-	if (!queue || !with)
-		return;
-
-	current = (struct l_queue_entry *) l_queue_get_entries(with);
-	while (current) {
-		l_queue_push_tail(queue, current->data);
-		current = current->next;
-	}
-}
-
-static struct l_queue *queue_clone(struct l_queue *queue)
-{
-	struct l_queue *clone;
-
-	if (!queue)
-		return NULL;
-
-	clone = l_queue_new();
-	queue_concat(clone, queue);
-
-	return clone;
-}
-
-static void send_message(void *data, void *user_data)
-{
-	knot_msg *msg = data;
-	int node_socket = L_PTR_TO_INT(user_data);
-	int result;
-
-	result = fw_push(node_socket, msg);
-	if (result)
-		hal_log_error("KNOT SEND ERROR");
-}
-
-/*
- * Callback that parses the JSON for config (and in the future, send data)
- * messages. It is called from the protocol that is used to communicate with
- * the cloud (e.g. http, websocket).
- */
-static void on_device_changed(json_raw_t device_message, void *user_data)
-{
-	const struct proto_watch *watch = user_data;
-	struct l_queue *config_messages;
-	struct l_queue *setdata_messages;
-	struct l_queue *getdata_messages;
-	struct l_queue *messages;
-	ssize_t result;
-	int node_socket;
-
-	node_socket = l_io_get_fd(watch->node_io);
-	config_messages = msg_config(node_socket, device_message, &result);
-	setdata_messages = msg_setdata(node_socket, device_message, &result);
-	getdata_messages = msg_getdata(node_socket, device_message, &result);
-
-	messages = l_queue_new();
-	queue_concat(messages, config_messages);
-	queue_concat(messages, setdata_messages);
-	queue_concat(messages, getdata_messages);
-
-	l_queue_foreach(messages, send_message, L_INT_TO_PTR(node_socket));
-
-	/*
-	 * Message data will be free'd only when destroying messages
-	 * as it contains references to all messages. The first three
-	 * are freeing l_queue-specific resources.
-	 */
-	l_queue_destroy(config_messages, NULL);
-	l_queue_destroy(setdata_messages, NULL);
-	l_queue_destroy(getdata_messages, NULL);
-	l_queue_destroy(messages, l_free);
-}
-
-static void on_device_watch_destroyed(void *user_data)
-{
-	struct proto_watch *proto_watch = user_data;
-	proto_watch->trust->proto_watch = NULL;
-	trust_unref(proto_watch->trust);
-	l_free(proto_watch);
-}
-
-static struct proto_watch *create_device_watch(struct trust *trust,
-					       struct l_io *node_channel)
-{
-	struct proto_watch *proto_watch;
-	int proto_socket;
-
-	proto_socket = l_io_get_fd(trust->proto_io);
-
-	proto_watch = l_new(struct proto_watch, 1);
-	proto_watch->id = proto->async(proto_socket,
-				       trust->uuid,
-				       trust->token,
-				       on_device_changed,
-				       proto_watch,
-				       on_device_watch_destroyed);
-	proto_watch->node_io = node_channel;
-	/*
-	 * Retained to remove the device watch from the trust when the
-	 * watch is destroyed by the protocol driver
-	 */
-	proto_watch->trust = trust_ref(trust);
-
-	return proto_watch;
-}
-
-static void remove_device_watch(struct proto_watch *proto_watch)
-{
-	int proto_socket;
-
-	proto_socket = l_io_get_fd(proto_watch->trust->proto_io);
-	proto->async_stop(proto_socket, proto_watch->id);
-}
-#endif
 
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
