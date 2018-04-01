@@ -19,6 +19,10 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
@@ -35,7 +39,11 @@
 #define DEFAULT_CONFIG_PATH		"/etc/knot/knotd.conf"
 #define DEFAULT_HOST			"localhost"
 #define DEFAULT_PORT			3000
+#ifdef HAVE_WEBSOCKETS
 #define DEFAULT_PROTO			"socketio"
+#else
+#define DEFAULT_PROTO                   "http"
+#endif
 
 static bool detach = true;
 static bool help = false;
