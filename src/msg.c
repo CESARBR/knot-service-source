@@ -1085,6 +1085,15 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 static void session_node_destroyed_cb(void *user_data)
 {
 	struct session *session = user_data;
+	struct trust *trust;
+	int node_socket;
+
+	node_socket = l_io_get_fd(session->node_channel);
+	l_queue_remove(session_list, session);
+
+	trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(node_socket));
+	if (trust)
+		trust_unref(trust);
 
 	session_unref(session);
 }
