@@ -39,7 +39,6 @@
  */
 struct session {
 	struct node_ops *node_ops;
-	struct proto_ops *proto_ops;
 
 	struct l_io *node_channel;	/* Radio event source */
 	struct l_io *proto_channel;	/* Cloud event source */
@@ -86,14 +85,16 @@ static void session_unref(struct session *session)
 
 static void disconnect_proto(struct session *session)
 {
+	struct proto_ops *proto_ops;
 	struct l_io *channel;
 	int proto_socket;
 
 	if (!session->proto_channel)
 		return;
 
+	proto_ops = proto_get_default();
 	proto_socket = l_io_get_fd(session->proto_channel);
-	session->proto_ops->close(proto_socket);
+	proto_ops->close(proto_socket);
 
 	channel = session->proto_channel;
 	session->proto_channel = NULL;
@@ -146,9 +147,12 @@ static struct l_io *create_proto_channel(int proto_socket,
 
 static int connect_proto(struct session *session)
 {
+	struct proto_ops *proto_ops;
 	int proto_socket;
 
-	proto_socket = session->proto_ops->connect();
+	proto_ops = proto_get_default();
+
+	proto_socket = proto_ops->connect();
 	if (proto_socket < 0) {
 		hal_log_info("Cloud connect(): %s(%d)",
 			     strerror(-proto_socket), -proto_socket);
@@ -291,7 +295,7 @@ static struct l_io *create_node_channel(int node_socket,
 	return channel;
 }
 
-int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
+int session_create(struct node_ops *node_ops,
 		   int client_socket, on_data on_data)
 {
 	struct session *session;
@@ -299,7 +303,6 @@ int session_create(struct node_ops *node_ops, struct proto_ops *proto_ops,
 
 	session = session_new();
 	session->node_ops = node_ops;
-	session->proto_ops = proto_ops;
 	session->on_data = on_data;
 
 	err = connect_proto(session);

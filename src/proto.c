@@ -686,7 +686,7 @@ static struct proto_ops *get_proto_ops(const char *protocol_name)
 	return selected_protocol;
 }
 
-int proto_start(const struct settings *settings, struct proto_ops **proto_ops)
+int proto_start(const struct settings *settings)
 {
 	/*
 	 * Selecting meshblu IoT protocols & services: HTTP/REST,
@@ -704,7 +704,6 @@ int proto_start(const struct settings *settings, struct proto_ops **proto_ops)
 
 	hal_log_info("proto_ops: %s", proto->name);
 
-	*proto_ops = proto;
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
@@ -717,6 +716,11 @@ void proto_stop()
 		proto->remove();
 		proto = NULL;
 	}
+}
+
+struct proto_ops *proto_get_default(void)
+{
+	return proto;
 }
 
 int proto_mknode(int proto_socket, const char *device_name,

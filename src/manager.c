@@ -49,14 +49,11 @@
 #include "storage.h"
 #include "manager.h"
 
-static struct proto_ops *selected_protocol;
-
 static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
 {
 	int err;
 
-	err = session_create(node_ops, selected_protocol,
-			     client_socket, msg_process);
+	err = session_create(node_ops, client_socket, msg_process);
 	if (err < 0) {
 		/* FIXME: Stop knotd if cloud if not available */
 		return false;
@@ -269,7 +266,7 @@ int manager_start(struct settings *settings)
 	const char *path = "/";
 	int err;
 
-	err = proto_start(settings, &selected_protocol);
+	err = proto_start(settings);
 	if (err < 0) {
 		hal_log_error("proto_start(): %s", strerror(-err));
 		return err;
