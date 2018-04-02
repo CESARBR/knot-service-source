@@ -655,8 +655,8 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 {
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct l_queue *schema;
-	struct l_queue *config;
+	struct l_queue *schema = NULL;
+	struct l_queue *config = NULL;
 	struct trust *trust;
 	int8_t result;
 
@@ -679,17 +679,10 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	if (schema == NULL) {
-		result = KNOT_SCHEMA_EMPTY;
-		goto fail;
-	}
-
 	result = util_config_is_valid(config);
 	if (result) {
 		hal_log_error("Invalid config message");
 		l_queue_destroy(config, l_free);
-		config = NULL;
-		goto fail;
 	}
 
 	/* TODO: should we receive the ID? Should we get the socket PID? */
@@ -697,10 +690,6 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	l_hashmap_insert(trust_map, L_INT_TO_PTR(node_socket), trust);
 
 	return KNOT_SUCCESS;
-
-fail:
-	l_queue_destroy(config, l_free);
-	return result;
 }
 
 static int8_t msg_schema(int node_socket, int proto_socket,
