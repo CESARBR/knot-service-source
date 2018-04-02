@@ -163,18 +163,10 @@ static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 	return sensor_id == schema->sensor_id;
 }
 
-static knot_msg_schema *trust_get_sensor_schema(const struct trust *trust,
+static knot_msg_schema *trust_get_sensor_schema(struct l_queue *schema,
 						unsigned int sensor_id)
 {
-	return l_queue_find(trust->schema,
-			    schema_sensor_id_cmp,
-			    L_UINT_TO_PTR(sensor_id));
-}
-
-static knot_msg_schema *trust_get_sensor_schema_tmp(const struct trust *trust,
-						    unsigned int sensor_id)
-{
-	return l_queue_find(trust->schema_tmp,
+	return l_queue_find(schema,
 			    schema_sensor_id_cmp,
 			    L_UINT_TO_PTR(sensor_id));
 }
@@ -725,7 +717,7 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
-	if (!trust_get_sensor_schema_tmp(trust, schema->sensor_id))
+	if (!trust_get_sensor_schema(trust->schema_tmp, schema->sensor_id))
 		trust_sensor_schema_tmp_add(trust, schema);
 
 	 /* TODO: missing timer to wait for end of schema transfer */
@@ -771,7 +763,7 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = trust_get_sensor_schema(trust, sensor_id);
+	schema = trust_get_sensor_schema(trust->schema, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 			     sensor_id);
@@ -851,7 +843,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = trust_get_sensor_schema(trust, sensor_id);
+	schema = trust_get_sensor_schema(trust->schema, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
