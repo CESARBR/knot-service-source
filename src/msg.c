@@ -633,7 +633,7 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 
 	trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
-		hal_log_info("Permission denied!");
+		hal_log_info("unregister: Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto done;
 	}
@@ -700,7 +700,7 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 
 	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
-		hal_log_info("Permission denied!");
+		hal_log_info("schema: Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto done;
 	}
@@ -765,7 +765,7 @@ static int8_t msg_data(int node_socket, int proto_socket,
 
 	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
-		hal_log_info("Permission denied!");
+		hal_log_info("data: Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto done;
 	}
@@ -808,7 +808,7 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 
 	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
-		hal_log_info("Permission denied!");
+		hal_log_info("config resp: Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -845,7 +845,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 
 	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
 	if (!trust) {
-		hal_log_info("Permission denied!");
+		hal_log_info("setdata: Permission denied!");
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto done;
 	}
