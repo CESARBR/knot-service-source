@@ -22,6 +22,5 @@
 int msg_start(void);
 void msg_stop(void);
 
-ssize_t msg_process(int sock, int proto_sock,
-				const void *ipdu, size_t ilen,
-				void *opdu, size_t olen);
+/* Returning false, node.c will disconnect the client */
+bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket);

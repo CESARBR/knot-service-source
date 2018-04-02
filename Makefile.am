@@ -21,7 +21,6 @@ include Makefile.modules
 src_knotd_SOURCES = src/main.c \
 			src/storage.c src/storage.h \
 			src/settings.c src/settings.h \
-			src/session.c src/session.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
 			src/proto.c src/proto.h \

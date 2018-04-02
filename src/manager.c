@@ -42,25 +42,11 @@
 #include "node.h"
 #include "settings.h"
 #include "proto.h"
-#include "session.h"
 #include "msg.h"
 #include "dbus.h"
 #include "proxy.h"
 #include "storage.h"
 #include "manager.h"
-
-static bool on_accepted_cb(struct node_ops *node_ops, int client_socket)
-{
-	int err;
-
-	err = session_create(node_ops, client_socket, msg_process);
-	if (err < 0) {
-		/* FIXME: Stop knotd if cloud if not available */
-		return false;
-	}
-
-	return true;
-}
 
 static void emit_signal_string(const char *path,
 			       const char *prop, const char *newval)
@@ -272,7 +258,7 @@ int manager_start(struct settings *settings)
 		return err;
 	}
 
-	err = node_start(on_accepted_cb);
+	err = node_start(msg_session_accept_cb);
 	if (err < 0) {
 		hal_log_error("node_start(): %s", strerror(-err));
 		goto fail_node;
@@ -325,7 +311,6 @@ void manager_stop(void)
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    SETTINGS_INTERFACE);
 	dbus_stop();
-	session_destroy_all();
 	msg_stop();
 	node_stop();
 	proto_stop();
