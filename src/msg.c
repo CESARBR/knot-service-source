@@ -171,29 +171,6 @@ static knot_msg_schema *trust_get_sensor_schema(struct l_queue *schema,
 			    L_UINT_TO_PTR(sensor_id));
 }
 
-static void trust_sensor_schema_tmp_add(struct trust *trust,
-					const knot_msg_schema *schema)
-{
-	knot_msg_schema *schema_copy;
-
-	schema_copy = l_memdup(schema, sizeof(*schema));
-	l_queue_push_tail(trust->schema_tmp, schema_copy);
-}
-
-static void trust_sensor_schema_tmp_free(struct trust *trust)
-{
-	l_queue_destroy(trust->schema_tmp, l_free);
-	trust->schema_tmp = NULL;
-}
-
-static void trust_sensor_schema_complete(struct trust *trust)
-{
-	l_queue_destroy(trust->schema, l_free);
-	trust->schema = NULL;
-	trust->schema = trust->schema_tmp;
-	trust->schema_tmp = NULL;
-}
-
 static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
 	const knot_msg_config *config = entry_data;
@@ -718,7 +695,8 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	 * to a temporary list until receiving complete schema.
 	 */
 	if (!trust_get_sensor_schema(trust->schema_tmp, schema->sensor_id))
-		trust_sensor_schema_tmp_add(trust, schema);
+		l_queue_push_tail(trust->schema_tmp,
+				  l_memdup(schema, sizeof(*schema)));
 
 	 /* TODO: missing timer to wait for end of schema transfer */
 
@@ -730,13 +708,16 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	result = proto_schema(proto_socket, trust->uuid,
 			      trust->token, trust->schema_tmp);
 	if (result != KNOT_SUCCESS) {
-		trust_sensor_schema_tmp_free(trust);
+		l_queue_destroy(trust->schema_tmp, l_free);
+		trust->schema_tmp = NULL;
 		goto done;
 	}
 
 	/* If succeed: free old schema and use the new one */
-	trust_sensor_schema_complete(trust);
-
+	l_queue_destroy(trust->schema, l_free);
+	trust->schema = NULL;
+	trust->schema = trust->schema_tmp;
+	trust->schema_tmp = NULL;
 done:
 	return result;
 }
