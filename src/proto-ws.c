@@ -48,6 +48,7 @@ struct l_hashmap *lws_list;
 struct ws_session {
 	bool got_response;	/* FIXME: find better approach */
 	uint16_t size;		/* Amount TX or RX */
+	unsigned char rsp[32];  /* Command response */
 	unsigned char data[0];	/* WS_RX_BUFFER_SIZE */
 };
 
@@ -230,7 +231,8 @@ static int ws_signin(int sock, const char *uuid,
 	if (ret != 0)
 		goto done;
 
-	/* TODO: For identity response verify if status is 200 */
+	if (strcmp("ready", (const char *) session->rsp) != 0)
+		return -EACCES;
 
 	/* Retrieve a device from the Meshblu device registry by it's uuid */
 	jobj = json_object_new_object();
@@ -400,11 +402,10 @@ static int ws_data(int sock, const char *uuid, const char *token,
 
 static void parse(struct ws_session *session, const char *in, size_t len)
 {
-	char op[256];
 	int index = 0;
 
 	/* TODO: Avoid buffer overflow for 'op' */
-	if (sscanf(in, "%*[^\"]\"%[^\"]\",%n]", op, &index) != 1)
+	if (sscanf(in, "%*[^\"]\"%32[^\"]\",%n]", session->rsp, &index) != 1)
 		return;
 
 	session->size = MIN(WS_RX_BUFFER_SIZE, len - index - 1); /* skip ']'*/
