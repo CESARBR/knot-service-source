@@ -800,11 +800,10 @@ static int8_t msg_setdata_resp(struct session *session,
 
 	/* Fetches the 'devices' db */
 	proto_sock = l_io_get_fd(session->proto_channel);
-	proto_setdata(proto_sock, session->uuid, session->token,
-								sensor_id);
+	proto_setdata(proto_sock, session->uuid, session->token, sensor_id);
 
-	result = proto_data(proto_sock, session->uuid, session->token, sensor_id,
-			    schema->values.value_type, kdata);
+	result = proto_data(proto_sock, session->uuid, session->token,
+			    sensor_id, schema->values.value_type, kdata);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
@@ -1131,6 +1130,9 @@ bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket)
 int msg_start(void)
 {
 	session_map = l_hashmap_new();
+
+	/* TODO: Add 'added', 'removed' callbacks */
+	proto_set_proxy_handlers();
 
 	return 0;
 }

@@ -58,10 +58,13 @@ struct proto_ops {
 		void (*proto_watch_cb) (json_raw_t, void *), void *user_data,
 		void (*proto_watch_destroy_cb) (void *));
 	void (*async_stop) (int sock, unsigned int watch_id);
+	void (*process) (int sock);
 };
 
 int proto_start(const struct settings *settings);
 void proto_stop(void);
+
+int proto_set_proxy_handlers(void);
 
 struct proto_ops *proto_get_default(void);
 int proto_mknode(int proto_socket, const char *device_name,

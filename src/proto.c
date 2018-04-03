@@ -56,8 +56,17 @@ static struct proto_ops *proto_ops[] = {
 	NULL
 };
 
+static struct proto_proxy {
+	struct l_timeout *timeout;	/* Controls cloud polling */
+	struct l_checksum *checksum;	/* Checksum to compute changes */
+	unsigned char digest[20];	/* Previous SHA1 digest */
+	int sock;			/* Cloud connection */
+};
+
 static struct proto_ops *proto = NULL; /* Selected protocol */
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
+static char owner_token[KNOT_PROTOCOL_TOKEN_LEN + 1];
+static struct l_hashmap *watch_list;
 
 static inline bool is_uuid_valid(const char *uuid)
 {
@@ -707,7 +716,20 @@ int proto_start(const struct settings *settings)
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
+	memset(owner_token, 0, sizeof(owner_token));
+	strncpy(owner_token, settings->token, sizeof(owner_token));
+
+	watch_list = l_hashmap_new();
+
 	return 0;
+}
+
+static void watch_destroy(void *user_data)
+{
+	struct proto_proxy *watch = user_data;
+
+	l_timeout_remove(watch->timeout);
+	l_free(watch);
 }
 
 void proto_stop()
@@ -716,6 +738,8 @@ void proto_stop()
 		proto->remove();
 		proto = NULL;
 	}
+
+	l_hashmap_destroy(watch_list, watch_destroy);
 }
 
 struct proto_ops *proto_get_default(void)
@@ -884,4 +908,70 @@ done:
 	if (response.data)
 		free(response.data);
 	return result;
+}
+
+static void timeout_callback(struct l_timeout *timeout, void *user_data)
+{
+	struct proto_proxy *watch;
+	int sock = L_PTR_TO_INT(user_data);
+	json_raw_t json;
+	ssize_t size_digest;
+	unsigned char new_digest[20];
+	int err;
+
+	watch = l_hashmap_lookup(watch_list, timeout);
+	if (!watch)
+		return;
+
+	memset(&json, 0, sizeof(json));
+	err = proto->fetch(sock, NULL, NULL, &json);
+	if (err < 0)
+		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
+
+	l_checksum_update(watch->checksum, json.data, json.size);
+
+	size_digest = l_checksum_get_digest(watch->checksum, new_digest,
+					    sizeof(new_digest));
+
+	if (memcmp(watch->digest, new_digest, sizeof(new_digest)) == 0)
+		goto done;
+
+	/* Something has changed */
+	memcpy(watch->digest, new_digest, size_digest);
+
+done:
+	l_timeout_modify(timeout, 5);
+
+	l_free(json.data);
+}
+
+int proto_set_proxy_handlers(void)
+{
+	struct proto_proxy *watch;
+	struct l_timeout *timeout;
+	json_raw_t response;
+	int watch_id;
+	int sock;
+
+	sock = proto->connect();
+	if (sock < 0) {
+		hal_log_error("proto connect(): %s(%d)",
+			      strerror(-sock), -sock);
+		return sock;
+	}
+
+	proto->signin(sock, owner_uuid, owner_token, &response);
+
+	timeout = l_timeout_create(5, timeout_callback, L_INT_TO_PTR(sock), NULL);
+
+	watch = l_new(struct proto_proxy, 1);
+	watch->timeout = timeout;
+	watch->checksum = l_checksum_new(L_CHECKSUM_SHA1);
+	watch->sock = sock;
+
+	watch_id = L_PTR_TO_INT(timeout);
+
+	l_hashmap_insert(watch_list, timeout, watch);
+
+	return watch_id;
 }

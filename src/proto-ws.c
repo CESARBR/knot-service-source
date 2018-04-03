@@ -58,7 +58,7 @@ static bool lws_list_cmp(const void *key, void *value, void *user_data)
 	return (value == user_data ? true : false);
 }
 
-static int wait_for_response(struct lws *ws)
+static int ws_send_msg(struct lws *ws, bool wait_reply)
 {
 	struct ws_session *session;
 	struct lws *lws;
@@ -91,6 +91,9 @@ static int wait_for_response(struct lws *ws)
 		/* Still connecting? */
 		if (session == NULL)
 			continue;
+
+		if (!wait_reply)
+			break;
 
 		if (session->got_response)
 			break;
@@ -131,7 +134,7 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 
 	json_object_put(jarray);
 
@@ -142,7 +145,8 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 	return ret;
 }
 
-static int ws_device(int sock, const char *uuid,
+/* TODO: remove uuid & token */
+static int ws_fetch(int sock, const char *uuid,
 		     const char *token, json_raw_t *json)
 {
 	json_object *jobj, *jarray;
@@ -167,8 +171,7 @@ static int ws_device(int sock, const char *uuid,
 		return -ENOMEM;
 	}
 
-	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
-	json_object_array_add(jarray, json_object_new_string("device"));
+	json_object_array_add(jarray, json_object_new_string("mydevices"));
 	json_object_array_add(jarray, jobj);
 
 	jobjstring = json_object_to_json_string(jarray);
@@ -177,12 +180,12 @@ static int ws_device(int sock, const char *uuid,
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
 
-	if (strcmp("device", (const char *) session->rsp) != 0)
+	if (strcmp("mydevices", (const char *) session->rsp) != 0)
 		return -EACCES;
 
 	/* TODO: Avoid another allocation */
@@ -229,7 +232,7 @@ static int ws_signin(int sock, const char *uuid,
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
@@ -255,7 +258,7 @@ static int ws_signin(int sock, const char *uuid,
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
@@ -306,7 +309,7 @@ static int ws_rmnode(int sock, const char *uuid,
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
@@ -388,7 +391,7 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, true);
 	if (ret != 0)
 		goto fail;
 
@@ -441,7 +444,7 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
-	ret = wait_for_response(ws);
+	ret = ws_send_msg(ws, false);
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
@@ -491,7 +494,7 @@ static int callback_lws_ws(struct lws *wsi,
 	case LWS_CALLBACK_CLIENT_RECEIVE:
 		session->got_response = true;
 		parse(session, in, len);
-		hal_log_info("Received: (%s)", (const char *) in);
+		hal_log_info("Received %p: (%s)", wsi, (const char *) in);
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		break;
@@ -624,7 +627,7 @@ static int ws_connect(void)
 
 	hal_log_info("WSI: %p key:(%d) %p", ws, sock, L_INT_TO_PTR(sock));
 	/* TODO: Create thread for each connected client */
-	wait_for_response(ws);
+	ws_send_msg(ws, true);
 
 	return sock;
 }
@@ -666,7 +669,7 @@ struct proto_ops proto_ws = {
 	.rmnode = ws_rmnode,
 	.schema = ws_update,
 	.data = ws_data,
-	.fetch = ws_device,
+	.fetch = ws_fetch,
 	.async = NULL,
 	.async_stop = NULL,
 	.setdata = ws_update
