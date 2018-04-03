@@ -305,6 +305,9 @@ static int ws_rmnode(int sock, const char *uuid,
 	if (ret != 0)
 		goto done;
 
+	if (strcmp("unregistered", (const char *) session->rsp) != 0)
+		return -EACCES;
+
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
