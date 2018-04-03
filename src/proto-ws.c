@@ -182,6 +182,9 @@ static int ws_device(int sock, const char *uuid,
 	if (ret != 0)
 		goto done;
 
+	if (strcmp("device", (const char *) session->rsp) != 0)
+		return -EACCES;
+
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
@@ -256,6 +259,9 @@ static int ws_signin(int sock, const char *uuid,
 	json_object_put(jarray);
 	if (ret != 0)
 		goto done;
+
+	if (strcmp("device", (const char *) session->rsp) != 0)
+		return -EACCES;
 
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
