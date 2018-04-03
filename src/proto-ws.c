@@ -386,6 +386,9 @@ static int ws_update(int sock, const char *uuid, const char *token,
 	if (ret != 0)
 		goto fail;
 
+	if (strcmp("error", (const char *) session->rsp) == 0)
+                return -EACCES;
+
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
