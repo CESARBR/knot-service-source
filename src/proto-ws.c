@@ -452,7 +452,6 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 {
 	int index = 0;
 
-	/* TODO: Avoid buffer overflow for 'op' */
 	if (sscanf(in, "%*[^\"]\"%32[^\"]\",%n]", session->rsp, &index) != 1)
 		return;
 
