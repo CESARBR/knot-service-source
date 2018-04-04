@@ -52,18 +52,13 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
 struct session {
+	int refs;
+	bool trusted;			/* Authenticated */
 	struct node_ops *node_ops;
-
 	struct l_io *node_channel;	/* Radio event source */
 	struct l_io *proto_channel;	/* Cloud event source */
-
-	int refs;
-};
-
-struct trust {
-	int refs;
-	pid_t	pid;			/* Peer PID */
-	uint64_t id;			/* Session identification */
+	int node_fd;			/* Unix socket */
+	uint64_t id;			/* Device identification */
 	bool rollback;			/* Remove from cloud if true */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
@@ -73,53 +68,7 @@ struct trust {
 };
 
 /* Maps sockets to sessions: online devices only.  */
-static struct l_hashmap *trust_map;
-static struct l_queue *session_list;
-
-static struct trust *trust_ref(struct trust *trust)
-{
-	if (unlikely(!trust))
-		return NULL;
-
-	__sync_fetch_and_add(&trust->refs, 1);
-
-	return trust;
-}
-
-static void trust_unref(struct trust *trust)
-{
-	if (unlikely(!trust))
-                return;
-
-        if (__sync_sub_and_fetch(&trust->refs, 1))
-		return;
-
-	l_free(trust->uuid);
-	l_free(trust->token);
-	l_queue_destroy(trust->schema, l_free);
-	l_queue_destroy(trust->schema_tmp, l_free);
-	l_queue_destroy(trust->config, l_free);
-	l_free(trust);
-}
-
-static struct trust *trust_new(const char *uuid, const char *token,
-			       uint64_t device_id, pid_t pid, bool rollback,
-			       struct l_queue *schema, struct l_queue *config)
-{
-	struct trust *trust = l_new(struct trust, 1);
-
-	trust->uuid = l_strdup(uuid);
-	trust->token = l_strdup(token);
-	trust->id = device_id;
-	trust->pid = pid;
-	trust->rollback = rollback;
-	trust->schema = (schema ? : l_queue_new());
-	trust->schema_tmp = l_queue_new();
-	trust->config = (config ? : l_queue_new());
-	trust->refs = 0;
-
-	return trust_ref(trust);
-}
+static struct l_hashmap *session_map;
 
 static struct session *session_ref(struct session *session)
 {
@@ -131,12 +80,19 @@ static struct session *session_ref(struct session *session)
 	return session;
 }
 
-static struct session *session_new(void)
+static struct session *session_new(struct node_ops *node_ops)
 {
 	struct session *session;
 
 	session = l_new(struct session, 1);
 	session->refs = 0;
+	session->uuid = NULL;
+	session->token = NULL;
+	session->id = INT32_MAX;
+	session->node_ops = node_ops;
+	session->schema = NULL;
+	session->schema_tmp = NULL;
+	session->config = NULL;
 
 	return session_ref(session);
 }
@@ -151,9 +107,15 @@ static void session_unref(struct session *session)
 
 	l_io_destroy(session->node_channel);
 	l_io_destroy(session->proto_channel);
+
+	l_free(session->uuid);
+	l_free(session->token);
+	l_queue_destroy(session->schema, l_free);
+	l_queue_destroy(session->schema_tmp, l_free);
+	l_queue_destroy(session->config, l_free);
+
 	l_free(session);
 }
-
 
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
@@ -163,7 +125,7 @@ static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 	return sensor_id == schema->sensor_id;
 }
 
-static knot_msg_schema *trust_get_sensor_schema(struct l_queue *schema,
+static knot_msg_schema *schema_find(struct l_queue *schema,
 						unsigned int sensor_id)
 {
 	return l_queue_find(schema,
@@ -342,11 +304,11 @@ static void update_msg_item_header(void *entry_data, void *user_data)
 static struct l_queue *msg_getdata(int node_socket,
 				   json_raw_t device_message, ssize_t *result)
 {
-	struct trust *trust;
+	struct session *session;
 	struct l_queue *messages;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (!session) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
@@ -374,11 +336,11 @@ static void update_msg_data_header(void *entry_data, void *user_data)
 static struct l_queue *msg_setdata(int node_socket,
 				   json_raw_t device_message, ssize_t *result)
 {
-	struct trust *trust;
+	struct session *session;
 	struct l_queue *messages;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (!session) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
@@ -459,12 +421,12 @@ static struct l_queue *get_changed_config(struct l_queue *current,
 static struct l_queue *msg_config(int node_socket,
 				  json_raw_t device_message, ssize_t *result)
 {
-	struct trust *trust;
+	struct session *session;
 	struct l_queue *config = NULL;
 	struct l_queue *changed_config = NULL;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (!session) {
 		hal_log_info("Permission denied!");
 		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		return NULL;
@@ -483,9 +445,9 @@ static struct l_queue *msg_config(int node_socket,
 		return NULL;
 	}
 
-	changed_config = get_changed_config(trust->config, config);
+	changed_config = get_changed_config(session->config, config);
 
-	trust_config_update(trust, config);
+	session_config_update(session, config);
 
 	*result = KNOT_SUCCESS;
 
@@ -539,8 +501,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct ucred cred;
-	struct trust *trust;
+	struct session *session;
 	int8_t result;
 
 	if (!msg_register_has_valid_length(kreq, ilen)
@@ -550,25 +511,21 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	}
 
 	/*
-	 * Credential (Process ID) verification will work for unix socket
-	 * only. For other socket types additional authentication mechanism
-	 * will be required.
-	 */
-	result = util_get_credentials(node_socket, &cred);
-	if (result != KNOT_SUCCESS)
-		hal_log_info("sock:%d, pid:%ld",
-			     node_socket, (long int) cred.pid);
-
-	/*
 	 * Due to radio packet loss, peer may re-transmits register request
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d", kreq->id, node_socket);
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (trust && kreq->id == trust->id && trust->pid == cred.pid) {
+	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d",
+		     kreq->id, node_socket);
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("register: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (session->trusted && kreq->id == session->id) {
 		hal_log_info("Register: trusted device");
-		msg_credential_create(krsp, trust->uuid, trust->token);
+		msg_credential_create(krsp, session->uuid, session->token);
 		return KNOT_SUCCESS;
 	}
 
@@ -587,38 +544,44 @@ static int8_t msg_register(int node_socket, int proto_socket,
 
 	msg_credential_create(krsp, uuid, token);
 
-	trust = trust_new(uuid, token, kreq->id,
-			  (cred.pid ? : INT32_MAX), true, NULL, NULL);
-
-	l_hashmap_insert(trust_map, L_INT_TO_PTR(node_socket), trust);
+	session->trusted = true;
+	session->id = kreq->id;			/* Device Id */
+	session->uuid = l_strdup(uuid);
+	session->token = l_strdup(token);
+	session->rollback = true;		/* Reset after sending SCHEMA */
 
 	return KNOT_SUCCESS;
 }
 
 static int8_t msg_unregister(int node_socket, int proto_socket)
 {
-	struct trust *trust;
+	struct session *session;
 	int8_t result;
 
-	trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
-		hal_log_info("unregister: Permission denied!");
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		goto done;
+	session = l_hashmap_remove(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("unregister: not connected!");
+		return KNOT_ERROR_UNKNOWN;
 	}
 
-	hal_log_info("rmnode: %.36s", trust->uuid);
-	result = proto_rmnode(proto_socket, trust->uuid, trust->token);
+	if (!session->trusted) {
+		hal_log_info("unregister: Permission denied!");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	hal_log_info("rmnode: %.36s", session->uuid);
+	result = proto_rmnode(proto_socket, session->uuid, session->token);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
-	trust_unref(trust);
+	session_unref(session);
 	result = KNOT_SUCCESS;
 
 done:
 	return result;
 }
 
+/* Mandatory before any operation */
 static int8_t msg_auth(int node_socket, int proto_socket,
 		       const knot_msg_authentication *kmauth)
 {
@@ -626,11 +589,16 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	struct l_queue *schema = NULL;
 	struct l_queue *config = NULL;
-	struct trust *trust;
+	struct session *session;
 	int8_t result;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("identity: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (session->trusted) {
 		hal_log_info("Authenticated already");
 		return KNOT_SUCCESS;
 	}
@@ -654,9 +622,13 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 		l_queue_destroy(config, l_free);
 	}
 
-	/* TODO: should we receive the ID? Should we get the socket PID? */
-	trust = trust_new(uuid, token, 0, 0, false, schema, config);
-	l_hashmap_insert(trust_map, L_INT_TO_PTR(node_socket), trust);
+	session->trusted = true;
+	session->schema = schema;
+	session->config = config;
+	session->rollback = false;
+
+	session->uuid = l_strdup(uuid);
+	session->token = l_strdup(token);
 
 	return KNOT_SUCCESS;
 }
@@ -665,13 +637,17 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 			 const knot_msg_schema *schema, bool eof)
 {
 	int8_t result;
-	struct trust *trust;
+	struct session *session;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
-		hal_log_info("schema: Permission denied!");
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		goto done;
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("schema: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (!session->trusted) {
+		hal_log_info("schema: not authorized!");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	/*
@@ -679,7 +655,7 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	 * If schema is being sent means that credentals (UUID/token) has been
 	 * properly received (registration complete).
 	 */
-	trust->rollback = false;
+	session->rollback = false;
 
 	/*
 	 * {
@@ -694,8 +670,8 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
-	if (!trust_get_sensor_schema(trust->schema_tmp, schema->sensor_id))
-		l_queue_push_tail(trust->schema_tmp,
+	if (!schema_find(session->schema_tmp, schema->sensor_id))
+		l_queue_push_tail(session->schema_tmp,
 				  l_memdup(schema, sizeof(*schema)));
 
 	 /* TODO: missing timer to wait for end of schema transfer */
@@ -705,19 +681,19 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 		goto done;
 	}
 
-	result = proto_schema(proto_socket, trust->uuid,
-			      trust->token, trust->schema_tmp);
+	result = proto_schema(proto_socket, session->uuid,
+			      session->token, session->schema_tmp);
 	if (result != KNOT_SUCCESS) {
-		l_queue_destroy(trust->schema_tmp, l_free);
-		trust->schema_tmp = NULL;
+		l_queue_destroy(session->schema_tmp, l_free);
+		session->schema_tmp = NULL;
 		goto done;
 	}
 
 	/* If succeed: free old schema and use the new one */
-	l_queue_destroy(trust->schema, l_free);
-	trust->schema = NULL;
-	trust->schema = trust->schema_tmp;
-	trust->schema_tmp = NULL;
+	l_queue_destroy(session->schema, l_free);
+	session->schema = NULL;
+	session->schema = session->schema_tmp;
+	session->schema_tmp = NULL;
 done:
 	return result;
 }
@@ -726,7 +702,7 @@ static int8_t msg_data(int node_socket, int proto_socket,
 		       const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const struct trust *trust;
+	const struct session *session;
 	int err;
 	int8_t result;
 	uint8_t sensor_id;
@@ -736,15 +712,19 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("data: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (!session->trusted) {
 		hal_log_info("data: Permission denied!");
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		goto done;
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = trust_get_sensor_schema(trust->schema, sensor_id);
+	schema = schema_find(session->schema, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 			     sensor_id);
@@ -765,10 +745,10 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 		     schema->values.unit, schema->values.value_type);
 
-	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
-			    schema->values.value_type, kdata);
+	result = proto_data(proto_socket, session->uuid, session->token,
+			    sensor_id, schema->values.value_type, kdata);
 
-	proto_getdata(proto_socket, trust->uuid, trust->token, sensor_id);
+	proto_getdata(proto_socket, session->uuid, session->token, sensor_id);
 
 done:
 	return result;
@@ -776,11 +756,16 @@ done:
 
 static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 {
-	struct trust *trust;
+	struct session *session;
 	uint8_t sensor_id;
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("config resp: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (!session->trusted) {
 		hal_log_info("config resp: Permission denied!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
@@ -788,11 +773,11 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
 	sensor_id = response->sensor_id;
 
 	/* TODO: Always forward instead of avoid sending repeated configs */
-	l_queue_remove_if(trust->config,
+	l_queue_remove_if(session->config,
 			  config_sensor_id_cmp,
 			  L_UINT_TO_PTR(sensor_id));
 
-	hal_log_info("THING %s received config for sensor %d", trust->uuid,
+	hal_log_info("THING %s received config for sensor %d", session->uuid,
 								sensor_id);
 
 	return KNOT_SUCCESS;
@@ -806,7 +791,7 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 			       const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const struct trust *trust;
+	const struct session *session;
 	int8_t result;
 	int err;
 	uint8_t sensor_id;
@@ -816,15 +801,19 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	 */
 	const knot_data *kdata = &(kmdata->payload);
 
-	trust = l_hashmap_lookup(trust_map, L_INT_TO_PTR(node_socket));
-	if (!trust) {
+	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
+	if (unlikely(!session)) {
+		hal_log_info("setdata: not connected!");
+		return KNOT_ERROR_UNKNOWN;
+	}
+
+	if (!session->trusted) {
 		hal_log_info("setdata: Permission denied!");
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		goto done;
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = trust_get_sensor_schema(trust->schema, sensor_id);
+	schema = schema_find(session->schema, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
@@ -846,15 +835,15 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 				schema->values.unit, schema->values.value_type);
 
 	/* Fetches the 'devices' db */
-	proto_setdata(proto_socket, trust->uuid, trust->token,
+	proto_setdata(proto_socket, session->uuid, session->token,
 								sensor_id);
 
-	result = proto_data(proto_socket, trust->uuid, trust->token, sensor_id,
+	result = proto_data(proto_socket, session->uuid, session->token, sensor_id,
 			    schema->values.value_type, kdata);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
-	hal_log_info("THING %s updated data for sensor %d", trust->uuid,
+	hal_log_info("THING %s updated data for sensor %d", session->uuid,
 								sensor_id);
 	result = KNOT_SUCCESS;
 
@@ -1029,34 +1018,12 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
 
+	hal_log_info("%s session:%p", __PRETTY_FUNCTION__, user_data);
+
 	session_proto_disconnect(session);
 
-	/*
-	 * Remove initiated disconnection:
-	 * Destroy ELL channel and remove tracked session
-	 */
-	if (session->node_channel) {
-		session->node_channel = NULL;
-
-		l_io_destroy(channel);
-		l_queue_remove(session_list, session);
-		session_unref(session);
-	}
-}
-
-static void session_node_destroyed_cb(void *user_data)
-{
-	struct session *session = user_data;
-	struct trust *trust;
-	int node_socket;
-
-	node_socket = l_io_get_fd(session->node_channel);
-	l_queue_remove(session_list, session);
-
-	trust = l_hashmap_remove(trust_map, L_INT_TO_PTR(node_socket));
-	if (trust)
-		trust_unref(trust);
-
+	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
+	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
 	session_unref(session);
 }
 
@@ -1159,88 +1126,57 @@ static struct l_io *create_node_channel(int node_socket,
 	l_io_set_disconnect_handler(channel,
 				    session_node_disconnected_cb,
 				    session_ref(session),
-				    session_node_destroyed_cb);
+				    NULL);
 
 	return channel;
 }
 
-static int session_create(struct node_ops *node_ops, int client_socket)
+static struct session *session_create(struct node_ops *node_ops,
+				      int client_socket)
 {
 	struct session *session;
 	int err;
 
-	session = session_new();
-	session->node_ops = node_ops;
-
+	session = session_new(node_ops);
 	err = session_proto_connect(session);
 	if (err < 0) {
 		session_unref(session);
-		return err;
+		return NULL;
 	}
 
 	session->node_channel = create_node_channel(client_socket, session);
+	session->node_fd = client_socket; /* Required to manage disconnections */
 
 	hal_log_info("node:%p proto:%p",
 		     session->node_channel, session->proto_channel);
 
-	l_queue_push_tail(session_list, session);
-
-	return 0;
-}
-
-static void session_destroy(struct session *session, void *user_data)
-{
-	struct l_io *channel;
-	/*
-	 * Sessions are destroyed and removed from list when the node
-	 * channel is destroyed.
-	 */
-	if (session->proto_channel) {
-		channel = session->proto_channel;
-		session->proto_channel = NULL; /* Lock: destroying */
-
-		/* Destroy calls disconnect & destroyed callbacks */
-		l_io_destroy(channel);
-	}
-
-	if (session->node_channel) {
-		channel = session->node_channel;
-		session->node_channel = NULL; /* Lock: destroying */
-
-		/* Destroy calls disconnect & destroyed callbacks */
-		l_io_destroy(channel);
-	}
+	return session;
 }
 
 bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket)
 {
-	if (session_create(node_ops, client_socket) < 0) {
+	struct session *session;
+
+	session = session_create(node_ops, client_socket);
+       if (!session) {
 		/* FIXME: Stop knotd if cloud if not available */
 		return false;
 	}
+
+	l_hashmap_insert(session_map, L_INT_TO_PTR(client_socket), session);
 
 	return true;
 }
 
 int msg_start(void)
 {
-	trust_map = l_hashmap_new();
-	session_list = l_queue_new();
+	session_map = l_hashmap_new();
 
 	return 0;
 }
 
 void msg_stop(void)
 {
-	l_hashmap_destroy(trust_map, (l_hashmap_destroy_func_t) trust_unref);
-
-	/*
-	 * session_destroy() will remove the entries from session_list.
-	 * Wait it clear the list beforing freeing it.
-	 */
-	l_queue_foreach(session_list,
-			(l_queue_foreach_func_t) session_destroy,
-			NULL);
-	l_queue_destroy(session_list, (l_queue_destroy_func_t) session_unref);
-	session_list = NULL;
+	l_hashmap_destroy(session_map,
+			  (l_hashmap_destroy_func_t) session_unref);
 }

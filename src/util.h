@@ -20,4 +20,3 @@
  */
 
 int8_t util_config_is_valid(struct l_queue *config_list);
-int8_t util_get_credentials(int sock, struct ucred *cred);
