@@ -494,14 +494,14 @@ static void msg_credential_create(knot_msg_credential *message,
 	message->hdr.payload_len = sizeof(*message) - sizeof(knot_msg_header);
 }
 
-static int8_t msg_register(int node_socket, int proto_socket,
+static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct session *session;
+	int proto_sock;
 	int8_t result;
 
 	if (!msg_register_has_valid_length(kreq, ilen)
@@ -515,13 +515,7 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%" PRIx64 ") fd:%d",
-		     kreq->id, node_socket);
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("register: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
+	hal_log_info("Registering (id 0x%" PRIx64 ")", kreq->id);
 
 	if (session->trusted && kreq->id == session->id) {
 		hal_log_info("Register: trusted device");
@@ -532,13 +526,14 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	msg_register_get_device_name(kreq, device_name);
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
-	result = proto_mknode(proto_socket, device_name, kreq->id, uuid, token);
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_mknode(proto_sock, device_name, kreq->id, uuid, token);
 	if (result != KNOT_SUCCESS)
 		return result;
 
 	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
 
-	result = proto_signin(proto_socket, uuid, token, NULL, NULL);
+	result = proto_signin(proto_sock, uuid, token, NULL, NULL);
 	if (result != KNOT_SUCCESS)
 		return result;
 
@@ -553,16 +548,10 @@ static int8_t msg_register(int node_socket, int proto_socket,
 	return KNOT_SUCCESS;
 }
 
-static int8_t msg_unregister(int node_socket, int proto_socket)
+static int8_t msg_unregister(struct session *session)
 {
-	struct session *session;
+	int proto_sock;
 	int8_t result;
-
-	session = l_hashmap_remove(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("unregister: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (!session->trusted) {
 		hal_log_info("unregister: Permission denied!");
@@ -570,7 +559,8 @@ static int8_t msg_unregister(int node_socket, int proto_socket)
 	}
 
 	hal_log_info("rmnode: %.36s", session->uuid);
-	result = proto_rmnode(proto_socket, session->uuid, session->token);
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_rmnode(proto_sock, session->uuid, session->token);
 	if (result != KNOT_SUCCESS)
 		goto done;
 
@@ -582,21 +572,15 @@ done:
 }
 
 /* Mandatory before any operation */
-static int8_t msg_auth(int node_socket, int proto_socket,
+static int8_t msg_auth(struct session *session,
 		       const knot_msg_authentication *kmauth)
 {
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	struct l_queue *schema = NULL;
 	struct l_queue *config = NULL;
-	struct session *session;
+	int proto_sock;
 	int8_t result;
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("identity: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (session->trusted) {
 		hal_log_info("Authenticated already");
@@ -612,7 +596,8 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 
 	strncpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
 	strncpy(token, kmauth->token, sizeof(kmauth->token));
-	result = proto_signin(proto_socket, uuid, token, &schema, &config);
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_signin(proto_sock, uuid, token, &schema, &config);
 	if (result != KNOT_SUCCESS)
 		return result;
 
@@ -633,17 +618,11 @@ static int8_t msg_auth(int node_socket, int proto_socket,
 	return KNOT_SUCCESS;
 }
 
-static int8_t msg_schema(int node_socket, int proto_socket,
+static int8_t msg_schema(struct session *session,
 			 const knot_msg_schema *schema, bool eof)
 {
+	int proto_sock;
 	int8_t result;
-	struct session *session;
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("schema: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (!session->trusted) {
 		hal_log_info("schema: not authorized!");
@@ -681,7 +660,8 @@ static int8_t msg_schema(int node_socket, int proto_socket,
 		goto done;
 	}
 
-	result = proto_schema(proto_socket, session->uuid,
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_schema(proto_sock, session->uuid,
 			      session->token, session->schema_tmp);
 	if (result != KNOT_SUCCESS) {
 		l_queue_destroy(session->schema_tmp, l_free);
@@ -698,11 +678,10 @@ done:
 	return result;
 }
 
-static int8_t msg_data(int node_socket, int proto_socket,
-		       const knot_msg_data *kmdata)
+static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const struct session *session;
+	int proto_sock;
 	int err;
 	int8_t result;
 	uint8_t sensor_id;
@@ -711,12 +690,6 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	 * and a primitive KNOT type
 	 */
 	const knot_data *kdata = &(kmdata->payload);
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("data: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (!session->trusted) {
 		hal_log_info("data: Permission denied!");
@@ -745,25 +718,20 @@ static int8_t msg_data(int node_socket, int proto_socket,
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 		     schema->values.unit, schema->values.value_type);
 
-	result = proto_data(proto_socket, session->uuid, session->token,
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_data(proto_sock, session->uuid, session->token,
 			    sensor_id, schema->values.value_type, kdata);
 
-	proto_getdata(proto_socket, session->uuid, session->token, sensor_id);
+	proto_getdata(proto_sock, session->uuid, session->token, sensor_id);
 
 done:
 	return result;
 }
 
-static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
+static int8_t msg_config_resp(struct session *session,
+			      const knot_msg_item *response)
 {
-	struct session *session;
 	uint8_t sensor_id;
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("config resp: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (!session->trusted) {
 		hal_log_info("config resp: Permission denied!");
@@ -787,12 +755,12 @@ static int8_t msg_config_resp(int node_socket, const knot_msg_item *response)
  * Works like msg_data() (copy & paste), but removes the received info from
  * the 'devices' database.
  */
-static int8_t msg_setdata_resp(int node_socket, int proto_socket,
+static int8_t msg_setdata_resp(struct session *session,
 			       const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const struct session *session;
 	int8_t result;
+	int proto_sock;
 	int err;
 	uint8_t sensor_id;
 	/*
@@ -800,12 +768,6 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 	 * and a primitive KNOT type
 	 */
 	const knot_data *kdata = &(kmdata->payload);
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (unlikely(!session)) {
-		hal_log_info("setdata: not connected!");
-		return KNOT_ERROR_UNKNOWN;
-	}
 
 	if (!session->trusted) {
 		hal_log_info("setdata: Permission denied!");
@@ -835,10 +797,11 @@ static int8_t msg_setdata_resp(int node_socket, int proto_socket,
 				schema->values.unit, schema->values.value_type);
 
 	/* Fetches the 'devices' db */
-	proto_setdata(proto_socket, session->uuid, session->token,
+	proto_sock = l_io_get_fd(session->proto_channel);
+	proto_setdata(proto_sock, session->uuid, session->token,
 								sensor_id);
 
-	result = proto_data(proto_socket, session->uuid, session->token, sensor_id,
+	result = proto_data(proto_sock, session->uuid, session->token, sensor_id,
 			    schema->values.value_type, kdata);
 	if (result != KNOT_SUCCESS)
 		goto done;
@@ -851,7 +814,7 @@ done:
 	return result;
 }
 
-static ssize_t msg_process(int sock, int proto_sock,
+static ssize_t msg_process(struct session *session,
 				const void *ipdu, size_t ilen,
 				void *opdu, size_t omtu)
 {
@@ -888,36 +851,35 @@ static ssize_t msg_process(int sock, int proto_sock,
 	switch (kreq->hdr.type) {
 	case KNOT_MSG_REGISTER_REQ:
 		/* Payload length is set by the caller */
-		result = msg_register(sock, proto_sock,
-				      &kreq->reg, ilen, &krsp->cred);
+		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
-		result = msg_unregister(sock, proto_sock);
+		result = msg_unregister(session);
 		rtype = KNOT_MSG_UNREGISTER_RESP;
 		break;
 	case KNOT_MSG_DATA:
-		result = msg_data(sock, proto_sock, &kreq->data);
+		result = msg_data(session, &kreq->data);
 		rtype = KNOT_MSG_DATA_RESP;
 		break;
 	case KNOT_MSG_AUTH_REQ:
-		result = msg_auth(sock, proto_sock, &kreq->auth);
+		result = msg_auth(session, &kreq->auth);
 		rtype = KNOT_MSG_AUTH_RESP;
 		break;
 	case KNOT_MSG_SCHEMA:
 	case KNOT_MSG_SCHEMA_END:
 		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? true : false;
-		result = msg_schema(sock, proto_sock, &kreq->schema, eof);
+		result = msg_schema(session, &kreq->schema, eof);
 		rtype = KNOT_MSG_SCHEMA_RESP;
 		if (eof)
 			rtype = KNOT_MSG_SCHEMA_END_RESP;
 		break;
 	case KNOT_MSG_CONFIG_RESP:
-		result = msg_config_resp(sock, &kreq->item);
+		result = msg_config_resp(session, &kreq->item);
 		/* No octets to be transmitted */
 		return 0;
 	case KNOT_MSG_DATA_RESP:
-		result = msg_setdata_resp(sock, proto_sock, &kreq->data);
+		result = msg_setdata_resp(session, &kreq->data);
 		return 0;
 	default:
 		/* TODO: reply unknown command */
@@ -936,14 +898,14 @@ static void session_proto_disconnect(struct session *session)
 {
 	struct proto_ops *proto_ops;
 	struct l_io *channel;
-	int proto_socket;
+	int proto_sock;
 
 	if (!session->proto_channel)
 		return;
 
 	proto_ops = proto_get_default();
-	proto_socket = l_io_get_fd(session->proto_channel);
-	proto_ops->close(proto_socket);
+	proto_sock = l_io_get_fd(session->proto_channel);
+	proto_ops->close(proto_sock);
 
 	channel = session->proto_channel;
 	session->proto_channel = NULL;
@@ -976,12 +938,12 @@ static void session_proto_destroyed_cb(void *user_data)
 	session_unref(session);
 }
 
-static struct l_io *create_proto_channel(int proto_socket,
+static struct l_io *create_proto_channel(int proto_sock,
 					 struct session *session)
 {
 	struct l_io *channel;
 
-	channel = l_io_new(proto_socket);
+	channel = l_io_new(proto_sock);
 	if (channel == NULL) {
 		hal_log_error("Can't create proto channel");
 		return NULL;
@@ -997,19 +959,19 @@ static struct l_io *create_proto_channel(int proto_socket,
 static int session_proto_connect(struct session *session)
 {
 	struct proto_ops *proto_ops;
-	int proto_socket;
+	int proto_sock;
 
 	proto_ops = proto_get_default();
 
-	proto_socket = proto_ops->connect();
-	if (proto_socket < 0) {
+	proto_sock = proto_ops->connect();
+	if (proto_sock < 0) {
 		hal_log_info("Cloud connect(): %s(%d)",
-			     strerror(-proto_socket), -proto_socket);
-		return proto_socket;
+			     strerror(-proto_sock), -proto_sock);
+		return proto_sock;
 	}
 
 	/* Keep one reference to call sign-off */
-	session->proto_channel = create_proto_channel(proto_socket, session);
+	session->proto_channel = create_proto_channel(proto_sock, session);
 
 	return 0;
 }
@@ -1056,7 +1018,7 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 	struct node_ops *node_ops = session->node_ops;
 	uint8_t ipdu[512], opdu[512]; /* FIXME: */
 	ssize_t recvbytes, sentbytes, olen;
-	int node_socket, proto_socket;
+	int node_socket;
 	int err;
 
 	node_socket = l_io_get_fd(channel);
@@ -1081,11 +1043,7 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 		hal_log_info("Reconnected to cloud service");
 	}
 
-	proto_socket = l_io_get_fd(session->proto_channel);
-
-	olen = msg_process(node_socket, proto_socket,
-				ipdu, recvbytes,
-				opdu, sizeof(opdu));
+	olen = msg_process(session, ipdu, recvbytes, opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
