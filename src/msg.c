@@ -102,7 +102,7 @@ static void session_unref(struct session *session)
 	if (unlikely(!session))
                 return;
 
-        if (__sync_sub_and_fetch(&session->refs, 1))
+        if (!__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
 	l_io_destroy(session->node_channel);
@@ -982,11 +982,11 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 
 	hal_log_info("%s session:%p", __PRETTY_FUNCTION__, user_data);
 
-	session_proto_disconnect(session);
-
 	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
 	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
-	session_unref(session);
+
+	session_proto_disconnect(session);
+
 }
 
 static void session_node_destroy_to(struct l_timeout *timeout,
@@ -1117,7 +1117,7 @@ bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket)
 
 	session = session_create(node_ops, client_socket);
        if (!session) {
-		/* FIXME: Stop knotd if cloud if not available */
+	       /* FIXME: Stop knotd if cloud if not available */
 		return false;
 	}
 
