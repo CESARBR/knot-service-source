@@ -56,6 +56,7 @@ static char *opt_uuid = NULL;
 static char *opt_token = NULL;
 static char *opt_json = NULL;
 static char *opt_tty = NULL;
+static uint64_t opt_device_id = 0;
 static gboolean opt_cfg = FALSE;
 static gboolean opt_id = FALSE;
 static gboolean opt_subs = FALSE;
@@ -523,7 +524,7 @@ static int cmd_register(void)
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_REGISTER_REQ;
 	msg.hdr.payload_len = len + sizeof(msg.id);
-	msg.id = 0x0123456789abcdef;
+	msg.id = opt_device_id ? opt_device_id:0x123456789abcdef;
 	strncpy(msg.devName, devname, len);
 
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
@@ -931,6 +932,8 @@ static int cmd_connect(void)
  * to any specific backend.
  */
 static GOptionEntry options[] = {
+	{ "device-id", 'I', 0, G_OPTION_ARG_INT64, &opt_device_id,
+						"Device's ID", "ID" },
 	{ "uuid", 'u', 0, G_OPTION_ARG_STRING, &opt_uuid,
 						"Device's UUID", "UUID" },
 	{ "token", 't', 0, G_OPTION_ARG_STRING, &opt_token,
@@ -949,7 +952,7 @@ static GOptionEntry options[] = {
 static GOptionEntry commands[] = {
 
 	{ "add", 0, 0, G_OPTION_ARG_NONE, &opt_add,
-	"Register a device to Meshblu. Eg: ./ktool --add [-U=value | T=value]",
+	"Register a device to Meshblu. Eg: ./ktool --add [-U=value | T=value| I=value]",
 				NULL },
 	{ "remove", 0, 0, G_OPTION_ARG_NONE, &opt_rm,
 		"Unregister a device from Meshblu. " \
@@ -1005,6 +1008,7 @@ int main(int argc, char *argv[])
 	opt_uuid = NULL;
 	opt_token = NULL;
 	opt_json = NULL;
+	opt_device_id = 0;
 
 	printf("KNOT Tool\n");
 
