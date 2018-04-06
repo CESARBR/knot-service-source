@@ -48,6 +48,8 @@
 #include "proto.h"
 #include "util.h"
 #include "msg.h"
+#include "device.h"
+#include "dbus.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
@@ -498,6 +500,7 @@ static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
+	struct knot_device* device;
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
@@ -544,6 +547,16 @@ static int8_t msg_register(struct session *session,
 	session->uuid = l_strdup(uuid);
 	session->token = l_strdup(token);
 	session->rollback = true;		/* Reset after sending SCHEMA */
+
+	// Set dbus property
+	device = device_get(kreq->id);
+	if (!device) {
+		hal_log_error("No device found with id=%ld",kreq->id );
+		return KNOT_DEVICE_NOT_FOUND;
+	}
+
+	device_set_uuid(device, uuid);
+	device_set_registered(device, true);
 
 	return KNOT_SUCCESS;
 }

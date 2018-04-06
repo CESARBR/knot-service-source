@@ -41,6 +41,8 @@ struct knot_device {
 	struct l_dbus_proxy *proxy;
 };
 
+static struct l_hashmap *device_list;
+
 static void device_free(struct knot_device *device)
 {
 	l_free(device->name);
@@ -277,7 +279,7 @@ int device_start(void)
 		hal_log_error("dbus: unable to register %s", DEVICE_INTERFACE);
 		return -EINVAL;
 	}
-
+	device_list = l_hashmap_new();
 	return 0;
 }
 
@@ -285,6 +287,7 @@ void device_stop(void)
 {
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    DEVICE_INTERFACE);
+	l_hashmap_destroy(device_list, (l_hashmap_destroy_func_t) device_destroy);
 }
 
 struct knot_device *device_create(struct l_dbus_proxy *proxy,
@@ -313,12 +316,15 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 		device_free(device);
 		return 0;
 	}
-
-	return device_ref(device);
+	device = device_ref(device);
+	l_hashmap_insert(device_list, L_INT_TO_PTR(id), device);
+	return device;
 }
 
 void device_destroy(struct knot_device *device)
 {
+	if(!l_hashmap_remove(device_list, L_INT_TO_PTR(device->id)))
+		return;
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
 }
 
@@ -344,6 +350,56 @@ bool device_set_name(struct knot_device *device, const char *name)
 
 	l_free(device->name);
 	device->name = l_strdup(name);
+	return true;
+}
+
+bool device_set_uuid(struct knot_device *device, const char *uuid)
+{
+	struct l_dbus_message_builder *builder;
+	struct l_dbus_message *signal;
+
+	if (!uuid)
+		return false;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Uuid");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 's', uuid);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	if (l_dbus_send(dbus_get_bus(), signal) == 0)
+		return false;
+
+	l_free(device->uuid);
+	device->uuid = l_strdup(uuid);
+
+	return true;
+}
+
+bool device_set_registered(struct knot_device *device, bool registered)
+{
+	struct l_dbus_message_builder *builder;
+	struct l_dbus_message *signal;
+
+	if (device->registered == registered)
+		return false;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Registered");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &registered);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	if (l_dbus_send(dbus_get_bus(), signal) == 0)
+		return false;
+
+	device->registered = registered;
 
 	return true;
 }
@@ -398,4 +454,13 @@ bool device_set_connected(struct knot_device *device, bool connected)
 		return false;
 
 	return true;
+}
+
+struct knot_device *device_get(uint64_t id)
+{
+	struct knot_device* device = l_hashmap_lookup(device_list, L_INT_TO_PTR(id));
+	if (!device)
+		return NULL;
+	else
+		return device;
 }
