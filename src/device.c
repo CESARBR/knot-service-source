@@ -64,7 +64,7 @@ static void device_unref(struct knot_device *device)
 	if (unlikely(!device))
 		return;
 
-	if (__sync_sub_and_fetch(&device->refs, 1))
+	if (!__sync_sub_and_fetch(&device->refs, 1))
 		return;
 
 	device_free(device);
@@ -320,7 +320,6 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 void device_destroy(struct knot_device *device)
 {
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
-	device_unref(device);
 }
 
 bool device_set_name(struct knot_device *device, const char *name)
