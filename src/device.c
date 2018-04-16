@@ -458,7 +458,9 @@ bool device_set_connected(struct knot_device *device, bool connected)
 
 struct knot_device *device_get(uint64_t id)
 {
-	struct knot_device* device = l_hashmap_lookup(device_list, L_INT_TO_PTR(id));
+	struct knot_device *device;
+
+	device = l_hashmap_lookup(device_list, L_INT_TO_PTR(id));
 	if (!device)
 		return NULL;
 	else
