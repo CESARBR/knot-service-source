@@ -34,7 +34,8 @@
 #include "device.h"
 #include "proxy.h"
 
-struct proxy {
+/* Low level proxy: nrfd, lora, ... */
+struct service_proxy {
 	char *name;
 	char *path;
 	char *interface;
@@ -43,9 +44,9 @@ struct proxy {
 	struct l_hashmap *device_list;
 };
 
-static struct proxy *proxy;
+static struct service_proxy *proxy;
 
-static void proxy_free(struct proxy *proxy)
+static void proxy_free(struct service_proxy *proxy)
 {
 	l_hashmap_destroy(proxy->device_list,
 			  (l_hashmap_destroy_func_t) device_destroy);
@@ -57,14 +58,14 @@ static void proxy_free(struct proxy *proxy)
 
 static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
-	struct proxy *proxy = user_data;
+	struct service_proxy *proxy = user_data;
 	hal_log_info("Service appeared: %s", proxy->name);
 	proxy->device_list = l_hashmap_new();
 }
 
 static void service_disappeared(struct l_dbus *dbus, void *user_data)
 {
-	struct proxy *proxy = user_data;
+	struct service_proxy *proxy = user_data;
 	hal_log_info("Service disappeared: %s", proxy->name);
 
 	/* FIXME: Investigate if proxy should be released */
@@ -77,7 +78,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 {
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	const char *path = l_dbus_proxy_get_path(ellproxy);
-	struct proxy *proxy = user_data;
+	struct service_proxy *proxy = user_data;
 	struct knot_device *device;
 	uint64_t id = 0;
 	bool paired = false;
@@ -112,7 +113,7 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 {
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	const char *path = l_dbus_proxy_get_path(ellproxy);
-	struct proxy *proxy = user_data;
+	struct service_proxy *proxy = user_data;
 	struct knot_device *device;
 
 	if (strcmp(interface, proxy->interface) != 0)
@@ -132,7 +133,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 			     const char *propname, struct l_dbus_message *msg,
 			     void *user_data)
 {
-	struct proxy *proxy = user_data;
+	struct service_proxy *proxy = user_data;
 	const char *path = l_dbus_proxy_get_path(ellproxy);
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	struct knot_device *device;
@@ -172,12 +173,12 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 	hal_log_info("property changed: %s (%s %s)", propname, path, interface);
 }
 
-static struct proxy *watch_create(const char *service,
+static struct service_proxy *watch_create(const char *service,
 			const char *path, const char *interface)
 {
-	struct proxy *proxy;
+	struct service_proxy *proxy;
 
-	proxy = l_new(struct proxy, 1);
+	proxy = l_new(struct service_proxy, 1);
 	proxy->name = l_strdup(service);
 	proxy->path = l_strdup(path);
 	proxy->interface = l_strdup(interface);
@@ -195,7 +196,7 @@ static struct proxy *watch_create(const char *service,
 	return proxy;
 }
 
-static void watch_remove(struct proxy *proxy)
+static void watch_remove(struct service_proxy *proxy)
 {
 	l_dbus_client_destroy(proxy->client);
 	l_dbus_remove_watch(dbus_get_bus(), proxy->watch_id);
