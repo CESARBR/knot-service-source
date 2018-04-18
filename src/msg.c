@@ -45,6 +45,7 @@
 
 #include "settings.h"
 #include "node.h"
+#include "proxy.h"
 #include "proto.h"
 #include "util.h"
 #include "msg.h"
@@ -1112,7 +1113,7 @@ static struct session *session_create(struct node_ops *node_ops,
 	return session;
 }
 
-bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket)
+static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 {
 	struct session *session;
 
@@ -1127,18 +1128,42 @@ bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
-int msg_start(void)
+int msg_start(struct settings *settings)
 {
+	int err;
+
 	session_map = l_hashmap_new();
+
+	err = proto_start(settings);
+	if (err < 0) {
+		hal_log_error("proto_start(): %s", strerror(-err));
+		return err;
+	}
+
+	err = node_start(session_accept_cb);
+	if (err < 0) {
+		hal_log_error("node_start(): %s", strerror(-err));
+		goto fail;
+	}
+
 
 	/* TODO: Add 'added', 'removed' callbacks */
 	proto_set_proxy_handlers();
 
-	return 0;
+	return proxy_start();
+
+fail:
+	proto_stop();
+
+	return err;
 }
 
 void msg_stop(void)
 {
+	proxy_stop();
+	node_stop();
+	proto_stop();
+
 	l_hashmap_destroy(session_map,
 			  (l_hashmap_destroy_func_t) session_unref);
 }

@@ -34,17 +34,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include <knot_protocol.h>
-
 #include <hal/linux_log.h>
 #include <ell/ell.h>
 
-#include "node.h"
 #include "settings.h"
-#include "proto.h"
 #include "msg.h"
 #include "dbus.h"
-#include "proxy.h"
 #include "storage.h"
 #include "manager.h"
 
@@ -252,28 +247,10 @@ int manager_start(struct settings *settings)
 	const char *path = "/";
 	int err;
 
-	err = proto_start(settings);
-	if (err < 0) {
-		hal_log_error("proto_start(): %s", strerror(-err));
-		return err;
-	}
-
-	err = node_start(msg_session_accept_cb);
-	if (err < 0) {
-		hal_log_error("node_start(): %s", strerror(-err));
-		goto fail_node;
-	}
-
-	err = msg_start();
-	if (err < 0) {
-		hal_log_error("msg_start(): %s", strerror(-err));
-		goto fail_msg;
-	}
-
 	err = dbus_start();
 	if (err) {
 		hal_log_error("dbus_start(): %s", strerror(-err));
-		goto fail_dbus;
+		return err;
 	}
 
 	/* Manager object */
@@ -292,26 +269,18 @@ int manager_start(struct settings *settings)
 				    NULL))
 		hal_log_error("dbus: unable to register object %s", path);
 
-	return proxy_start();
-
-fail_dbus:
-	msg_stop();
-fail_msg:
-	node_stop();
-fail_node:
-	proto_stop();
+	err = msg_start(settings);
+	if (err < 0)
+		hal_log_error("msg_start(): %s", strerror(-err));
 
 	return err;
 }
 
 void manager_stop(void)
 {
-	proxy_stop();
 
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    SETTINGS_INTERFACE);
 	dbus_stop();
 	msg_stop();
-	node_stop();
-	proto_stop();
 }

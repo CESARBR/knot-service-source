@@ -19,8 +19,5 @@
  *
  */
 
-int msg_start(void);
+int msg_start(struct settings *settings);
 void msg_stop(void);
-
-/* Returning false, node.c will disconnect the client */
-bool msg_session_accept_cb(struct node_ops *node_ops, int client_socket);
