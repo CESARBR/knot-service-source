@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 
 #include <ell/ell.h>
 
@@ -39,6 +40,7 @@
 #include <hal/linux_log.h>
 
 #include "settings.h"
+#include "proxy.h"
 #include "proto.h"
 
 extern struct proto_ops proto_http;
@@ -56,17 +58,24 @@ static struct proto_ops *proto_ops[] = {
 	NULL
 };
 
-static struct proto_proxy {
-	struct l_timeout *timeout;	/* Controls cloud polling */
-	struct l_checksum *checksum;	/* Checksum to compute changes */
-	unsigned char digest[20];	/* Previous SHA1 digest */
+struct proto_proxy {
 	int sock;			/* Cloud connection */
+	proto_proxy_func_t added_cb;
+	proto_proxy_func_t removed_cb;
+	void *user_data;
+	struct l_queue *device_list;
 };
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
-static char owner_token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-static struct l_hashmap *watch_list;
+static struct l_timeout *timeout;
+
+static void proxy_destroy(void *user_data)
+{
+	struct proto_proxy *proxy = user_data;
+	l_queue_destroy(proxy->device_list, l_free);
+	l_free(proxy);
+}
 
 static inline bool is_uuid_valid(const char *uuid)
 {
@@ -76,6 +85,132 @@ static inline bool is_uuid_valid(const char *uuid)
 static inline bool is_token_valid(const char *token)
 {
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
+}
+
+static struct l_queue *parse_mydevices(const char *json_str)
+{
+	json_object *jobj, *jobjentry, *jobjkey;
+	struct l_queue *list;
+	int64_t id;
+	int len;
+	int i;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj) {
+		hal_log_error("JSON: unexpected format");
+		return NULL;
+	}
+
+	len = json_object_array_length(jobj);
+	if (len == 0) {
+		json_object_put(jobj);
+		return NULL;
+	}
+
+	list = l_queue_new();
+	for (i = 0; i < len; i++) {
+		jobjentry = json_object_array_get_idx(jobj, i);
+		/* Getting 'Id' */
+		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
+			continue;
+
+		/*
+		 * Following API recommendation ...
+		 * Set errno to 0 directly before a call to this function to
+		 * determine whether or not conversion was successful.
+		 */
+		errno = 0;
+		id = json_object_get_int64(jobjkey);
+		if (errno)
+			continue;
+
+		l_queue_push_tail(list, l_memdup(&id, sizeof(id)));
+	}
+
+	json_object_put(jobj);
+	return list;
+}
+
+static bool device_id_cmp(const void *a, const void *b)
+{
+	const uint64_t *val1 = a;
+	const uint64_t *val2 = b;
+
+	return (*val1 == *val2 ? true : false);
+}
+
+static void timeout_callback(struct l_timeout *timeout, void *user_data)
+{
+	struct proto_proxy *proxy = user_data;
+	struct l_queue *list;
+	struct l_queue *added_list;
+	struct l_queue *removed_list;
+	struct l_queue *registered_list;
+	json_raw_t json;
+	uint64_t *valx;
+	uint64_t *valy;
+	int err;
+	bool ret;
+
+	/* Fetch all devices from cloud */
+	memset(&json, 0, sizeof(json));
+	err = proto->fetch(proxy->sock, NULL, NULL, &json);
+	if (err < 0)
+		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
+
+	if (json.size == 0)
+		goto done;
+
+	/* List containing all devices returned from cloud */
+	list = parse_mydevices(json.data);
+
+	added_list = l_queue_new();
+	registered_list = l_queue_new();
+
+	/* Detecting added & removed devices */
+	for (valx = l_queue_pop_head(list);
+	     valx; valx = l_queue_pop_head(list)) {
+		valy = l_queue_remove_if(proxy->device_list,
+					 device_id_cmp, valx);
+
+		if (valy == NULL) {
+			/* New device */
+			l_queue_push_tail(registered_list, valx);
+			l_queue_push_tail(added_list,
+					  l_memdup(valx, sizeof(*valx)));
+		} else { /* Still registered */
+			l_queue_push_tail(registered_list, valy);
+			l_free(valx);
+		}
+	}
+
+	/* list is empty: destroy */
+	l_queue_destroy(list, NULL);
+
+	/* Left in list: removed */
+	removed_list = proxy->device_list;
+
+	/* Informing added devices */
+	for (valx = l_queue_pop_head(added_list);
+	     valx; valx = l_queue_pop_head(added_list)) {
+		proxy->added_cb(*valx, proxy->user_data);
+	}
+
+	l_queue_destroy(added_list, l_free);
+	/* Overwrite: Keep a copy for the next iteration */
+	proxy->device_list = registered_list;
+
+	/* Informing removed devices */
+	for (valx = l_queue_pop_head(removed_list);
+	     valx; valx = l_queue_pop_head(removed_list)) {
+		proxy->removed_cb(*valx, proxy->user_data);
+		l_free(valx);
+	}
+	l_queue_destroy(removed_list, l_free);
+
+done:
+	l_timeout_modify(timeout, 5);
+	l_free(json.data);
 }
 
 static json_object *device_json_create(const char *device_name,
@@ -716,20 +851,7 @@ int proto_start(const struct settings *settings)
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
-	memset(owner_token, 0, sizeof(owner_token));
-	strncpy(owner_token, settings->token, sizeof(owner_token));
-
-	watch_list = l_hashmap_new();
-
-	return 0;
-}
-
-static void watch_destroy(void *user_data)
-{
-	struct proto_proxy *watch = user_data;
-
-	l_timeout_remove(watch->timeout);
-	l_free(watch);
+	return proxy_start();
 }
 
 void proto_stop()
@@ -739,7 +861,8 @@ void proto_stop()
 		proto = NULL;
 	}
 
-	l_hashmap_destroy(watch_list, watch_destroy);
+	l_timeout_remove(timeout);
+	proxy_stop();
 }
 
 struct proto_ops *proto_get_default(void)
@@ -822,7 +945,7 @@ int proto_signin(int proto_socket, const char *uuid, const char *token,
 	result = KNOT_SUCCESS;
 
 fail:
-	free(response.data);
+	l_free(response.data);
 	return result;
 }
 
@@ -910,49 +1033,17 @@ done:
 	return result;
 }
 
-static void timeout_callback(struct l_timeout *timeout, void *user_data)
+int proto_set_proxy_handlers(const char *uuid, const char *token,
+			     proto_proxy_func_t added,
+			     proto_proxy_func_t removed,
+			     void *user_data)
 {
-	struct proto_proxy *watch;
-	int sock = L_PTR_TO_INT(user_data);
-	json_raw_t json;
-	ssize_t size_digest;
-	unsigned char new_digest[20];
+	struct proto_proxy *proxy;
+	json_raw_t response;
+	int sock;
 	int err;
 
-	watch = l_hashmap_lookup(watch_list, timeout);
-	if (!watch)
-		return;
-
-	memset(&json, 0, sizeof(json));
-	err = proto->fetch(sock, NULL, NULL, &json);
-	if (err < 0)
-		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
-
-	l_checksum_update(watch->checksum, json.data, json.size);
-
-	size_digest = l_checksum_get_digest(watch->checksum, new_digest,
-					    sizeof(new_digest));
-
-	if (memcmp(watch->digest, new_digest, sizeof(new_digest)) == 0)
-		goto done;
-
-	/* Something has changed */
-	memcpy(watch->digest, new_digest, size_digest);
-
-done:
-	l_timeout_modify(timeout, 5);
-
-	l_free(json.data);
-}
-
-int proto_set_proxy_handlers(void)
-{
-	struct proto_proxy *watch;
-	struct l_timeout *timeout;
-	json_raw_t response;
-	int watch_id;
-	int sock;
-
+	/* Polling changed at cloud: devices removed */
 	sock = proto->connect();
 	if (sock < 0) {
 		hal_log_error("proto connect(): %s(%d)",
@@ -960,18 +1051,22 @@ int proto_set_proxy_handlers(void)
 		return sock;
 	}
 
-	proto->signin(sock, owner_uuid, owner_token, &response);
+	err = proto->signin(sock, uuid, token, &response);
+	if (err < 0) {
+		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
+		close(sock);
+		return err;
+	}
 
-	timeout = l_timeout_create(5, timeout_callback, L_INT_TO_PTR(sock), NULL);
+	proxy = l_new(struct proto_proxy, 1);
+	proxy->sock = sock;
+	proxy->added_cb = added;
+	proxy->removed_cb = removed;
+	proxy->user_data = user_data;
+	proxy->device_list = l_queue_new();
 
-	watch = l_new(struct proto_proxy, 1);
-	watch->timeout = timeout;
-	watch->checksum = l_checksum_new(L_CHECKSUM_SHA1);
-	watch->sock = sock;
+	/* TODO: Currently restricted to one 'watcher' */
+	timeout = l_timeout_create(5, timeout_callback, proxy, proxy_destroy);
 
-	watch_id = L_PTR_TO_INT(timeout);
-
-	l_hashmap_insert(watch_list, timeout, watch);
-
-	return watch_id;
+	return 0;
 }

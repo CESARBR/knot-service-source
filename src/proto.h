@@ -19,6 +19,8 @@
  *
  */
 
+typedef void (*proto_proxy_func_t) (uint64_t device_id, void *user_data);
+
 typedef struct {
 	char *data;
 	size_t size;
@@ -64,8 +66,6 @@ struct proto_ops {
 int proto_start(const struct settings *settings);
 void proto_stop(void);
 
-int proto_set_proxy_handlers(void);
-
 struct proto_ops *proto_get_default(void);
 int proto_mknode(int proto_socket, const char *device_name,
 			uint64_t device_id, char *uuid, char *token);
@@ -79,4 +79,9 @@ int proto_data(int proto_socket, const char *uuid,
 		      uint8_t value_type, const knot_data *value);
 void proto_getdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
 void proto_setdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
+
+int proto_set_proxy_handlers(const char *uuid, const char *token,
+			     proto_proxy_func_t added,
+			     proto_proxy_func_t removed,
+			     void *user_data);
 
