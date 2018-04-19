@@ -65,6 +65,7 @@ static struct proto_proxy {
 	proto_proxy_func_t added_cb;
 	proto_proxy_func_t removed_cb;
 	void *user_data;
+	struct l_queue *device_list;
 };
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
@@ -88,12 +89,64 @@ static inline bool is_token_valid(const char *token)
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
 }
 
+static struct l_queue *parse_mydevices(const char *json_str)
+{
+	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
+	struct l_queue *list;
+	int64_t id;
+	int len;
+	int i;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj) {
+		hal_log_error("JSON: unexpected format");
+		return;
+	}
+
+	len = json_object_array_length(jobj);
+	if (len == 0)
+		return;
+
+	list = l_queue_new();
+	for (i = 0; i < len; i++) {
+		jobjentry = json_object_array_get_idx(jobj, i);
+		/* Getting 'Id' */
+		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
+			continue;
+
+		/*
+		 * Following API recommendation ...
+		 * Set errno to 0 directly before a call to this function to
+		 * determine whether or not conversion was successful.
+		 */
+		errno = 0;
+		id = json_object_get_int64(jobjkey);
+		if (errno)
+			continue;
+
+		hal_log_info("Id: %"PRIx64, id);
+		l_queue_push_tail(list, l_memdup(&id, sizeof(id)));
+	}
+
+	return list;
+}
+
+static bool device_id_cmp(void *a, void *b)
+{
+	uint64_t *val1 = a;
+	uint64_t *val2 = b;
+
+	return *val1 == *val2;
+}
+
 static void timeout_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct proto_proxy *proxy = user_data;
+	struct l_queue *list;
 	json_raw_t json;
 	ssize_t size_digest;
 	unsigned char new_digest[20];
+	uint64_t *value;
 	int err;
 
 	memset(&json, 0, sizeof(json));
@@ -103,10 +156,23 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 
 	l_checksum_update(proxy->checksum, json.data, json.size);
 
+	if (json.size == 0)
+		goto done;
+
 	hal_log_info("%s", json.data);
 
 	size_digest = l_checksum_get_digest(proxy->checksum, new_digest,
 					    sizeof(new_digest));
+
+	list = parse_mydevices(json.data);
+
+	/* Detecting removed devices */
+	value = l_queue_peek_head(list);
+	for (value = l_queue_peek_head(list);
+	     value; value = l_queue_peek_head(list)) {
+		hal_log_info("value: %p", value);
+		l_queue_foreach_remove(proxy->device_list, device_id_cmp, value);
+	}
 
 	if (memcmp(proxy->digest, new_digest, sizeof(new_digest)) == 0)
 		goto done;
