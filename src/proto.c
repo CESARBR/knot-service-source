@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 
 #include <ell/ell.h>
 
@@ -39,6 +40,7 @@
 #include <hal/linux_log.h>
 
 #include "settings.h"
+#include "proxy.h"
 #include "proto.h"
 
 extern struct proto_ops proto_http;
@@ -57,16 +59,24 @@ static struct proto_ops *proto_ops[] = {
 };
 
 static struct proto_proxy {
-	struct l_timeout *timeout;	/* Controls cloud polling */
 	struct l_checksum *checksum;	/* Checksum to compute changes */
 	unsigned char digest[20];	/* Previous SHA1 digest */
 	int sock;			/* Cloud connection */
+	proto_proxy_func_t added_cb;
+	proto_proxy_func_t removed_cb;
+	void *user_data;
 };
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
-static char owner_token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-static struct l_hashmap *watch_list;
+static struct l_timeout *timeout;
+
+static void proxy_destroy(void *user_data)
+{
+	struct proto_proxy *proxy = user_data;
+	l_checksum_free(proxy->checksum);
+	l_free(proxy);
+}
 
 static inline bool is_uuid_valid(const char *uuid)
 {
@@ -76,6 +86,38 @@ static inline bool is_uuid_valid(const char *uuid)
 static inline bool is_token_valid(const char *token)
 {
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
+}
+
+static void timeout_callback(struct l_timeout *timeout, void *user_data)
+{
+	struct proto_proxy *proxy = user_data;
+	json_raw_t json;
+	ssize_t size_digest;
+	unsigned char new_digest[20];
+	int err;
+
+	memset(&json, 0, sizeof(json));
+	err = proto->fetch(proxy->sock, NULL, NULL, &json);
+	if (err < 0)
+		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
+
+	l_checksum_update(proxy->checksum, json.data, json.size);
+
+	hal_log_info("%s", json.data);
+
+	size_digest = l_checksum_get_digest(proxy->checksum, new_digest,
+					    sizeof(new_digest));
+
+	if (memcmp(proxy->digest, new_digest, sizeof(new_digest)) == 0)
+		goto done;
+
+	/* Something has changed */
+	memcpy(proxy->digest, new_digest, size_digest);
+
+done:
+	l_timeout_modify(timeout, 5);
+
+	l_free(json.data);
 }
 
 static json_object *device_json_create(const char *device_name,
@@ -716,20 +758,7 @@ int proto_start(const struct settings *settings)
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
-	memset(owner_token, 0, sizeof(owner_token));
-	strncpy(owner_token, settings->token, sizeof(owner_token));
-
-	watch_list = l_hashmap_new();
-
-	return 0;
-}
-
-static void watch_destroy(void *user_data)
-{
-	struct proto_proxy *watch = user_data;
-
-	l_timeout_remove(watch->timeout);
-	l_free(watch);
+	return proxy_start();
 }
 
 void proto_stop()
@@ -739,7 +768,8 @@ void proto_stop()
 		proto = NULL;
 	}
 
-	l_hashmap_destroy(watch_list, watch_destroy);
+	l_timeout_remove(timeout);
+	proxy_stop();
 }
 
 struct proto_ops *proto_get_default(void)
@@ -822,7 +852,7 @@ int proto_signin(int proto_socket, const char *uuid, const char *token,
 	result = KNOT_SUCCESS;
 
 fail:
-	free(response.data);
+	l_free(response.data);
 	return result;
 }
 
@@ -910,49 +940,17 @@ done:
 	return result;
 }
 
-static void timeout_callback(struct l_timeout *timeout, void *user_data)
+int proto_set_proxy_handlers(const char *uuid, const char *token,
+			     proto_proxy_func_t added,
+			     proto_proxy_func_t removed,
+			     void *user_data)
 {
-	struct proto_proxy *watch;
-	int sock = L_PTR_TO_INT(user_data);
-	json_raw_t json;
-	ssize_t size_digest;
-	unsigned char new_digest[20];
+	struct proto_proxy *proxy;
+	json_raw_t response;
+	int sock;
 	int err;
 
-	watch = l_hashmap_lookup(watch_list, timeout);
-	if (!watch)
-		return;
-
-	memset(&json, 0, sizeof(json));
-	err = proto->fetch(sock, NULL, NULL, &json);
-	if (err < 0)
-		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
-
-	l_checksum_update(watch->checksum, json.data, json.size);
-
-	size_digest = l_checksum_get_digest(watch->checksum, new_digest,
-					    sizeof(new_digest));
-
-	if (memcmp(watch->digest, new_digest, sizeof(new_digest)) == 0)
-		goto done;
-
-	/* Something has changed */
-	memcpy(watch->digest, new_digest, size_digest);
-
-done:
-	l_timeout_modify(timeout, 5);
-
-	l_free(json.data);
-}
-
-int proto_set_proxy_handlers(void)
-{
-	struct proto_proxy *watch;
-	struct l_timeout *timeout;
-	json_raw_t response;
-	int watch_id;
-	int sock;
-
+	/* Polling changed at cloud: devices removed */
 	sock = proto->connect();
 	if (sock < 0) {
 		hal_log_error("proto connect(): %s(%d)",
@@ -960,18 +958,22 @@ int proto_set_proxy_handlers(void)
 		return sock;
 	}
 
-	proto->signin(sock, owner_uuid, owner_token, &response);
+	err = proto->signin(sock, uuid, token, &response);
+	if (err < 0) {
+		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
+		close(sock);
+		return err;
+	}
 
-	timeout = l_timeout_create(5, timeout_callback, L_INT_TO_PTR(sock), NULL);
+	proxy = l_new(struct proto_proxy, 1);
+	proxy->checksum = l_checksum_new(L_CHECKSUM_SHA1);
+	proxy->sock = sock;
+	proxy->added_cb = added;
+	proxy->removed_cb = removed;
+	proxy->user_data = user_data;
 
-	watch = l_new(struct proto_proxy, 1);
-	watch->timeout = timeout;
-	watch->checksum = l_checksum_new(L_CHECKSUM_SHA1);
-	watch->sock = sock;
+	/* TODO: Currently restricted to one 'watcher' */
+	timeout = l_timeout_create(5, timeout_callback, proxy, proxy_destroy);
 
-	watch_id = L_PTR_TO_INT(timeout);
-
-	l_hashmap_insert(watch_list, timeout, watch);
-
-	return watch_id;
+	return 0;
 }

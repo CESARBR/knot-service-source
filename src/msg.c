@@ -45,7 +45,6 @@
 
 #include "settings.h"
 #include "node.h"
-#include "proxy.h"
 #include "proto.h"
 #include "util.h"
 #include "msg.h"
@@ -1128,6 +1127,18 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
+static void proxy_added(struct proto_proxy *proxy, void *user_data)
+{
+	/* Belongs to booth: low level and cloud */
+	hal_log_info("KNoT proxy added");
+}
+
+static void proxy_removed(struct proto_proxy *proxy, void *user_data)
+{
+	/* Removed from cloud */
+	hal_log_info("KNoT proxy removed");
+}
+
 int msg_start(struct settings *settings)
 {
 	int err;
@@ -1146,11 +1157,11 @@ int msg_start(struct settings *settings)
 		goto fail;
 	}
 
-
-	/* TODO: Add 'added', 'removed' callbacks */
-	proto_set_proxy_handlers();
-
-	return proxy_start();
+	return proto_set_proxy_handlers(settings->uuid,
+					settings->token,
+					proxy_added,
+					proxy_removed,
+					NULL);
 
 fail:
 	proto_stop();
@@ -1160,7 +1171,6 @@ fail:
 
 void msg_stop(void)
 {
-	proxy_stop();
 	node_stop();
 	proto_stop();
 
