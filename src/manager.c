@@ -73,6 +73,11 @@ static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
 
 	storage_write_key_int(settings->config_path, "Cloud", "Port", port);
 
+	l_dbus_property_changed(dbus,
+				l_dbus_message_get_path(msg),
+				SETTINGS_INTERFACE,
+				"Port");
+
 	return l_dbus_message_new_method_return(msg);
 }
 
@@ -106,6 +111,10 @@ static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
 	hal_log_info("Set('Host' = %s)", settings->host);
 
 	storage_write_key_string(settings->config_path, "Cloud", "Host", host);
+	l_dbus_property_changed(dbus,
+				l_dbus_message_get_path(msg),
+				SETTINGS_INTERFACE,
+				"Host");
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -141,6 +150,11 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 
 	storage_write_key_string(settings->config_path, "Cloud", "Uuid", uuid);
 
+	l_dbus_property_changed(dbus,
+				l_dbus_message_get_path(msg),
+				SETTINGS_INTERFACE,
+				"Uuid");
+
 	return l_dbus_message_new_method_return(msg);
 }
 
@@ -175,6 +189,11 @@ static struct l_dbus_message *property_set_token(struct l_dbus *dbus,
 
 	storage_write_key_string(settings->config_path,
 				 "Cloud", "Token", token);
+
+	l_dbus_property_changed(dbus,
+				l_dbus_message_get_path(msg),
+				SETTINGS_INTERFACE,
+				"Token");
 
 	return l_dbus_message_new_method_return(msg);
 }
