@@ -43,42 +43,6 @@
 #include "storage.h"
 #include "manager.h"
 
-static void emit_signal_string(const char *path,
-			       const char *prop, const char *newval)
-{
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
-
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   path,
-					   SETTINGS_INTERFACE,
-					   prop);
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 's', newval);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	l_dbus_send(dbus_get_bus(), signal);
-}
-
-static void emit_signal_uint16(const char *path,
-			       const char *prop, uint16_t newval)
-{
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
-
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   path,
-					   SETTINGS_INTERFACE,
-					   prop);
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'q', &newval);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	l_dbus_send(dbus_get_bus(), signal);
-}
-
 static bool property_get_port(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
@@ -108,7 +72,6 @@ static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
 	hal_log_info("Set('Port' = %" PRIu16")", port);
 
 	storage_write_key_int(settings->config_path, "Cloud", "Port", port);
-	emit_signal_uint16(l_dbus_message_get_path(msg), "Port", port);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -143,7 +106,6 @@ static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
 	hal_log_info("Set('Host' = %s)", settings->host);
 
 	storage_write_key_string(settings->config_path, "Cloud", "Host", host);
-	emit_signal_string(l_dbus_message_get_path(msg), "Host", host);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -178,7 +140,6 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 	hal_log_info("Set('Uuid' = %s)", settings->uuid);
 
 	storage_write_key_string(settings->config_path, "Cloud", "Uuid", uuid);
-	emit_signal_string(l_dbus_message_get_path(msg), "Uuid", uuid);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -214,7 +175,6 @@ static struct l_dbus_message *property_set_token(struct l_dbus *dbus,
 
 	storage_write_key_string(settings->config_path,
 				 "Cloud", "Token", token);
-	emit_signal_string(l_dbus_message_get_path(msg), "Token", token);
 
 	return l_dbus_message_new_method_return(msg);
 }
