@@ -1130,13 +1130,24 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 static void proxy_added(uint64_t device_id, void *user_data)
 {
 	/* Belongs to booth: low level and cloud */
-	hal_log_info("KNoT proxy added");
+	hal_log_info("Device added: %" PRIx64, device_id);
 }
 
 static void proxy_removed(uint64_t device_id, void *user_data)
 {
+	struct knot_device *device = device_get(device_id);
+
 	/* Removed from cloud */
-	hal_log_info("KNoT proxy removed");
+	if (device == NULL) {
+		/* Other service or created by external apps(eg: ktool) */
+		hal_log_error("Device %" PRIx64 " not found!", device_id);
+		return;
+	}
+
+	if (device_forget(device))
+		hal_log_info("Proxy for %" PRIx64 " removed", device_id);
+	else
+		hal_log_info("Can't remove proxy for %" PRIx64 , device_id);
 }
 
 int msg_start(struct settings *settings)

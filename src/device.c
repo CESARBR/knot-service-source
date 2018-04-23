@@ -90,6 +90,9 @@ static void method_reply(struct l_dbus_proxy *proxy,
 		return;
 	}
 
+	if (device->msg == NULL)
+		return;
+
 	reply = l_dbus_message_new_method_return(device->msg);
 	l_dbus_send(dbus_get_bus(), reply);
 	l_dbus_message_unref(device->msg);
@@ -314,10 +317,13 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 			       L_DBUS_INTERFACE_PROPERTIES, device,
 			       NULL)) {
 		device_free(device);
-		return 0;
+		return NULL;
 	}
 	device = device_ref(device);
 	l_hashmap_insert(device_list, L_INT_TO_PTR(id), device);
+
+	hal_log_info("device_create(): %" PRIx64 " created", id);
+
 	return device;
 }
 
@@ -465,4 +471,21 @@ struct knot_device *device_get(uint64_t id)
 		return NULL;
 	else
 		return device;
+}
+
+bool device_forget(struct knot_device *device)
+{
+	if (!device->paired)
+		return false;
+
+	if (device->msg) {
+		hal_log_error("error: Pair/Forget in progress!");
+		return false;
+	}
+
+	/* TODO: Fix potential race condition with D-Bus method call */
+	l_dbus_proxy_method_call(device->proxy, "Forget",
+				 NULL, method_reply, device, NULL);
+
+	return true;
 }

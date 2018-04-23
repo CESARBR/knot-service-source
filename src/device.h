@@ -28,10 +28,12 @@ void device_stop(void);
 struct knot_device *device_create(struct l_dbus_proxy *proxy,
 				  uint64_t id, const char *name, bool paired);
 void device_destroy(struct knot_device *device);
-struct knot_device* device_get(uint64_t id);
+struct knot_device *device_get(uint64_t id);
 
 bool device_set_name(struct knot_device *device, const char *name);
 bool device_set_uuid(struct knot_device *device, const char *uuid);
 bool device_set_paired(struct knot_device *device, bool paired);
 bool device_set_registered(struct knot_device *device, bool registered);
 bool device_set_connected(struct knot_device *device, bool connected);
+
+bool device_forget(struct knot_device *device);
