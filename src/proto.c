@@ -151,7 +151,6 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	uint64_t *valx;
 	uint64_t *valy;
 	int err;
-	bool ret;
 
 	/* Fetch all devices from cloud */
 	memset(&json, 0, sizeof(json));
