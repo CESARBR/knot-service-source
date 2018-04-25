@@ -519,7 +519,7 @@ static int8_t msg_register(struct session *session,
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%" PRIx64 ")", kreq->id);
+	hal_log_info("Registering (id 0x%" PRIu64 ")", kreq->id);
 
 	if (session->trusted && kreq->id == session->id) {
 		hal_log_info("Register: trusted device");
@@ -1146,18 +1146,18 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 	if (l_queue_find(device_id_list, device_id_cmp, &id))
 		return; /* match: belongs to service & cloud */
 
-	hal_log_info("Device %" PRIx64 " not found at Cloud", id);
+	hal_log_info("Device %" PRIu64 " not found at Cloud", id);
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %" PRIx64 " removed", id);
+		hal_log_info("Proxy for %" PRIu64 " removed", id);
 	else
-		hal_log_info("Can't remove proxy for %" PRIx64 , id);
+		hal_log_info("Can't remove proxy for %" PRIu64 , id);
 }
 
 static void proxy_added(uint64_t device_id, void *user_data)
 {
 	/* Tracks 'proxy' devices that belongs to Cloud. */
-	hal_log_info("Device added: %" PRIx64, device_id);
+	hal_log_info("Device added: %" PRIu64, device_id);
 
 	l_queue_push_head(device_id_list,
 			  l_memdup(&device_id, sizeof(device_id)));
@@ -1170,14 +1170,14 @@ static void proxy_removed(uint64_t device_id, void *user_data)
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
 		/* Other service or created by external apps(eg: ktool) */
-		hal_log_error("Device %" PRIx64 " not found!", device_id);
+		hal_log_error("Device %" PRIu64 " not found!", device_id);
 		return;
 	}
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %" PRIx64 " removed", device_id);
+		hal_log_info("Proxy for %" PRIu64 " removed", device_id);
 	else
-		hal_log_info("Can't remove proxy for %" PRIx64 , device_id);
+		hal_log_info("Can't remove proxy for %" PRIu64 , device_id);
 
 	l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
 }

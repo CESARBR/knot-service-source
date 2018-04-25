@@ -322,8 +322,6 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 	device = device_ref(device);
 	l_hashmap_insert(device_list, L_INT_TO_PTR(id), device);
 
-	hal_log_info("device_create(): %" PRIx64 " created", id);
-
 	return device;
 }
 

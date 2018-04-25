@@ -101,9 +101,6 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
 
-	/* Debug purpose only */
-	hal_log_info("proxy added: %s %s", path, interface);
-
 	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
 		return;
 
@@ -115,6 +112,8 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 
 	device = device_create(ellproxy, id, name, paired);
 	if (device) {
+		hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
+			     id, path, interface);
 		l_hashmap_insert(proxy->device_list, ellproxy, device);
 		return;
 	}
