@@ -473,6 +473,14 @@ struct knot_device *device_get(uint64_t id)
 		return device;
 }
 
+uint64_t device_get_id(struct knot_device *device)
+{
+	if (unlikely(!device))
+		return 0;
+
+	return device->id;
+}
+
 bool device_forget(struct knot_device *device)
 {
 	if (!device->paired)

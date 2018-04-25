@@ -45,10 +45,11 @@
 
 #include "settings.h"
 #include "node.h"
+#include "device.h"
+#include "proxy.h"
 #include "proto.h"
 #include "util.h"
 #include "msg.h"
-#include "device.h"
 #include "dbus.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -71,6 +72,7 @@ struct session {
 
 /* Maps sockets to sessions: online devices only.  */
 static struct l_hashmap *session_map;
+static struct l_queue *device_id_list;
 
 static struct session *session_ref(struct session *session)
 {
@@ -1127,17 +1129,45 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
+static bool device_id_cmp(const void *a, const void *b)
+{
+	const uint64_t *val1 = a;
+	const uint64_t *val2 = b;
+
+	return (*val1 == *val2 ? true : false);
+}
+
+static void forget_if_unknown(struct knot_device *device, void *user_data)
+{
+	uint64_t id = device_get_id(device);
+
+	/* device_id_list contains cloud devices */
+
+	if (l_queue_find(device_id_list, device_id_cmp, &id))
+		return; /* match: belongs to service & cloud */
+
+	hal_log_info("Device %" PRIx64 " not found at Cloud", id);
+
+	if (device_forget(device))
+		hal_log_info("Proxy for %" PRIx64 " removed", id);
+	else
+		hal_log_info("Can't remove proxy for %" PRIx64 , id);
+}
+
 static void proxy_added(uint64_t device_id, void *user_data)
 {
-	/* Belongs to booth: low level and cloud */
+	/* Tracks 'proxy' devices that belongs to Cloud. */
 	hal_log_info("Device added: %" PRIx64, device_id);
+
+	l_queue_push_head(device_id_list,
+			  l_memdup(&device_id, sizeof(device_id)));
 }
 
 static void proxy_removed(uint64_t device_id, void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
 
-	/* Removed from cloud */
+	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
 		/* Other service or created by external apps(eg: ktool) */
 		hal_log_error("Device %" PRIx64 " not found!", device_id);
@@ -1148,6 +1178,35 @@ static void proxy_removed(uint64_t device_id, void *user_data)
 		hal_log_info("Proxy for %" PRIx64 " removed", device_id);
 	else
 		hal_log_info("Can't remove proxy for %" PRIx64 , device_id);
+
+	l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
+}
+
+static void service_ready(const char *service, void *user_data)
+{
+	/*
+	 * Service proxy objects retrieved from low level service.
+	 * Gets called after notifying all ELL client proxies.
+	 */
+	hal_log_info("Service proxy %s is ready", service);
+
+	/* Step3: Remove if needed. For each service proxy: find at cloud? */
+	proxy_foreach(service, forget_if_unknown, NULL);
+}
+
+static void proxy_ready(void *user_data)
+{
+	/*
+	 * Sequential: protocol proxy registered, now register service
+	 * proxy. At this point, cloud device list is properly retrieved.
+	 */
+
+	hal_log_info("Protocol proxy is ready");
+
+	/* Step2: Getting service (device) proxies. eg: nrfd objects  */
+	proxy_start("br.org.cesar.knot.nrf", NULL,
+		    "br.org.cesar.knot.nrf.Device1",
+		    service_ready, user_data);
 }
 
 int msg_start(struct settings *settings)
@@ -1164,17 +1223,22 @@ int msg_start(struct settings *settings)
 
 	err = node_start(session_accept_cb);
 	if (err < 0) {
-		hal_log_error("node_start(): %s", strerror(-err));
-		goto fail;
+		hal_log_error("node_start(): %s(%d)", strerror(-err), -err);
+		goto node_fail;
 	}
 
+	device_id_list = l_queue_new();
+
+	/* FIXME: how to manage disconnection from cloud? */
+
+	/* Step1: Getting Cloud (device) proxies */
 	return proto_set_proxy_handlers(settings->uuid,
 					settings->token,
 					proxy_added,
 					proxy_removed,
-					NULL);
-
-fail:
+					proxy_ready,
+					settings);
+node_fail:
 	proto_stop();
 
 	return err;
@@ -1183,7 +1247,10 @@ fail:
 void msg_stop(void)
 {
 	node_stop();
+	proxy_stop();
 	proto_stop();
+
+	l_queue_destroy(device_id_list, l_free);
 
 	l_hashmap_destroy(session_map,
 			  (l_hashmap_destroy_func_t) session_unref);

@@ -40,7 +40,6 @@
 #include <hal/linux_log.h>
 
 #include "settings.h"
-#include "proxy.h"
 #include "proto.h"
 
 extern struct proto_ops proto_http;
@@ -62,6 +61,8 @@ struct proto_proxy {
 	int sock;			/* Cloud connection */
 	proto_proxy_func_t added_cb;
 	proto_proxy_func_t removed_cb;
+	proto_proxy_ready_func_t ready_cb; /* Call only once */
+	bool ready_once;
 	void *user_data;
 	struct l_queue *device_list;
 };
@@ -207,6 +208,11 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 		l_free(valx);
 	}
 	l_queue_destroy(removed_list, l_free);
+
+	if (proxy->ready_cb && !proxy->ready_once) {
+		proxy->ready_cb(proxy->user_data);
+		proxy->ready_once = true;
+	}
 
 done:
 	l_timeout_modify(timeout, 5);
@@ -843,15 +849,12 @@ int proto_start(const struct settings *settings)
 	if (proto == NULL)
 		return -EINVAL;
 
-	if (proto->probe(settings->host, settings->port) < 0)
-		return -EIO;
-
 	hal_log_info("proto_ops: %s", proto->name);
 
 	memset(owner_uuid, 0, sizeof(owner_uuid));
 	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
-	return proxy_start();
+	return proto->probe(settings->host, settings->port);
 }
 
 void proto_stop()
@@ -862,7 +865,6 @@ void proto_stop()
 	}
 
 	l_timeout_remove(timeout);
-	proxy_stop();
 }
 
 struct proto_ops *proto_get_default(void)
@@ -1036,6 +1038,7 @@ done:
 int proto_set_proxy_handlers(const char *uuid, const char *token,
 			     proto_proxy_func_t added,
 			     proto_proxy_func_t removed,
+			     proto_proxy_ready_func_t ready,
 			     void *user_data)
 {
 	struct proto_proxy *proxy;
@@ -1058,15 +1061,20 @@ int proto_set_proxy_handlers(const char *uuid, const char *token,
 		return err;
 	}
 
+	l_free(response.data);
+
 	proxy = l_new(struct proto_proxy, 1);
 	proxy->sock = sock;
 	proxy->added_cb = added;
 	proxy->removed_cb = removed;
+	proxy->ready_cb = ready;
+	proxy->ready_once = false;
 	proxy->user_data = user_data;
 	proxy->device_list = l_queue_new();
 
 	/* TODO: Currently restricted to one 'watcher' */
-	timeout = l_timeout_create(5, timeout_callback, proxy, proxy_destroy);
+	timeout = l_timeout_create_ms(1, timeout_callback,
+				      proxy, proxy_destroy);
 
 	return 0;
 }

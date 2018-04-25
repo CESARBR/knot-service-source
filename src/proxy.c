@@ -42,6 +42,13 @@ struct service_proxy {
 	unsigned int watch_id;
 	struct l_dbus_client *client;
 	struct l_hashmap *device_list;
+	proxy_ready_func_t ready_cb;
+	void *user_data;
+};
+
+struct foreach {
+	proxy_foreach_func_t func;
+	void *user_data;
 };
 
 static struct service_proxy *proxy;
@@ -54,6 +61,13 @@ static void proxy_free(struct service_proxy *proxy)
 	l_free(proxy->path);
 	l_free(proxy->interface);
 	l_free(proxy);
+}
+
+static void foreach_device(const void *key, void *value, void *user_data)
+{
+	struct foreach *foreach = user_data;
+
+	foreach->func(value, foreach->user_data);
 }
 
 static void service_appeared(struct l_dbus *dbus, void *user_data)
@@ -204,7 +218,16 @@ static void watch_remove(struct service_proxy *proxy)
 	proxy_free(proxy);
 }
 
-int proxy_start(void)
+static void ready_callback(struct l_dbus_client *client, void *user_data)
+{
+	struct service_proxy *proxy = user_data;
+
+	if (proxy->ready_cb)
+		proxy->ready_cb(proxy->name, proxy->user_data);
+}
+
+int proxy_start(const char *service, const char *path, const char *interface,
+		proxy_ready_func_t ready_cb, void *user_data)
 {
 
 	hal_log_info("D-Bus Proxy");
@@ -214,9 +237,14 @@ int proxy_start(void)
 	 * nrfd, iwpand or any other radio should implement a well
 	 * defined interface to report new devices found or created.
 	 */
-	proxy = watch_create("br.org.cesar.knot.nrf", NULL,
-			     "br.org.cesar.knot.nrf.Device1");
+	proxy = watch_create(service, path, interface);
+	proxy->ready_cb = ready_cb;
+	proxy->user_data = user_data;
 
+	/* Ready gets called after notifying all proxies */
+	l_dbus_client_set_ready_handler(proxy->client,
+					ready_callback,
+					proxy, NULL);
 	return device_start();
 }
 
@@ -225,4 +253,13 @@ void proxy_stop(void)
 	watch_remove(proxy);
 
 	device_stop();
+}
+
+void proxy_foreach(const char *service,
+		   proxy_foreach_func_t foreach_cb, void *user_data)
+{
+	struct foreach foreach = { .func = foreach_cb, .user_data = user_data };
+	/* TODO: Create a list of service */
+
+	l_hashmap_foreach(proxy->device_list, foreach_device, &foreach);
 }

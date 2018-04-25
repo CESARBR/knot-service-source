@@ -19,5 +19,14 @@
  *
  */
 
-int proxy_start(void);
+typedef void (*proxy_ready_func_t)(const char *service, void *user_data);
+typedef void (*proxy_foreach_func_t) (struct knot_device *device,
+				      void *user_data);
+
+int proxy_start(const char *service, const char *path, const char *interface,
+		proxy_ready_func_t ready_cb, void *user_data);
+
 void proxy_stop();
+
+void proxy_foreach(const char *service,
+		   proxy_foreach_func_t foreach_cb, void *user_data);

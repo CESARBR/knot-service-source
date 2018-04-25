@@ -29,6 +29,7 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 				  uint64_t id, const char *name, bool paired);
 void device_destroy(struct knot_device *device);
 struct knot_device *device_get(uint64_t id);
+uint64_t device_get_id(struct knot_device *device);
 
 bool device_set_name(struct knot_device *device, const char *name);
 bool device_set_uuid(struct knot_device *device, const char *uuid);

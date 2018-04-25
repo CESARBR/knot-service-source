@@ -20,6 +20,7 @@
  */
 
 typedef void (*proto_proxy_func_t) (uint64_t device_id, void *user_data);
+typedef void (*proto_proxy_ready_func_t) (void *user_data);
 
 typedef struct {
 	char *data;
@@ -83,5 +84,5 @@ void proto_setdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
 int proto_set_proxy_handlers(const char *uuid, const char *token,
 			     proto_proxy_func_t added,
 			     proto_proxy_func_t removed,
+			     proto_proxy_ready_func_t ready,
 			     void *user_data);
-
