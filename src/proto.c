@@ -737,7 +737,7 @@ done:
 		json_object_put(setdatajobj);
 	if (ajobj)
 		json_object_put(ajobj);
-	free(json.data);
+	l_free(json.data);
 }
 
 /*
@@ -817,7 +817,7 @@ done:
 		json_object_put(setdatajobj);
 	if (ajobj)
 		json_object_put(ajobj);
-	free(json.data);
+	l_free(json.data);
 }
 
 static struct proto_ops *get_proto_ops(const char *protocol_name)
@@ -913,7 +913,7 @@ int proto_mknode(int proto_socket, const char *device_name,
 
 	result = KNOT_SUCCESS;
 fail:
-	free(response.data);
+	l_free(response.data);
 	return result;
 }
 
@@ -966,7 +966,7 @@ int proto_schema(int proto_socket, const char *uuid,
 			    jschema_list_as_string, &response);
 
 	if (response.data)
-		free(response.data);
+		l_free(response.data);
 
 	json_object_put(jschema_list);
 
@@ -1000,7 +1000,7 @@ int proto_data(int proto_socket, const char *uuid,
 	err = proto->data(proto_socket, uuid, token, data_as_string, &response);
 
 	if (response.data)
-		free(response.data);
+		l_free(response.data);
 
 	json_object_put(data);
 
@@ -1030,7 +1030,7 @@ int proto_rmnode(int proto_socket, const char *uuid, const char *token)
 
 done:
 	if (response.data)
-		free(response.data);
+		l_free(response.data);
 	return result;
 }
 
