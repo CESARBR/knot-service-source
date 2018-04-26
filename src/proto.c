@@ -70,6 +70,7 @@ struct proto_proxy {
 static struct proto_ops *proto = NULL; /* Selected protocol */
 static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 static struct l_timeout *timeout;
+static struct proto_proxy *proxy;
 
 static void proxy_destroy(void *user_data)
 {
@@ -1040,7 +1041,6 @@ int proto_set_proxy_handlers(const char *uuid, const char *token,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data)
 {
-	struct proto_proxy *proxy;
 	json_raw_t response;
 	int sock;
 	int err;
@@ -1076,4 +1076,9 @@ int proto_set_proxy_handlers(const char *uuid, const char *token,
 				      proxy, proxy_destroy);
 
 	return 0;
+}
+
+int proto_rmnode_by_uuid(const char *uuid)
+{
+	return proto_rmnode(proxy->sock, uuid, NULL);
 }

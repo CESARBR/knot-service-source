@@ -299,7 +299,6 @@ static int ws_rmnode(int sock, const char *uuid,
 	}
 
 	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
-	json_object_object_add(jobj, "token", json_object_new_string(token));
 	json_object_array_add(jarray, json_object_new_string("unregister"));
 	json_object_array_add(jarray, jobj);
 

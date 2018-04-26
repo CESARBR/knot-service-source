@@ -1231,7 +1231,7 @@ int msg_start(struct settings *settings)
 
 	/* FIXME: how to manage disconnection from cloud? */
 
-	/* Step1: Getting Cloud (device) proxies */
+	/* Step1: Getting Cloud (device) proxies using owner credential */
 	return proto_set_proxy_handlers(settings->uuid,
 					settings->token,
 					proxy_added,

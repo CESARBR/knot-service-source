@@ -23,8 +23,12 @@
 #include <ell/ell.h>
 
 #include "hal/linux_log.h"
+#include <knot_types.h>
+#include <knot_protocol.h>
 
 #include "dbus.h"
+#include "settings.h"
+#include "proto.h"
 #include "device.h"
 
 struct knot_device {
@@ -130,6 +134,9 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 
 	if (device->msg)
 		return dbus_error_busy(msg);
+
+	/* Removing device from cloud */
+	proto_rmnode_by_uuid(device->uuid);
 
 	device->msg = l_dbus_message_ref(msg);
 

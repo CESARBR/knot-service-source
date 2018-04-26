@@ -71,6 +71,7 @@ struct proto_ops *proto_get_default(void);
 int proto_mknode(int proto_socket, const char *device_name,
 			uint64_t device_id, char *uuid, char *token);
 int proto_rmnode(int proto_socket, const char *uuid, const char *token);
+int proto_rmnode_by_uuid(const char *uuid);
 int proto_signin(int proto_socket, const char *uuid, const char *token,
 			struct l_queue **schema, struct l_queue **config);
 int proto_schema(int proto_socket, const char *uuid,
