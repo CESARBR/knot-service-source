@@ -83,7 +83,7 @@ int proto_data(int proto_socket, const char *uuid,
 void proto_getdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
 void proto_setdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
 
-int proto_set_proxy_handlers(const char *uuid, const char *token,
+int proto_set_proxy_handlers(int sock,
 			     proto_proxy_func_t added,
 			     proto_proxy_func_t removed,
 			     proto_proxy_ready_func_t ready,

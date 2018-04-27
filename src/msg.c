@@ -1206,6 +1206,7 @@ static void proxy_ready(void *user_data)
 
 int msg_start(struct settings *settings)
 {
+	int sock;
 	int err;
 
 	session_map = l_hashmap_new();
@@ -1222,17 +1223,27 @@ int msg_start(struct settings *settings)
 		goto node_fail;
 	}
 
+	/* FIXME: how to manage disconnection from cloud? */
+	sock = proto_connect();
+	if (sock < 0)
+		goto proto_fail;
+
+	if (proto_signin(sock, settings->uuid, settings->token, NULL, NULL) < 0)
+		goto signin_fail;
+
 	device_id_list = l_queue_new();
 
-	/* FIXME: how to manage disconnection from cloud? */
-
 	/* Step1: Getting Cloud (device) proxies using owner credential */
-	return proto_set_proxy_handlers(settings->uuid,
-					settings->token,
+	return proto_set_proxy_handlers(sock,
 					proxy_added,
 					proxy_removed,
 					proxy_ready,
 					settings);
+signin_fail:
+	proto_close(sock);
+proto_fail:
+	node_stop();
+
 node_fail:
 	proto_stop();
 

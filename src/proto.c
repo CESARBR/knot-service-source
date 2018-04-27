@@ -1046,33 +1046,12 @@ done:
 	return result;
 }
 
-int proto_set_proxy_handlers(const char *uuid, const char *token,
+int proto_set_proxy_handlers(int sock,
 			     proto_proxy_func_t added,
 			     proto_proxy_func_t removed,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data)
 {
-	json_raw_t response;
-	int sock;
-	int err;
-
-	/* Polling changed at cloud: devices removed */
-	sock = proto->connect();
-	if (sock < 0) {
-		hal_log_error("proto connect(): %s(%d)",
-			      strerror(-sock), -sock);
-		return sock;
-	}
-
-	err = proto->signin(sock, uuid, token, &response);
-	if (err < 0) {
-		hal_log_error("signin(): %s(%d)", strerror(-err), -err);
-		close(sock);
-		return err;
-	}
-
-	l_free(response.data);
-
 	proxy = l_new(struct proto_proxy, 1);
 	proxy->sock = sock;
 	proxy->added_cb = added;
