@@ -341,109 +341,73 @@ void device_destroy(struct knot_device *device)
 
 bool device_set_name(struct knot_device *device, const char *name)
 {
-	struct l_dbus_message_builder *builder;
-	struct l_dbus_message *signal;
+	if (unlikely(!device))
+		return false;
 
 	if (!name)
 		return false;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
-					   DEVICE_INTERFACE,
-					   "Name");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 's', name);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	if (l_dbus_send(dbus_get_bus(), signal) == 0)
-		return false;
-
 	l_free(device->name);
 	device->name = l_strdup(name);
+
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Name");
+
 	return true;
 }
 
 bool device_set_uuid(struct knot_device *device, const char *uuid)
 {
-	struct l_dbus_message_builder *builder;
-	struct l_dbus_message *signal;
+	if (unlikely(!device))
+		return false;
 
 	if (!uuid)
 		return false;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
-					   DEVICE_INTERFACE,
-					   "Uuid");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 's', uuid);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	if (l_dbus_send(dbus_get_bus(), signal) == 0)
-		return false;
-
 	l_free(device->uuid);
 	device->uuid = l_strdup(uuid);
+
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Uuid");
 
 	return true;
 }
 
 bool device_set_registered(struct knot_device *device, bool registered)
 {
-	struct l_dbus_message_builder *builder;
-	struct l_dbus_message *signal;
+	if (unlikely(!device))
+		return false;
 
 	if (device->registered == registered)
 		return false;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
-					   DEVICE_INTERFACE,
-					   "Registered");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &registered);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	if (l_dbus_send(dbus_get_bus(), signal) == 0)
-		return false;
-
 	device->registered = registered;
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Registered");
 
 	return true;
 }
 
 bool device_set_paired(struct knot_device *device, bool paired)
 {
-	struct l_dbus_message_builder *builder;
-	struct l_dbus_message *signal;
+	if (unlikely(!device))
+		return false;
 
 	if (device->paired == paired)
 		return false;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
-					   DEVICE_INTERFACE,
-					   "Paired");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &paired);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	if (l_dbus_send(dbus_get_bus(), signal) == 0)
-		return false;
-
 	device->paired = paired;
+
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Paired");
 
 	return true;
 }
 
 bool device_set_connected(struct knot_device *device, bool connected)
 {
-	struct l_dbus_message_builder *builder;
-	struct l_dbus_message *signal;
+	if (unlikely(!device))
+		return false;
 
 	/* Defines if radio connection is estabished or not */
 
@@ -452,17 +416,8 @@ bool device_set_connected(struct knot_device *device, bool connected)
 
 	device->connected = connected;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
-					   DEVICE_INTERFACE,
-					   "Online");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &connected);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	if (l_dbus_send(dbus_get_bus(), signal) == 0)
-		return false;
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Paired");
 
 	return true;
 }
