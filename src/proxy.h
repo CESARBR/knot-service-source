@@ -20,6 +20,7 @@
  */
 
 typedef void (*proxy_ready_func_t)(const char *service, void *user_data);
+typedef void (*proxy_added_func_t)(const char *service, void *user_data);
 typedef void (*proxy_foreach_func_t) (struct knot_device *device,
 				      void *user_data);
 

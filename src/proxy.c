@@ -110,10 +110,14 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	if (!l_dbus_proxy_get_property(ellproxy, "Name", "s", &name))
 		return;
 
-	device = device_create(ellproxy, id, name, paired);
+	device = device_get(id);
+	if (!device)
+		device = device_create(ellproxy, id, name, paired);
+
 	if (device) {
 		hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
 			     id, path, interface);
+		device_set_name(device, name);
 		l_hashmap_insert(proxy->device_list, ellproxy, device);
 		return;
 	}
@@ -244,7 +248,7 @@ int proxy_start(const char *service, const char *path, const char *interface,
 	l_dbus_client_set_ready_handler(proxy->client,
 					ready_callback,
 					proxy, NULL);
-	return device_start();
+	return 0;
 }
 
 void proxy_stop(void)

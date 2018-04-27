@@ -1149,10 +1149,20 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 		hal_log_info("Can't remove proxy for %" PRIu64 , id);
 }
 
-static void proxy_added(uint64_t device_id, void *user_data)
+static void proxy_added(uint64_t device_id, const char *uuid, const char *name, void *user_data)
 {
+	struct knot_device *device = device_get(device_id);
+
 	/* Tracks 'proxy' devices that belongs to Cloud. */
 	hal_log_info("Device added: %" PRIu64, device_id);
+
+	if (!device) {
+		device = device_create(NULL, device_id, name, true); /* FIXME: remove NULL ellproxy */
+		if (!device)
+			return;
+	}
+
+	device_set_uuid(device, uuid);
 
 	l_queue_push_head(device_id_list,
 			  l_memdup(&device_id, sizeof(device_id)));
@@ -1211,10 +1221,16 @@ int msg_start(struct settings *settings)
 
 	session_map = l_hashmap_new();
 
+	err = device_start();
+	if (err < 0) {
+		hal_log_error("device_start(): %s", strerror(-err));
+		return err;
+	}
+
 	err = proto_start(settings);
 	if (err < 0) {
 		hal_log_error("proto_start(): %s", strerror(-err));
-		return err;
+		goto proto_fail;
 	}
 
 	err = node_start(session_accept_cb);
@@ -1226,7 +1242,7 @@ int msg_start(struct settings *settings)
 	/* FIXME: how to manage disconnection from cloud? */
 	sock = proto_connect();
 	if (sock < 0)
-		goto proto_fail;
+		goto connect_fail;
 
 	if (proto_signin(sock, settings->uuid, settings->token, NULL, NULL) < 0)
 		goto signin_fail;
@@ -1241,12 +1257,12 @@ int msg_start(struct settings *settings)
 					settings);
 signin_fail:
 	proto_close(sock);
-proto_fail:
+connect_fail:
 	node_stop();
-
 node_fail:
 	proto_stop();
-
+proto_fail:
+	device_stop();
 	return err;
 }
 
@@ -1255,6 +1271,7 @@ void msg_stop(void)
 	node_stop();
 	proxy_stop();
 	proto_stop();
+	device_stop();
 
 	l_queue_destroy(device_id_list, l_free);
 
