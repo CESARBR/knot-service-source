@@ -899,16 +899,14 @@ static ssize_t msg_process(struct session *session,
 
 static void session_proto_disconnect(struct session *session)
 {
-	struct proto_ops *proto_ops;
 	struct l_io *channel;
 	int proto_sock;
 
 	if (!session->proto_channel)
 		return;
 
-	proto_ops = proto_get_default();
 	proto_sock = l_io_get_fd(session->proto_channel);
-	proto_ops->close(proto_sock);
+	proto_close(proto_sock);
 
 	channel = session->proto_channel;
 	session->proto_channel = NULL;
@@ -961,12 +959,9 @@ static struct l_io *create_proto_channel(int proto_sock,
 
 static int session_proto_connect(struct session *session)
 {
-	struct proto_ops *proto_ops;
 	int proto_sock;
 
-	proto_ops = proto_get_default();
-
-	proto_sock = proto_ops->connect();
+	proto_sock = proto_connect();
 	if (proto_sock < 0) {
 		hal_log_info("Cloud connect(): %s(%d)",
 			     strerror(-proto_sock), -proto_sock);

@@ -867,9 +867,20 @@ void proto_stop()
 	l_timeout_remove(timeout);
 }
 
-struct proto_ops *proto_get_default(void)
+int proto_connect(void)
 {
-	return proto;
+	if (unlikely(!proto))
+		return -EIO;
+
+	return proto->connect();
+}
+
+void proto_close(int prot_sock)
+{
+	if (unlikely(!proto))
+		return;
+
+	proto->close(prot_sock);
 }
 
 int proto_mknode(int proto_socket, const char *device_name,

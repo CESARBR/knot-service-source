@@ -67,7 +67,8 @@ struct proto_ops {
 int proto_start(const struct settings *settings);
 void proto_stop(void);
 
-struct proto_ops *proto_get_default(void);
+int proto_connect(void);
+void proto_close(int proto_socket);
 int proto_mknode(int proto_socket, const char *device_name,
 			uint64_t device_id, char *uuid, char *token);
 int proto_rmnode(int proto_socket, const char *uuid, const char *token);
