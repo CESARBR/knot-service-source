@@ -1157,7 +1157,7 @@ static void proxy_added(uint64_t device_id, const char *uuid, const char *name, 
 	hal_log_info("Device added: %" PRIu64, device_id);
 
 	if (!device) {
-		device = device_create(NULL, device_id, name, true); /* FIXME: remove NULL ellproxy */
+		device = device_create(device_id, name, true);
 		if (!device)
 			return;
 	}

@@ -26,8 +26,8 @@ typedef void (*proxy_foreach_func_t) (struct knot_device *device,
 
 int proxy_start(const char *service, const char *path, const char *interface,
 		proxy_ready_func_t ready_cb, void *user_data);
-
 void proxy_stop();
 
+struct l_dbus_proxy *proxy_get(uint64_t id);
 void proxy_foreach(const char *service,
 		   proxy_foreach_func_t foreach_cb, void *user_data);

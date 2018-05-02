@@ -30,6 +30,7 @@
 #include "settings.h"
 #include "proto.h"
 #include "device.h"
+#include "proxy.h"
 
 struct knot_device {
 	int refs;
@@ -42,7 +43,6 @@ struct knot_device {
 	bool paired;			/* Low level pairing state */
 	bool registered;		/* Registered to cloud */
 	struct l_dbus_message *msg;	/* Pending operation */
-	struct l_dbus_proxy *proxy;
 };
 
 static struct l_hashmap *device_list;
@@ -84,13 +84,7 @@ static void method_reply(struct l_dbus_proxy *proxy,
 	struct l_dbus_message *reply;
 
 	if (l_dbus_message_is_error(result)) {
-		const char *name;
-
-		l_dbus_message_get_error(result, &name, NULL);
-
-		l_error("Failed to Pair device %s (%s)",
-					l_dbus_proxy_get_path(device->proxy),
-					name);
+		l_error("Failed to Pair/Forget device %" PRIx64, device->id);
 		return;
 	}
 
@@ -108,6 +102,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct knot_device *device = user_data;
+	struct l_dbus_proxy *ellproxy;
 
 	if (device->paired)
 		return dbus_error_already_exists(msg, "Already paired");
@@ -116,8 +111,11 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 		return dbus_error_busy(msg);
 
 	device->msg = l_dbus_message_ref(msg);
+	ellproxy = proxy_get(device->id);
+	if (!ellproxy)
+		return dbus_error_not_available(msg);
 
-	l_dbus_proxy_method_call(device->proxy, "Pair",
+	l_dbus_proxy_method_call(ellproxy, "Pair",
 				 NULL, method_reply, device, NULL);
 
 	return NULL;
@@ -128,6 +126,7 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct knot_device *device = user_data;
+	struct l_dbus_proxy *ellproxy;
 
 	if (!device->paired)
 		return dbus_error_not_available(msg);
@@ -140,7 +139,11 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 
 	device->msg = l_dbus_message_ref(msg);
 
-	l_dbus_proxy_method_call(device->proxy, "Forget",
+	ellproxy = proxy_get(device->id);
+	if (!ellproxy)
+		return dbus_error_not_available(msg);
+
+	l_dbus_proxy_method_call(ellproxy, "Forget",
 				 NULL, method_reply, device, NULL);
 
 	return NULL;
@@ -300,8 +303,7 @@ void device_stop(void)
 	l_hashmap_destroy(device_list, (l_hashmap_destroy_func_t) device_destroy);
 }
 
-struct knot_device *device_create(struct l_dbus_proxy *proxy,
-				  uint64_t id, const char *name, bool paired)
+struct knot_device *device_create(uint64_t id, const char *name, bool paired)
 {
 	struct knot_device *device;
 
@@ -312,7 +314,6 @@ struct knot_device *device_create(struct l_dbus_proxy *proxy,
 	device->paired = paired;
 	device->online = false;
 	device->registered = false;
-	device->proxy = proxy;
 
 	device->path = l_strdup_printf("/dev_%"PRIu64, id);
 
@@ -443,6 +444,8 @@ uint64_t device_get_id(struct knot_device *device)
 
 bool device_forget(struct knot_device *device)
 {
+	struct l_dbus_proxy *ellproxy;
+
 	if (!device->paired)
 		return false;
 
@@ -452,7 +455,12 @@ bool device_forget(struct knot_device *device)
 	}
 
 	/* TODO: Fix potential race condition with D-Bus method call */
-	l_dbus_proxy_method_call(device->proxy, "Forget",
+
+	ellproxy = proxy_get(device->id);
+	if (!ellproxy)
+		return false;
+
+	l_dbus_proxy_method_call(ellproxy, "Forget",
 				 NULL, method_reply, device, NULL);
 
 	return true;

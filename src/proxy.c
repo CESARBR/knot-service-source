@@ -41,7 +41,7 @@ struct service_proxy {
 	char *interface;
 	unsigned int watch_id;
 	struct l_dbus_client *client;
-	struct l_hashmap *device_list;
+	struct l_hashmap *ellproxy_list;
 	proxy_ready_func_t ready_cb;
 	void *user_data;
 };
@@ -55,8 +55,7 @@ static struct service_proxy *proxy;
 
 static void proxy_free(struct service_proxy *proxy)
 {
-	l_hashmap_destroy(proxy->device_list,
-			  (l_hashmap_destroy_func_t) device_destroy);
+	l_hashmap_destroy(proxy->ellproxy_list, NULL);
 	l_free(proxy->name);
 	l_free(proxy->path);
 	l_free(proxy->interface);
@@ -66,15 +65,24 @@ static void proxy_free(struct service_proxy *proxy)
 static void foreach_device(const void *key, void *value, void *user_data)
 {
 	struct foreach *foreach = user_data;
+	struct knot_device *device;
+	uint64_t id;
 
-	foreach->func(value, foreach->user_data);
+	if (!l_dbus_proxy_get_property(value, "Id", "t", &id))
+		return;
+
+	device = device_get(id);
+	if (!device)
+		return;
+
+	foreach->func(device, foreach->user_data);
 }
 
 static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
 	struct service_proxy *proxy = user_data;
 	hal_log_info("Service appeared: %s", proxy->name);
-	proxy->device_list = l_hashmap_new();
+	proxy->ellproxy_list = l_hashmap_new();
 }
 
 static void service_disappeared(struct l_dbus *dbus, void *user_data)
@@ -83,9 +91,8 @@ static void service_disappeared(struct l_dbus *dbus, void *user_data)
 	hal_log_info("Service disappeared: %s", proxy->name);
 
 	/* FIXME: Investigate if proxy should be released */
-	l_hashmap_destroy(proxy->device_list,
-			  (l_hashmap_destroy_func_t) device_destroy);
-	proxy->device_list = NULL;
+	l_hashmap_destroy(proxy->ellproxy_list, NULL);
+	proxy->ellproxy_list = NULL;
 }
 
 static void added(struct l_dbus_proxy *ellproxy, void *user_data)
@@ -112,13 +119,15 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 
 	device = device_get(id);
 	if (!device)
-		device = device_create(ellproxy, id, name, paired);
+		device = device_create(id, name, paired);
 
 	if (device) {
 		hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
 			     id, path, interface);
 		device_set_name(device, name);
-		l_hashmap_insert(proxy->device_list, ellproxy, device);
+
+		l_hashmap_insert(proxy->ellproxy_list,
+				 L_INT_TO_PTR(id), ellproxy);
 		return;
 	}
 
@@ -132,14 +141,19 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 	const char *path = l_dbus_proxy_get_path(ellproxy);
 	struct service_proxy *proxy = user_data;
 	struct knot_device *device;
+	uint64_t id;
 
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
 
 	/* Debug purpose only */
 	hal_log_info("proxy removed: %s %s", path, interface);
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+		return;
 
-	device = l_hashmap_remove(proxy->device_list, ellproxy);
+	l_hashmap_remove(proxy->ellproxy_list, L_INT_TO_PTR(id));
+
+	device = device_get(id);
 	if (!device)
 		return;
 
@@ -155,31 +169,27 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	struct knot_device *device;
 	const char *name;
+	uint64_t id;
 	bool bvalue;
 
 	if (strcmp(proxy->interface, interface) != 0)
 		return;
 
-	if (strcmp("Name", propname) == 0) {
-		device = l_hashmap_lookup(proxy->device_list, ellproxy);
-		if (!device)
-			return;
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+		return;
 
+	device = device_get(id);
+	if (!device)
+		return;
+
+	if (strcmp("Name", propname) == 0) {
 		if (l_dbus_message_get_arguments(msg, "s", &name))
 			device_set_name(device, name);
 
 	} else if (strcmp("Paired", propname) == 0) {
-		device = l_hashmap_lookup(proxy->device_list, ellproxy);
-		if (!device)
-			return;
-
 		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
 			device_set_paired(device, bvalue);
 	} else if (strcmp("Connected", propname) == 0) {
-		device = l_hashmap_lookup(proxy->device_list, ellproxy);
-		if (!device)
-			return;
-
 		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
 			device_set_connected(device, bvalue);
 	} else {
@@ -199,7 +209,7 @@ static struct service_proxy *watch_create(const char *service,
 	proxy->name = l_strdup(service);
 	proxy->path = l_strdup(path);
 	proxy->interface = l_strdup(interface);
-	proxy->device_list = NULL;
+	proxy->ellproxy_list = NULL;
 	proxy->watch_id = l_dbus_add_service_watch(dbus_get_bus(), service,
 						   service_appeared,
 						   service_disappeared,
@@ -264,5 +274,10 @@ void proxy_foreach(const char *service,
 	struct foreach foreach = { .func = foreach_cb, .user_data = user_data };
 	/* TODO: Create a list of service */
 
-	l_hashmap_foreach(proxy->device_list, foreach_device, &foreach);
+	l_hashmap_foreach(proxy->ellproxy_list, foreach_device, &foreach);
+}
+
+struct l_dbus_proxy *proxy_get(uint64_t id)
+{
+	return l_hashmap_lookup(proxy->ellproxy_list, L_INT_TO_PTR(id));
 }
