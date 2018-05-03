@@ -247,7 +247,8 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	     props1; props1 = l_queue_pop_head(removed_list)) {
 		proxy->removed_cb(props1->id, proxy->user_data);
 	}
-	l_queue_destroy(removed_list, device_props_free);
+	l_queue_destroy(removed_list,
+					(l_queue_destroy_func_t) device_props_free);
 
 	if (proxy->ready_cb && !proxy->ready_once) {
 		proxy->ready_cb(proxy->user_data);
