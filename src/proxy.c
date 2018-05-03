@@ -118,21 +118,19 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 		return;
 
 	device = device_get(id);
-	if (!device)
+	if (!device) {
+		/* Ownership belongs to device.c */
 		device = device_create(id, name, paired);
-
-	if (device) {
-		hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
-			     id, path, interface);
-		device_set_name(device, name);
-
-		l_hashmap_insert(proxy->ellproxy_list,
-				 L_INT_TO_PTR(id), ellproxy);
-		return;
+		if (!device) {
+			hal_log_error("Can't create device: %"PRIu64, id);
+			return;
+		}
 	}
 
-	/* Critical error: probably D-Bus object is not registered properly */
-	hal_log_error("Can't create device: %"PRIu64, id);
+	hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
+			     id, path, interface);
+	device_set_name(device, name);
+	l_hashmap_insert(proxy->ellproxy_list, L_INT_TO_PTR(id), ellproxy);
 }
 
 static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
@@ -140,7 +138,6 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	const char *path = l_dbus_proxy_get_path(ellproxy);
 	struct service_proxy *proxy = user_data;
-	struct knot_device *device;
 	uint64_t id;
 
 	if (strcmp(interface, proxy->interface) != 0)
@@ -152,12 +149,6 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 		return;
 
 	l_hashmap_remove(proxy->ellproxy_list, L_INT_TO_PTR(id));
-
-	device = device_get(id);
-	if (!device)
-		return;
-
-	device_destroy(device);
 }
 
 static void property_changed(struct l_dbus_proxy *ellproxy,
@@ -264,8 +255,6 @@ int proxy_start(const char *service, const char *path, const char *interface,
 void proxy_stop(void)
 {
 	watch_remove(proxy);
-
-	device_stop();
 }
 
 void proxy_foreach(const char *service,
