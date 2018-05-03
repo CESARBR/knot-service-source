@@ -1188,6 +1188,7 @@ static void proxy_removed(uint64_t device_id, void *user_data)
 
 	id = l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
 	l_free(id);
+	device_destroy(device_id);
 }
 
 static void service_ready(const char *service, void *user_data)
