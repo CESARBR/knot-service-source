@@ -49,6 +49,9 @@ static struct l_hashmap *device_list;
 
 static void device_free(struct knot_device *device)
 {
+	if (unlikely(!device))
+		return;
+
 	l_free(device->name);
 	l_free(device->path);
 	l_free(device->uuid);
@@ -70,10 +73,18 @@ static void device_unref(struct knot_device *device)
 	if (unlikely(!device))
 		return;
 
-	if (!__sync_sub_and_fetch(&device->refs, 1))
+	if (__sync_sub_and_fetch(&device->refs, 1))
 		return;
 
 	device_free(device);
+}
+
+static void unregister_object(const void *key, void *value, void *user_data)
+{
+	struct knot_device *device = value;
+
+	/* Automatically calls device_unref() */
+	l_dbus_unregister_object(dbus_get_bus(), device->path);
 }
 
 static void method_reply(struct l_dbus_proxy *proxy,
@@ -298,9 +309,9 @@ int device_start(void)
 
 void device_stop(void)
 {
-	l_dbus_unregister_interface(dbus_get_bus(),
-				    DEVICE_INTERFACE);
-	l_hashmap_destroy(device_list, (l_hashmap_destroy_func_t) device_destroy);
+	l_hashmap_foreach(device_list, unregister_object, NULL);
+	l_hashmap_destroy(device_list, (l_hashmap_destroy_func_t) device_unref);
+	l_dbus_unregister_interface(dbus_get_bus(), DEVICE_INTERFACE);
 }
 
 struct knot_device *device_create(uint64_t id, const char *name, bool paired)
@@ -333,11 +344,19 @@ struct knot_device *device_create(uint64_t id, const char *name, bool paired)
 	return device;
 }
 
-void device_destroy(struct knot_device *device)
+void device_destroy(uint64_t id)
 {
-	if(!l_hashmap_remove(device_list, L_INT_TO_PTR(device->id)))
+	struct knot_device *device;
+
+	device = l_hashmap_remove(device_list, L_INT_TO_PTR(id));
+	if (!device)
 		return;
+
+	/* Automatically calls device_unref() */
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
+
+	/* Release last reference */
+	device_unref(device);
 }
 
 bool device_set_name(struct knot_device *device, const char *name)

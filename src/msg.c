@@ -106,7 +106,7 @@ static void session_unref(struct session *session)
 	if (unlikely(!session))
                 return;
 
-        if (!__sync_sub_and_fetch(&session->refs, 1))
+        if (__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
 	l_io_destroy(session->node_channel);
@@ -1157,6 +1157,7 @@ static void proxy_added(uint64_t device_id, const char *uuid, const char *name, 
 	hal_log_info("Device added: %" PRIu64, device_id);
 
 	if (!device) {
+		/* Ownership belongs to device.c */
 		device = device_create(device_id, name, true);
 		if (!device)
 			return;
