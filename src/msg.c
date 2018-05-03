@@ -1171,6 +1171,7 @@ static void proxy_added(uint64_t device_id, const char *uuid, const char *name, 
 static void proxy_removed(uint64_t device_id, void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
+	uint64_t *id;
 
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
@@ -1184,7 +1185,8 @@ static void proxy_removed(uint64_t device_id, void *user_data)
 	else
 		hal_log_info("Can't remove proxy for %" PRIu64 , device_id);
 
-	l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
+	id = l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
+	l_free(id);
 }
 
 static void service_ready(const char *service, void *user_data)
