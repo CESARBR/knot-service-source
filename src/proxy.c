@@ -149,6 +149,7 @@ static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 		return;
 
 	l_hashmap_remove(proxy->ellproxy_list, L_INT_TO_PTR(id));
+	device_destroy(id);
 }
 
 static void property_changed(struct l_dbus_proxy *ellproxy,
