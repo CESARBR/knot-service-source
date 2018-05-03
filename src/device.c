@@ -145,8 +145,11 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	if (device->msg)
 		return dbus_error_busy(msg);
 
-	/* Removing device from cloud */
-	proto_rmnode_by_uuid(device->uuid);
+	/* FIXME: potential race condition. Registration might be in progress */
+
+	/* Registered to cloud ? */
+	if (device->uuid)
+		proto_rmnode_by_uuid(device->uuid);
 
 	device->msg = l_dbus_message_ref(msg);
 
@@ -381,7 +384,7 @@ bool device_set_uuid(struct knot_device *device, const char *uuid)
 	if (unlikely(!device))
 		return false;
 
-	if (!uuid)
+	if (unlikely(!uuid))
 		return false;
 
 	l_free(device->uuid);
