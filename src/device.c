@@ -456,6 +456,23 @@ bool device_set_connected(struct knot_device *device, bool connected)
 	return true;
 }
 
+bool device_set_online(struct knot_device *device, bool online)
+{
+	if (unlikely(!device))
+		return false;
+
+	/* Defines if cloud connection is estabished or not */
+	if (device->online == online)
+		return false;
+
+	device->online = online;
+
+	l_dbus_property_changed(dbus_get_bus(), device->path,
+				DEVICE_INTERFACE, "Online");
+
+	return true;
+}
+
 struct knot_device *device_get(uint64_t id)
 {
 	struct knot_device *device;

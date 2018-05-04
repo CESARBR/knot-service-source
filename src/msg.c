@@ -924,6 +924,11 @@ static void session_proto_disconnected_cb(struct l_io *channel,
 					  void *user_data)
 {
 	struct session *session = user_data;
+	struct knot_device *device = device_get(session->id);
+
+	/* Connection to cloud broken */
+	if (device)
+		device_set_online(device, false);
 
 	/*
 	 * This callback gets called when the REMOTE initiates a
@@ -948,12 +953,17 @@ static struct l_io *create_proto_channel(int proto_sock,
 					 struct session *session)
 {
 	struct l_io *channel;
+	struct knot_device *device = device_get(session->id);
 
 	channel = l_io_new(proto_sock);
 	if (channel == NULL) {
 		hal_log_error("Can't create proto channel");
 		return NULL;
 	}
+
+	/* Connection to cloud established */
+	if (device)
+		device_set_online(device, true);
 
 	l_io_set_disconnect_handler(channel,
 				    session_proto_disconnected_cb,

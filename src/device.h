@@ -35,5 +35,6 @@ bool device_set_uuid(struct knot_device *device, const char *uuid);
 bool device_set_paired(struct knot_device *device, bool paired);
 bool device_set_registered(struct knot_device *device, bool registered);
 bool device_set_connected(struct knot_device *device, bool connected);
+bool device_set_online(struct knot_device *device, bool online);
 
 bool device_forget(struct knot_device *device);
