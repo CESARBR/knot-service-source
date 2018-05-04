@@ -653,11 +653,17 @@ static int8_t msg_schema(struct session *session,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
+	if (session->schema_tmp == NULL)
+		session->schema_tmp = l_queue_new();
+
 	if (!schema_find(session->schema_tmp, schema->sensor_id))
 		l_queue_push_tail(session->schema_tmp,
 				  l_memdup(schema, sizeof(*schema)));
 
-	 /* TODO: missing timer to wait for end of schema transfer */
+	 /*
+	  * TODO: Missing timer to wait for end of schema
+	  * transfer & clear schema_tmp.
+	  */
 
 	if (!eof) {
 		result = KNOT_SUCCESS;
@@ -673,9 +679,8 @@ static int8_t msg_schema(struct session *session,
 		goto done;
 	}
 
-	/* If succeed: free old schema and use the new one */
+	/* If succeeded: free old schema and use the new one */
 	l_queue_destroy(session->schema, l_free);
-	session->schema = NULL;
 	session->schema = session->schema_tmp;
 	session->schema_tmp = NULL;
 done:
