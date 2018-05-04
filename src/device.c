@@ -43,6 +43,7 @@ struct knot_device {
 	bool paired;			/* Low level pairing state */
 	bool registered;		/* Registered to cloud */
 	struct l_dbus_message *msg;	/* Pending operation */
+	uint32_t msg_id;		/* Pending method reply */
 };
 
 static struct l_hashmap *device_list;
@@ -51,6 +52,12 @@ static void device_free(struct knot_device *device)
 {
 	if (unlikely(!device))
 		return;
+
+	if (device->msg)
+		l_dbus_message_unref(device->msg);
+
+	if (device->msg_id)
+		l_dbus_cancel(dbus_get_bus(), device->msg_id);
 
 	l_free(device->name);
 	l_free(device->path);
@@ -106,6 +113,8 @@ static void method_reply(struct l_dbus_proxy *proxy,
 	l_dbus_send(dbus_get_bus(), reply);
 	l_dbus_message_unref(device->msg);
 	device->msg = NULL;
+
+	device->msg_id = 0;
 }
 
 static struct l_dbus_message *method_pair(struct l_dbus *dbus,
@@ -126,8 +135,8 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	if (!ellproxy)
 		return dbus_error_not_available(msg);
 
-	l_dbus_proxy_method_call(ellproxy, "Pair",
-				 NULL, method_reply, device, NULL);
+	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Pair", NULL,
+						  method_reply, device, NULL);
 
 	return NULL;
 }
@@ -157,8 +166,8 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	if (!ellproxy)
 		return dbus_error_not_available(msg);
 
-	l_dbus_proxy_method_call(ellproxy, "Forget",
-				 NULL, method_reply, device, NULL);
+	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
+						  method_reply, device, NULL);
 
 	return NULL;
 }
@@ -328,6 +337,8 @@ struct knot_device *device_create(uint64_t id, const char *name, bool paired)
 	device->paired = paired;
 	device->online = false;
 	device->registered = false;
+	device->msg = NULL;
+	device->msg_id = 0;
 
 	device->path = l_strdup_printf("/dev_%"PRIu64, id);
 
@@ -482,8 +493,8 @@ bool device_forget(struct knot_device *device)
 	if (!ellproxy)
 		return false;
 
-	l_dbus_proxy_method_call(ellproxy, "Forget",
-				 NULL, method_reply, device, NULL);
+	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
+						  method_reply, device, NULL);
 
 	return true;
 }
