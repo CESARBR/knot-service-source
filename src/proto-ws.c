@@ -48,6 +48,8 @@ struct l_hashmap *lws_list;
 struct ws_session {
 	bool got_response;	/* FIXME: find better approach */
 	uint16_t size;		/* Amount TX or RX */
+	proto_property_changed_func_t prop_cb; /* Subscribe callback */
+	void *user_data;
 	unsigned char rsp[32];  /* Command response */
 	unsigned char data[0];	/* WS_RX_BUFFER_SIZE */
 };
@@ -100,6 +102,68 @@ static int ws_send_msg(struct lws *ws, bool wait_reply)
 	}
 
 	return (lws ? 0 : -EIO);
+}
+
+static void parse_config(struct ws_session *session,
+			 const char *in, size_t len)
+{
+	json_object *jobj;
+	json_object *jobjkey;
+
+	hal_log_info(">>> parse_config: (%s)", in);
+
+	jobj = json_tokener_parse(in);
+	if (!jobj) {
+		hal_log_error("JSON: config parsing error");
+		return;
+	}
+
+	if (json_object_object_get_ex(jobj, "schema", &jobjkey)) {
+		session->prop_cb("schema",
+				 json_object_to_json_string(jobjkey),
+				 session->user_data);
+	}
+
+	if (json_object_object_get_ex(jobj, "config", &jobjkey)) {
+		session->prop_cb("config",
+				 json_object_to_json_string(jobjkey),
+				 session->user_data);
+	}
+
+	if (json_object_object_get_ex(jobj, "get_data", &jobjkey)) {
+		session->prop_cb("get_data",
+				 json_object_to_json_string(jobjkey),
+				 session->user_data);
+	}
+
+	if (json_object_object_get_ex(jobj, "set_data", &jobjkey)) {
+		session->prop_cb("set_data",
+				 json_object_to_json_string(jobjkey),
+				 session->user_data);
+	}
+}
+
+static void parse(struct ws_session *session, const char *in, size_t len)
+{
+	int index = 0;
+
+	if (sscanf(in, "%*[^\"]\"%32[^\"]\",%n]", session->rsp, &index) != 1)
+		return;
+
+	session->size = MIN(WS_RX_BUFFER_SIZE, len - index - 1); /* skip ']'*/
+
+	hal_log_info("Resposta: (%s)", session->rsp);
+	if (strcmp("config", (const char *) session->rsp) != 0) {
+		memset(session->data, 0, WS_RX_BUFFER_SIZE);
+		strncpy((char *) session->data, &in[index], session->size);
+		return;
+	}
+
+	/* Skip if subscribe is not active */
+	if (!session->prop_cb)
+		return;
+
+	parse_config(session, in + index, session->size);
 }
 
 static void ws_close(int sock)
@@ -196,8 +260,9 @@ done:
 	return ret;
 }
 
-static int ws_signin(int sock, const char *uuid,
-		     const char *token, json_raw_t *json)
+static int ws_signin(int sock, const char *uuid, const char *token,
+		     json_raw_t *json, proto_property_changed_func_t prop_cb,
+		     void *user_data)
 {
 	json_object *jobj, *jarray;
 	const char *jobjstring;
@@ -228,7 +293,6 @@ static int ws_signin(int sock, const char *uuid,
 	json_object_array_add(jarray, jobj);
 
 	jobjstring = json_object_to_json_string(jarray);
-	hal_log_info("WS TX JSON %s", jobjstring);
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
@@ -240,7 +304,14 @@ static int ws_signin(int sock, const char *uuid,
 	if (strcmp("ready", (const char *) session->rsp) != 0)
 		return -EACCES;
 
-	/* Retrieve a device from the Meshblu device registry by it's uuid */
+	/* Subscribe to monitor for changes */
+	if (!prop_cb)
+		return ret;
+
+	session->prop_cb = prop_cb;
+	session->user_data = user_data;
+
+	/* Fetch initial settings */
 	jobj = json_object_new_object();
 	jarray = json_object_new_array();
 	if (!jobj || !jarray) {
@@ -248,16 +319,17 @@ static int ws_signin(int sock, const char *uuid,
 		return -ENOMEM;
 	}
 
+	/* Retrieve a device from the Meshblu device registry by it's uuid */
 	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
 	json_object_array_add(jarray, json_object_new_string("device"));
 	json_object_array_add(jarray, jobj);
 
 	jobjstring = json_object_to_json_string(jarray);
-	hal_log_info("WS TX JSON %s", jobjstring);
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
+	/* Wait for 'device' */
 	ret = ws_send_msg(ws, true);
 	json_object_put(jarray);
 	if (ret != 0)
@@ -270,6 +342,30 @@ static int ws_signin(int sock, const char *uuid,
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
 
+	/* Parsing 'device': same format as 'config' */
+	parse_config(session, (const char *) session->data, session->size);
+
+	/* Subscribe to receive next changes */
+	jobj = json_object_new_object();
+	jarray = json_object_new_array();
+	if (!jobj || !jarray) {
+		hal_log_error("JSON: no memory");
+		return -ENOMEM;
+	}
+
+	json_object_object_add(jobj, "uuid", json_object_new_string(uuid));
+	json_object_array_add(jarray, json_object_new_string("subscribe"));
+	json_object_array_add(jarray, jobj);
+
+	jobjstring = json_object_to_json_string(jarray);
+	hal_log_info("WS TX JSON %s", jobjstring);
+
+	session->size = snprintf((char *) &(session->data[LWS_PRE]),
+				WS_RX_BUFFER_SIZE, "%s", jobjstring);
+
+	/* No response */
+	ret = ws_send_msg(ws, false);
+	json_object_put(jarray);
 done:
 	return ret;
 }
@@ -456,18 +552,6 @@ done:
 	return ret;
 }
 
-static void parse(struct ws_session *session, const char *in, size_t len)
-{
-	int index = 0;
-
-	if (sscanf(in, "%*[^\"]\"%32[^\"]\",%n]", session->rsp, &index) != 1)
-		return;
-
-	session->size = MIN(WS_RX_BUFFER_SIZE, len - index - 1); /* skip ']'*/
-	memset(session->data, 0, WS_RX_BUFFER_SIZE);
-	strncpy((char *) session->data, &in[index], session->size);
-}
-
 static int callback_lws_ws(struct lws *wsi,
 			     enum lws_callback_reasons reason,
 			     void *user_data, void *in, size_t len)
@@ -487,13 +571,13 @@ static int callback_lws_ws(struct lws *wsi,
 		ret = lws_write(wsi, &(session->data[LWS_PRE]),
 				session->size, LWS_WRITE_TEXT);
 		lws_rx_flow_control(wsi, 1);
-		hal_log_info("lws_write(): %d", ret);
+		hal_log_info(">>> WSI:%p write(): %d", wsi, ret);
 		session->size = 0;
 		break;
 	case LWS_CALLBACK_CLIENT_RECEIVE:
 		session->got_response = true;
+		hal_log_info(">>> WSI:%p read: (%s)", wsi, (const char *) in);
 		parse(session, in, len);
-		hal_log_info("Received %p: (%s)", wsi, (const char *) in);
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		break;

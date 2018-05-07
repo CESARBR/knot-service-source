@@ -459,6 +459,21 @@ static struct l_queue *msg_config(int node_socket,
 }
 #endif
 
+static bool property_changed(const char *name,
+			     const char *value, void *user_data)
+{
+	struct session *session;
+
+	/* FIXME: manage link overload or not connected */
+	hal_log_info("Name: %s Value: %s", name, value);
+
+	session = l_hashmap_lookup(session_map, user_data);
+	if (!session)
+		return false;
+
+	return true;
+}
+
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
 					  size_t length)
 {
@@ -537,7 +552,8 @@ static int8_t msg_register(struct session *session,
 
 	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
 
-	result = proto_signin(proto_sock, uuid, token, NULL, NULL);
+	result = proto_signin(proto_sock, uuid, token, property_changed,
+			      L_INT_TO_PTR(session->node_fd));
 	if (result != KNOT_SUCCESS)
 		return result;
 
@@ -581,8 +597,6 @@ static int8_t msg_auth(struct session *session,
 {
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct l_queue *schema = NULL;
-	struct l_queue *config = NULL;
 	int proto_sock;
 	int8_t result;
 
@@ -593,7 +607,7 @@ static int8_t msg_auth(struct session *session,
 
 	/*
 	 * PDU is not null-terminated. Copy UUID and token to
-	 * a null-terminated string.
+	 * a null-terminated stringmanage link overload or not connected .
 	 */
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
@@ -601,19 +615,12 @@ static int8_t msg_auth(struct session *session,
 	strncpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
 	strncpy(token, kmauth->token, sizeof(kmauth->token));
 	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_signin(proto_sock, uuid, token, &schema, &config);
+	result = proto_signin(proto_sock, uuid, token, property_changed,
+			      L_INT_TO_PTR(session->node_fd));
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	result = util_config_is_valid(config);
-	if (result) {
-		hal_log_error("Invalid config message");
-		l_queue_destroy(config, l_free);
-	}
-
 	session->trusted = true;
-	session->schema = schema;
-	session->config = config;
 	session->rollback = false;
 
 	session->uuid = l_strdup(uuid);
@@ -1129,8 +1136,8 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 	struct session *session;
 
 	session = session_create(node_ops, client_socket);
-       if (!session) {
-	       /* FIXME: Stop knotd if cloud if not available */
+	if (!session) {
+		/* FIXME: Stop knotd if cloud if not available */
 		return false;
 	}
 
@@ -1263,7 +1270,8 @@ int msg_start(struct settings *settings)
 	if (sock < 0)
 		goto connect_fail;
 
-	if (proto_signin(sock, settings->uuid, settings->token, NULL, NULL) < 0)
+	if (proto_signin(sock, settings->uuid, settings->token,
+			 NULL, NULL) != KNOT_SUCCESS)
 		goto signin_fail;
 
 	device_id_list = l_queue_new();

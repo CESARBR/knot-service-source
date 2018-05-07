@@ -941,6 +941,7 @@ int proto_mknode(int proto_socket, const char *device_name,
 	}
 
 	device_as_string = json_object_to_json_string(device);
+	hal_log_info("proto_mknode: %s", device_as_string);
 	err = proto->mknode(proto_socket, device_as_string, &response);
 	json_object_put(device);
 
@@ -971,35 +972,25 @@ fail:
 }
 
 int proto_signin(int proto_socket, const char *uuid, const char *token,
-			struct l_queue **schema, struct l_queue **config)
+		 proto_property_changed_func_t prop_cb, void *user_data)
 {
 	json_raw_t response;
 	int err, result;
 
 	memset(&response, 0, sizeof(response));
-	err = proto->signin(proto_socket, uuid, token, &response);
-
-	if (!response.data) {
-		result = KNOT_CLOUD_FAILURE;
-		goto fail;
-	}
-
+	err = proto->signin(proto_socket, uuid, token,
+			    &response, prop_cb, user_data);
 	if (err < 0) {
 		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto fail;
 	}
 
-	if (schema != NULL)
-		*schema = device_parse_schema(response.data);
-
-	if (config != NULL)
-		*config = device_parse_config(response.data);
-
 	result = KNOT_SUCCESS;
 
 fail:
 	l_free(response.data);
+
 	return result;
 }
 
