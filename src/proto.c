@@ -78,6 +78,7 @@ static void mydevice_free(struct mydevice *mydevice)
 	if (unlikely(!mydevice))
 		return;
 
+	l_free(mydevice->id);
 	l_free(mydevice->uuid);
 	l_free(mydevice->name);
 	l_free(mydevice);
@@ -105,7 +106,7 @@ static bool device_id_cmp(const void *a, const void *b)
 	const struct mydevice *mydevice1 = a;
 	const struct mydevice *mydevice2 = b;
 
-	return (mydevice1->id == mydevice2->id ? true : false);
+	return strcmp(mydevice1->id, mydevice2->id) == 0 ? true:false;
 }
 
 static void timeout_callback(struct l_timeout *timeout, void *user_data)
@@ -170,7 +171,7 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 				mydevice1->name, proxy->user_data);
 	}
 
-	l_queue_destroy(added_list, l_free);
+	l_queue_destroy(added_list, (l_queue_destroy_func_t) mydevice_free);
 	/* Overwrite: Keep a copy for the next iteration */
 	proxy->device_list = registered_list;
 
@@ -192,7 +193,7 @@ done:
 }
 
 static json_object *device_json_create(const char *device_name,
-					 uint64_t device_id)
+					 const char *device_id)
 {
 	json_object *device;
 
@@ -205,7 +206,7 @@ static json_object *device_json_create(const char *device_name,
 	json_object_object_add(device, "name",
 			       json_object_new_string(device_name));
 	json_object_object_add(device, "id",
-			       json_object_new_int64(device_id));
+			       json_object_new_string(device_id));
 	json_object_object_add(device, "owner",
 			       json_object_new_string(owner_uuid));
 
@@ -424,7 +425,7 @@ void proto_close(int prot_sock)
 }
 
 int proto_mknode(int proto_socket, const char *device_name,
-			uint64_t device_id, char *uuid, char *token)
+			const char *device_id, char *uuid, char *token)
 {
 	json_object *device;
 	const char *device_as_string;

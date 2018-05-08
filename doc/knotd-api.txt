@@ -50,7 +50,7 @@ Methods 	void Pair(dict properties)
 		Returns: br.org.cesar.knot.nrf.Error.InProgress
 
 Properties
-		uint64 Id [readonly]
+		string Id [readonly]
 
 		Unique identification exposed to service level. Technology
 		agnostic value to allow mapping a virtual device representation

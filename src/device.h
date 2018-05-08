@@ -25,10 +25,10 @@ int device_start(void);
 void device_stop(void);
 
 
-struct knot_device *device_create(uint64_t id, const char *name, bool paired);
-void device_destroy(uint64_t device);
-struct knot_device *device_get(uint64_t id);
-uint64_t device_get_id(struct knot_device *device);
+struct knot_device *device_create(const char *id, const char *name, bool paired);
+void device_destroy(const char *device);
+struct knot_device *device_get(const char *id);
+const char *device_get_id(struct knot_device *device);
 
 bool device_set_name(struct knot_device *device, const char *name);
 bool device_set_uuid(struct knot_device *device, const char *uuid);

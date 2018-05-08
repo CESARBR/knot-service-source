@@ -396,10 +396,10 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 {
 	json_object *jobj, *jobjentry, *jobjkey;
 	struct l_queue *list;
-	int64_t id;
 	struct mydevice *mydevice;
 	const char *uuid;
 	const char *name;
+	const char *id;
 	int len;
 	int i;
 
@@ -418,13 +418,8 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 		/* Getting 'Id' */
 		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
 			continue;
-		/*
-		 * Following API recommendation ...
-		 * Set errno to 0 directly before a call to this function to
-		 * determine whether or not conversion was successful.
-		 */
-		errno = 0;
-		id = json_object_get_int64(jobjkey);
+
+		id = json_object_get_string(jobjkey);
 
 		/* Getting 'Name' */
 		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
@@ -436,13 +431,10 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 		if (!json_object_object_get_ex(jobjentry, "uuid", &jobjkey))
 			continue;
 
-		errno = 0;
 		uuid = json_object_get_string(jobjkey);
-		if (errno)
-			continue;
 
 		mydevice = l_new(struct mydevice, 1);
-		mydevice->id = id;
+		mydevice->id   = l_strdup(id);
 		mydevice->name = l_strdup(name);
 		mydevice->uuid = l_strdup(uuid);
 		l_queue_push_tail(list, mydevice);

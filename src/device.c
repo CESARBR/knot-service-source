@@ -34,7 +34,7 @@
 
 struct knot_device {
 	int refs;
-	uint64_t id;
+	char *id;
 	char *name;			/* Friendly name */
 	char *path;			/* D-Bus object path */
 	char *uuid;			/* Device UUID from cloud */
@@ -62,6 +62,7 @@ static void device_free(struct knot_device *device)
 	l_free(device->name);
 	l_free(device->path);
 	l_free(device->uuid);
+	l_free(device->id);
 	l_free(device);
 }
 
@@ -102,7 +103,7 @@ static void method_reply(struct l_dbus_proxy *proxy,
 	struct l_dbus_message *reply;
 
 	if (l_dbus_message_is_error(result)) {
-		l_error("Failed to Pair/Forget device %" PRIx64, device->id);
+		l_error("Failed to Pair/Forget device %s" , device->id);
 		return;
 	}
 
@@ -206,8 +207,8 @@ static bool property_get_id(struct l_dbus *dbus,
 {
 	struct knot_device *device = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 't', &device->id);
-	hal_log_info("%s GetProperty(Id = %"PRIu64")",
+	l_dbus_message_builder_append_basic(builder, 's', device->id);
+	hal_log_info("%s GetProperty(Id = %s)",
 		     device->path, device->id);
 
 	return true;
@@ -284,7 +285,7 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'UUID' property");
 
-	if (!l_dbus_interface_property(interface, "Id", 0, "t",
+	if (!l_dbus_interface_property(interface, "Id", 0, "s",
 				       property_get_id,
 				       NULL))
 		hal_log_error("Can't add 'Id' property");
@@ -315,7 +316,7 @@ int device_start(void)
 		hal_log_error("dbus: unable to register %s", DEVICE_INTERFACE);
 		return -EINVAL;
 	}
-	device_list = l_hashmap_new();
+	device_list = l_hashmap_string_new();
 	return 0;
 }
 
@@ -326,12 +327,12 @@ void device_stop(void)
 	l_dbus_unregister_interface(dbus_get_bus(), DEVICE_INTERFACE);
 }
 
-struct knot_device *device_create(uint64_t id, const char *name, bool paired)
+struct knot_device *device_create(const char *id, const char *name, bool paired)
 {
 	struct knot_device *device;
 
 	device = l_new(struct knot_device, 1);
-	device->id = id;
+	device->id = l_strdup(id);
 	device->name = l_strdup(name);
 	device->uuid = NULL; /* FIXME */
 	device->paired = paired;
@@ -340,7 +341,7 @@ struct knot_device *device_create(uint64_t id, const char *name, bool paired)
 	device->msg = NULL;
 	device->msg_id = 0;
 
-	device->path = l_strdup_printf("/dev_%"PRIu64, id);
+	device->path = l_strdup_printf("/dev_%s", id);
 
 	if (!l_dbus_register_object(dbus_get_bus(),
 			       device->path,
@@ -353,16 +354,16 @@ struct knot_device *device_create(uint64_t id, const char *name, bool paired)
 		return NULL;
 	}
 	device = device_ref(device);
-	l_hashmap_insert(device_list, L_INT_TO_PTR(id), device);
+	l_hashmap_insert(device_list, id, device);
 
 	return device;
 }
 
-void device_destroy(uint64_t id)
+void device_destroy(const char *id)
 {
 	struct knot_device *device;
 
-	device = l_hashmap_remove(device_list, L_INT_TO_PTR(id));
+	device = l_hashmap_remove(device_list, id);
 	if (!device)
 		return;
 
@@ -473,18 +474,18 @@ bool device_set_online(struct knot_device *device, bool online)
 	return true;
 }
 
-struct knot_device *device_get(uint64_t id)
+struct knot_device *device_get(const char *id)
 {
 	struct knot_device *device;
 
-	device = l_hashmap_lookup(device_list, L_INT_TO_PTR(id));
+	device = l_hashmap_lookup(device_list, id);
 	if (!device)
 		return NULL;
 	else
 		return device;
 }
 
-uint64_t device_get_id(struct knot_device *device)
+const char *device_get_id(struct knot_device *device)
 {
 	if (unlikely(!device))
 		return 0;

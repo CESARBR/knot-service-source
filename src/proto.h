@@ -19,9 +19,9 @@
  *
  */
 
-typedef void (*proto_proxy_added_func_t) (uint64_t device_id, const char *uuid,
+typedef void (*proto_proxy_added_func_t) (const char *device_id, const char *uuid,
 					  const char *name, void *user_data);
-typedef void (*proto_proxy_removed_func_t) (uint64_t device_id,
+typedef void (*proto_proxy_removed_func_t) (const char *device_id,
 					    void *user_data);
 
 typedef void (*proto_proxy_ready_func_t) (void *user_data);
@@ -79,7 +79,7 @@ void proto_stop(void);
 int proto_connect(void);
 void proto_close(int proto_socket);
 int proto_mknode(int proto_socket, const char *device_name,
-			uint64_t device_id, char *uuid, char *token);
+			const char *device_id, char *uuid, char *token);
 int proto_rmnode(int proto_socket, const char *uuid, const char *token);
 int proto_rmnode_by_uuid(const char *uuid);
 int proto_signin(int proto_socket, const char *uuid, const char *token,

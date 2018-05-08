@@ -66,9 +66,9 @@ static void foreach_device(const void *key, void *value, void *user_data)
 {
 	struct foreach *foreach = user_data;
 	struct knot_device *device;
-	uint64_t id;
+	const char *id;
 
-	if (!l_dbus_proxy_get_property(value, "Id", "t", &id))
+	if (!l_dbus_proxy_get_property(value, "Id", "s", &id))
 		return;
 
 	device = device_get(id);
@@ -82,7 +82,7 @@ static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
 	struct service_proxy *proxy = user_data;
 	hal_log_info("Service appeared: %s", proxy->name);
-	proxy->ellproxy_list = l_hashmap_new();
+	proxy->ellproxy_list = l_hashmap_string_new();
 }
 
 static void service_disappeared(struct l_dbus *dbus, void *user_data)
@@ -101,14 +101,14 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	const char *path = l_dbus_proxy_get_path(ellproxy);
 	struct service_proxy *proxy = user_data;
 	struct knot_device *device;
-	uint64_t id = 0;
-	bool paired = false;
+	const char *id;
 	const char *name;
+	bool paired = false;
 
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
 
-	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "s", &id))
 		return;
 
 	if (!l_dbus_proxy_get_property(ellproxy, "Paired", "b", &paired))
@@ -122,33 +122,33 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 		/* Ownership belongs to device.c */
 		device = device_create(id, name, paired);
 		if (!device) {
-			hal_log_error("Can't create device: %"PRIu64, id);
+			hal_log_error("Can't create device: %s", id);
 			return;
 		}
 	}
 
-	hal_log_info("Id: %" PRIu64 " proxy added: %s %s",
+	hal_log_info("Id: %s proxy added: %s %s",
 			     id, path, interface);
 	device_set_name(device, name);
-	l_hashmap_insert(proxy->ellproxy_list, L_INT_TO_PTR(id), ellproxy);
+	l_hashmap_insert(proxy->ellproxy_list, id, ellproxy);
 }
 
 static void removed(struct l_dbus_proxy *ellproxy, void *user_data)
 {
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	const char *path = l_dbus_proxy_get_path(ellproxy);
+	const char *id;
 	struct service_proxy *proxy = user_data;
-	uint64_t id;
 
 	if (strcmp(interface, proxy->interface) != 0)
 		return;
 
 	/* Debug purpose only */
 	hal_log_info("proxy removed: %s %s", path, interface);
-	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "s", &id))
 		return;
 
-	l_hashmap_remove(proxy->ellproxy_list, L_INT_TO_PTR(id));
+	l_hashmap_remove(proxy->ellproxy_list, id);
 	device_destroy(id);
 }
 
@@ -161,13 +161,13 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 	const char *interface = l_dbus_proxy_get_interface(ellproxy);
 	struct knot_device *device;
 	const char *name;
-	uint64_t id;
+	const char *id;
 	bool bvalue;
 
 	if (strcmp(proxy->interface, interface) != 0)
 		return;
 
-	if (!l_dbus_proxy_get_property(ellproxy, "Id", "t", &id))
+	if (!l_dbus_proxy_get_property(ellproxy, "Id", "s", &id))
 		return;
 
 	device = device_get(id);
@@ -267,7 +267,7 @@ void proxy_foreach(const char *service,
 	l_hashmap_foreach(proxy->ellproxy_list, foreach_device, &foreach);
 }
 
-struct l_dbus_proxy *proxy_get(uint64_t id)
+struct l_dbus_proxy *proxy_get(const char *id)
 {
-	return l_hashmap_lookup(proxy->ellproxy_list, L_INT_TO_PTR(id));
+	return l_hashmap_lookup(proxy->ellproxy_list, id);
 }

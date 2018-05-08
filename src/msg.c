@@ -52,6 +52,7 @@
 #include "msg.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define KNOT_ID_LEN 16
 
 struct session {
 	int refs;
@@ -137,10 +138,10 @@ static void session_unref(struct session *session)
 
 static bool device_id_cmp(const void *a, const void *b)
 {
-	const uint64_t *val1 = a;
-	const uint64_t *val2 = b;
+	const char *val1 = a;
+	const char *val2 = b;
 
-	return (*val1 == *val2 ? true : false);
+	return strcmp(val1, val2) == 0 ? true:false;
 }
 
 static bool sensor_id_cmp(const void *a, const void *b)
@@ -353,6 +354,7 @@ static int8_t msg_register(struct session *session,
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
+	char id[KNOT_ID_LEN + 1];
 	int proto_sock;
 	int8_t result;
 
@@ -367,7 +369,7 @@ static int8_t msg_register(struct session *session,
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%" PRIu64 ")", kreq->id);
+	hal_log_info("Registering (id 0x%016" PRIx64 ")", kreq->id);
 
 	if (session->trusted && kreq->id == session->id) {
 		hal_log_info("Register: trusted device");
@@ -378,8 +380,9 @@ static int8_t msg_register(struct session *session,
 	msg_register_get_device_name(kreq, device_name);
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
+	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, kreq->id);
 	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_mknode(proto_sock, device_name, kreq->id, uuid, token);
+	result = proto_mknode(proto_sock, device_name, id, uuid, token);
 	if (result != KNOT_SUCCESS)
 		return result;
 
@@ -826,7 +829,10 @@ static void session_proto_disconnected_cb(struct l_io *channel,
 					  void *user_data)
 {
 	struct session *session = user_data;
-	struct knot_device *device = device_get(session->id);
+	struct knot_device *device;
+	char id[KNOT_ID_LEN + 1];
+	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	device = device_get(id);
 
 	/* Connection to cloud broken */
 	if (device)
@@ -855,7 +861,10 @@ static struct l_io *create_proto_channel(int proto_sock,
 					 struct session *session)
 {
 	struct l_io *channel;
-	struct knot_device *device = device_get(session->id);
+	struct knot_device *device;
+	char id[KNOT_ID_LEN + 1];
+	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	device = device_get(id);
 
 	channel = l_io_new(proto_sock);
 	if (channel == NULL) {
@@ -1042,27 +1051,28 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 
 static void forget_if_unknown(struct knot_device *device, void *user_data)
 {
-	uint64_t id = device_get_id(device);
+	const char *id = device_get_id(device);
 
 	/* device_id_list contains cloud devices */
 
-	if (l_queue_find(device_id_list, device_id_cmp, &id))
+	if (l_queue_find(device_id_list, device_id_cmp, id))
 		return; /* match: belongs to service & cloud */
 
-	hal_log_info("Device %" PRIu64 " not found at Cloud", id);
+	hal_log_info("Device %s not found at Cloud", id);
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %" PRIu64 " removed", id);
+		hal_log_info("Proxy for %s removed", id);
 	else
-		hal_log_info("Can't remove proxy for %" PRIu64 , id);
+		hal_log_info("Can't remove proxy for %s" , id);
 }
 
-static void proxy_added(uint64_t device_id, const char *uuid, const char *name, void *user_data)
+static void proxy_added(const char *device_id, const char *uuid,
+						const char *name, void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
 
 	/* Tracks 'proxy' devices that belongs to Cloud. */
-	hal_log_info("Device added: %" PRIu64" UUID: %s", device_id, uuid);
+	hal_log_info("Device added: %s UUID: %s", device_id, uuid);
 
 	if (!device) {
 		/* Ownership belongs to device.c */
@@ -1073,28 +1083,27 @@ static void proxy_added(uint64_t device_id, const char *uuid, const char *name, 
 
 	device_set_uuid(device, uuid);
 
-	l_queue_push_head(device_id_list,
-			  l_memdup(&device_id, sizeof(device_id)));
+	l_queue_push_head(device_id_list, l_strdup(device_id));
 }
 
-static void proxy_removed(uint64_t device_id, void *user_data)
+static void proxy_removed(const char *device_id, void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
-	uint64_t *id;
+	char *id;
 
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
 		/* Other service or created by external apps(eg: ktool) */
-		hal_log_error("Device %" PRIu64 " not found!", device_id);
+		hal_log_error("Device %s not found!", device_id);
 		return;
 	}
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %" PRIu64 " removed", device_id);
+		hal_log_info("Proxy for %s removed", device_id);
 	else
-		hal_log_info("Can't remove proxy for %" PRIu64 , device_id);
+		hal_log_info("Can't remove proxy for %s" , device_id);
 
-	id = l_queue_remove_if(device_id_list, device_id_cmp, &device_id);
+	id = l_queue_remove_if(device_id_list, device_id_cmp, device_id);
 	l_free(id);
 	device_destroy(device_id);
 }

@@ -19,7 +19,7 @@
  *
  */
 struct mydevice {
-       uint64_t id;
+       char *id;
        char *uuid;
        char *name;
 };

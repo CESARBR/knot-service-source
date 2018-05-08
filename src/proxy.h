@@ -28,6 +28,6 @@ int proxy_start(const char *service, const char *path, const char *interface,
 		proxy_ready_func_t ready_cb, void *user_data);
 void proxy_stop();
 
-struct l_dbus_proxy *proxy_get(uint64_t id);
+struct l_dbus_proxy *proxy_get(const char *id);
 void proxy_foreach(const char *service,
 		   proxy_foreach_func_t foreach_cb, void *user_data);
