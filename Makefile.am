@@ -28,6 +28,7 @@ src_knotd_SOURCES = src/main.c \
 			src/dbus.c src/dbus.h \
 			src/device.c src/device.h \
 			src/proxy.c src/proxy.h \
+			src/parser.c src/parser.h \
 			src/util.c src/util.h \
 			$(modules_sources)
 

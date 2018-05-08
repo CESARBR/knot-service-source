@@ -25,6 +25,9 @@ typedef void (*proto_proxy_removed_func_t) (uint64_t device_id,
 					    void *user_data);
 
 typedef void (*proto_proxy_ready_func_t) (void *user_data);
+typedef bool (*proto_property_changed_func_t) (const char *name,
+					       const char *value,
+					       void *user_data);
 
 typedef struct {
 	char *data;
@@ -45,7 +48,9 @@ struct proto_ops {
 	/* Abstraction for session establishment or registration */
 	int (*mknode) (int sock, const char *owner_uuid, json_raw_t *json);
 	int (*signin) (int sock, const char *uuid, const char *token,
-							json_raw_t *json);
+		       json_raw_t *json,
+		       proto_property_changed_func_t prop_cb,
+		       void *user_data);
 	int (*rmnode)(int sock, const char *uuid, const char *token,
 							json_raw_t *jbuf);
 	/* Abstraction for device data */
@@ -78,7 +83,7 @@ int proto_mknode(int proto_socket, const char *device_name,
 int proto_rmnode(int proto_socket, const char *uuid, const char *token);
 int proto_rmnode_by_uuid(const char *uuid);
 int proto_signin(int proto_socket, const char *uuid, const char *token,
-			struct l_queue **schema, struct l_queue **config);
+		 proto_property_changed_func_t prop_cb, void *user_data);
 int proto_schema(int proto_socket, const char *uuid,
 		 const char *token, struct l_queue *schema_list);
 int proto_data(int proto_socket, const char *uuid,

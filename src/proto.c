@@ -309,279 +309,6 @@ done:
 	return err;
 }
 
-/*
- * Parsing knot_value_types attribute
- */
-static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
-{
-	json_object *jobjkey;
-	const char *str;
-	int32_t ipart, fpart;
-
-	jobjkey = jobj;
-	switch (json_object_get_type(jobjkey)) {
-	case json_type_boolean:
-		limit->val_b = json_object_get_boolean(jobjkey);
-		break;
-	case json_type_double:
-		/* Trick to get integral and fractional parts */
-		str = json_object_get_string(jobjkey);
-		/* FIXME: how to handle overflow? */
-		if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
-			break;
-		limit->val_f.value_int = ipart;
-		limit->val_f.value_dec = fpart;
-		limit->val_f.multiplier = 1; /* TODO: */
-		break;
-	case json_type_int:
-
-		limit->val_i.value = json_object_get_int(jobjkey);
-		limit->val_i.multiplier = 1;
-		break;
-	case json_type_string:
-	case json_type_null:
-	case json_type_object:
-	case json_type_array:
-	default:
-		break;
-	}
-}
-
-static struct l_queue *device_parse_schema(const char *json_str)
-{
-	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list;
-	knot_msg_schema *entry;
-	int sensor_id, value_type, unit, type_id, i;
-	const char *name;
-
-	jobj = json_tokener_parse(json_str);
-	if (!jobj)
-		return NULL;
-
-	list = l_queue_new();
-	/* Expected JSON object is in the following format:
-	 *
-	 * {"uuid": ...
-	 *		"schema" : [
-	 *			{"sensor_id": x, "value_type": w,
-	 *				"unit": z "type_id": y, "name": "foo"}]
-	 * }
-	 */
-
-	/* 'schema' is an array */
-	if (!json_object_object_get_ex(jobj, "schema", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array)
-		goto done;
-
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
-
-		jobjentry = json_object_array_get_idx(jobjarray, i);
-
-		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry, "sensor_id",
-								&jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		sensor_id = json_object_get_int(jobjkey);
-
-		/* Getting 'value_type' */
-		if (!json_object_object_get_ex(jobjentry, "value_type",
-								&jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		value_type = json_object_get_int(jobjkey);
-
-		/* Getting 'unit' */
-		if (!json_object_object_get_ex(jobjentry, "unit", &jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		unit = json_object_get_int(jobjkey);
-
-		/* Getting 'type_id' */
-		if (!json_object_object_get_ex(jobjentry, "type_id", &jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		type_id = json_object_get_int(jobjkey);
-
-		/* Getting 'name' */
-		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_string)
-			goto done;
-
-		name = json_object_get_string(jobjkey);
-		/*
-		 * Validation not required: validation has been performed
-		 * previously when schema has been submitted to the cloud.
-		 */
-		entry = l_new(knot_msg_schema, 1);
-		entry->sensor_id = sensor_id;
-		entry->values.value_type = value_type;
-		entry->values.unit = unit;
-		entry->values.type_id = type_id;
-		strncpy(entry->values.name, name,
-						sizeof(entry->values.name) - 1);
-
-		l_queue_push_tail(list, entry);
-	}
-
-done:
-	/*
-	 * TODO: should done label be used only for the error case
-	 * as in device_parse_config() and parse_device_setdata()?
-	 */
-	json_object_put(jobj);
-
-	if (l_queue_isempty(list)) {
-		l_queue_destroy(list, NULL);
-		list = NULL;
-	}
-
-	return list;
-}
-
-/*
- * Parses the json from the cloud with the config. The message is discarded if:
- * There are no "devices" or "config" fields in the JSON or they are not arrays.
- * The mandatory fields "sensor_id" and "event_flags" are missing.
- * Any field that is sent has the wrong type.
- */
-static struct l_queue *device_parse_config(const char *json_str)
-{
-	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list;
-	knot_msg_config *config;
-	int sensor_id, event_flags, time_sec, i;
-	knot_value_types lower_limit, upper_limit;
-	json_type jtype;
-
-	jobj = json_tokener_parse(json_str);
-	if (!jobj)
-		return NULL;
-
-	list = l_queue_new();
-
-	/* Getting 'config' from the device properties:
-	 *
-	 * {"uuid": ...
-	 *		"config" : [
-	 *			{"sensor_id": v, "event_flags": w,
-	 *				"time_sec": x "lower_limit": y,
-	 *						"upper_limit": z}]
-	 * }
-	 */
-
-	/* 'config' is an array */
-	if (!json_object_object_get_ex(jobj, "config", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array)
-		goto done;
-
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
-
-		jobjentry = json_object_array_get_idx(jobjarray, i);
-		if (!jobjentry)
-			goto done;
-
-		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry, "sensor_id",
-								&jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		sensor_id = json_object_get_int(jobjkey);
-
-		/* Getting 'event_flags' */
-		if (!json_object_object_get_ex(jobjentry, "event_flags",
-								&jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		event_flags = json_object_get_int(jobjkey);
-
-		/* If 'time_sec' is defined, gets it */
-
-		time_sec = 0;
-		if (json_object_object_get_ex(jobjentry, "time_sec",
-								 &jobjkey)) {
-			if (json_object_get_type(jobjkey) != json_type_int)
-				goto done;
-
-			time_sec = json_object_get_int(jobjkey);
-		}
-
-		/* If 'lower_limit' is defined, gets it. */
-
-		memset(&lower_limit, 0, sizeof(knot_value_types));
-		if (json_object_object_get_ex(jobjentry, "lower_limit",
-								&jobjkey)) {
-			jtype = json_object_get_type(jobjkey);
-			if (jtype != json_type_int &&
-				jtype != json_type_double &&
-				jtype != json_type_boolean)
-				goto done;
-
-			parse_json_value_types(jobjkey,
-						&lower_limit);
-		}
-
-		/* If 'upper_limit' is defined, gets it. */
-
-		memset(&upper_limit, 0, sizeof(knot_value_types));
-		if (json_object_object_get_ex(jobjentry,
-					      "upper_limit", &jobjkey)) {
-			jtype = json_object_get_type(jobjkey);
-			if (jtype != json_type_int &&
-					jtype != json_type_double &&
-					jtype != json_type_boolean)
-				goto done;
-
-			parse_json_value_types(jobjkey, &upper_limit);
-		}
-
-		config = l_new(knot_msg_config, 1);
-		config->sensor_id = sensor_id;
-		config->values.event_flags = event_flags;
-		config->values.time_sec = time_sec;
-		memcpy(&(config->values.lower_limit), &lower_limit,
-						sizeof(knot_value_types));
-		memcpy(&(config->values.upper_limit), &upper_limit,
-						sizeof(knot_value_types));
-		l_queue_push_tail(list, config);
-	}
-
-	json_object_put(jobj);
-
-	return list;
-
-done:
-	l_queue_destroy(list, l_free);
-	json_object_put(jobj);
-
-	return NULL;
-}
-
 static json_object *schema_create_object(uint8_t sensor_id, uint8_t value_type,
 					 uint8_t unit, uint16_t type_id,
 					 const char *name)
@@ -971,35 +698,26 @@ fail:
 }
 
 int proto_signin(int proto_socket, const char *uuid, const char *token,
-			struct l_queue **schema, struct l_queue **config)
+		 proto_property_changed_func_t prop_cb, void *user_data)
 {
 	json_raw_t response;
 	int err, result;
 
+	/* FIXME: Remove json/response */
 	memset(&response, 0, sizeof(response));
-	err = proto->signin(proto_socket, uuid, token, &response);
-
-	if (!response.data) {
-		result = KNOT_CLOUD_FAILURE;
-		goto fail;
-	}
-
+	err = proto->signin(proto_socket, uuid, token,
+			    &response, prop_cb, user_data);
 	if (err < 0) {
 		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
 		result = KNOT_CREDENTIAL_UNAUTHORIZED;
 		goto fail;
 	}
 
-	if (schema != NULL)
-		*schema = device_parse_schema(response.data);
-
-	if (config != NULL)
-		*config = device_parse_config(response.data);
-
 	result = KNOT_SUCCESS;
 
 fail:
 	l_free(response.data);
+
 	return result;
 }
 

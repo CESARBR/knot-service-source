@@ -403,7 +403,9 @@ done:
 }
 
 static int socketio_signin(int sock, const char *uuid, const char *token,
-							json_raw_t *json)
+			   json_raw_t *json,
+			   proto_property_changed_func_t prop_cb,
+			   void *user_data)
 {
 	int err;
 	const char *jobjstring;
