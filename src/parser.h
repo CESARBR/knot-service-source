@@ -18,6 +18,12 @@
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+struct mydevice {
+       uint64_t id;
+       char *uuid;
+       char *name;
+};
 
 struct l_queue *parser_schema_to_list(const char *json_str);
 struct l_queue *parser_config_to_list(const char *json_str);
+struct l_queue *parser_mydevices_to_list(const char *json_str);

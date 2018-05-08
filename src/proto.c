@@ -40,6 +40,7 @@
 #include <hal/linux_log.h>
 
 #include "settings.h"
+#include "parser.h"
 #include "proto.h"
 
 extern struct proto_ops proto_http;
@@ -64,13 +65,7 @@ struct proto_proxy {
 	proto_proxy_ready_func_t ready_cb; /* Call only once */
 	bool ready_once;
 	void *user_data;
-	struct l_queue *device_list; /* device_props */
-};
-
-struct device_props {
-	uint64_t id;
-	char *uuid;
-	char *name;
+	struct l_queue *device_list; /* mydevice */
 };
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
@@ -78,14 +73,14 @@ static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 static struct l_timeout *timeout;
 static struct proto_proxy *proxy;
 
-static void device_props_free(struct device_props *props)
+static void mydevice_free(struct mydevice *mydevice)
 {
-	if (unlikely(!props))
+	if (unlikely(!mydevice))
 		return;
 
-	l_free(props->uuid);
-	l_free(props->name);
-	l_free(props);
+	l_free(mydevice->uuid);
+	l_free(mydevice->name);
+	l_free(mydevice);
 }
 
 static void proxy_destroy(void *user_data)
@@ -105,75 +100,12 @@ static inline bool is_token_valid(const char *token)
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
 }
 
-static struct l_queue *parse_mydevices(const char *json_str)
-{
-	json_object *jobj, *jobjentry, *jobjkey;
-	struct l_queue *list;
-	int64_t id;
-	struct device_props *props;
-	const char *uuid;
-	const char *name;
-	int len;
-	int i;
-
-	jobj = json_tokener_parse(json_str);
-	if (!jobj) {
-		hal_log_error("JSON: unexpected format");
-		return NULL;
-	}
-
-	len = json_object_array_length(jobj);
-	if (len == 0) {
-		json_object_put(jobj);
-		return NULL;
-	}
-
-	list = l_queue_new();
-	for (i = 0; i < len; i++) {
-		jobjentry = json_object_array_get_idx(jobj, i);
-		/* Getting 'Id' */
-		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
-			continue;
-		/*
-		 * Following API recommendation ...
-		 * Set errno to 0 directly before a call to this function to
-		 * determine whether or not conversion was successful.
-		 */
-		errno = 0;
-		id = json_object_get_int64(jobjkey);
-
-		/* Getting 'Name' */
-		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
-			continue;
-
-		name = json_object_get_string(jobjkey);
-
-		/* Getting 'Uuid' */
-		if (!json_object_object_get_ex(jobjentry, "uuid", &jobjkey))
-			continue;
-
-		errno = 0;
-		uuid = json_object_get_string(jobjkey);
-		if (errno)
-			continue;
-
-		props = l_new(struct device_props, 1);
-		props->id = id;
-		props->name = l_strdup(name);
-		props->uuid = l_strdup(uuid);
-		l_queue_push_tail(list, props);
-	}
-
-	json_object_put(jobj);
-	return list;
-}
-
 static bool device_id_cmp(const void *a, const void *b)
 {
-	const struct device_props *props1 = a;
-	const struct device_props *props2 = b;
+	const struct mydevice *mydevice1 = a;
+	const struct mydevice *mydevice2 = b;
 
-	return (props1->id == props2->id ? true : false);
+	return (mydevice1->id == mydevice2->id ? true : false);
 }
 
 static void timeout_callback(struct l_timeout *timeout, void *user_data)
@@ -183,8 +115,8 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	struct l_queue *added_list;
 	struct l_queue *removed_list;
 	struct l_queue *registered_list;
-	struct device_props *props1;
-	struct device_props *props2;
+	struct mydevice *mydevice1;
+	struct mydevice *mydevice2;
 	json_raw_t json;
 	int err;
 
@@ -198,7 +130,7 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 		goto done;
 
 	/* List containing all devices returned from cloud */
-	list = parse_mydevices(json.data);
+	list = parser_mydevices_to_list(json.data);
 
 	added_list = l_queue_new();
 	registered_list = l_queue_new();
@@ -209,19 +141,19 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	 * registered_list: all devices read from cloud
 	 * added_list: new devices at cloud
 	 */
-	for (props1 = l_queue_pop_head(list);
-	     props1; props1 = l_queue_pop_head(list)) {
-		props2 = l_queue_remove_if(proxy->device_list,
-					 device_id_cmp, props1);
+	for (mydevice1 = l_queue_pop_head(list);
+	     mydevice1; mydevice1 = l_queue_pop_head(list)) {
+		mydevice2 = l_queue_remove_if(proxy->device_list,
+					 device_id_cmp, mydevice1);
 
-		if (props2 == NULL) {
+		if (mydevice2 == NULL) {
 			/* New device */
-			l_queue_push_tail(registered_list, props1);
+			l_queue_push_tail(registered_list, mydevice1);
 			l_queue_push_tail(added_list,
-					  l_memdup(props1, sizeof(*props1)));
+					  l_memdup(mydevice1, sizeof(*mydevice1)));
 		} else { /* Still registered */
-			l_queue_push_tail(registered_list, props2);
-			device_props_free(props1);
+			l_queue_push_tail(registered_list, mydevice2);
+			mydevice_free(mydevice1);
 		}
 	}
 
@@ -232,10 +164,10 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	removed_list = proxy->device_list;
 
 	/* Informing added devices */
-	for (props1 = l_queue_pop_head(added_list);
-	     props1; props1 = l_queue_pop_head(added_list)) {
-		proxy->added_cb(props1->id, props1->uuid,
-				props1->name, proxy->user_data);
+	for (mydevice1 = l_queue_pop_head(added_list);
+	     mydevice1; mydevice1 = l_queue_pop_head(added_list)) {
+		proxy->added_cb(mydevice1->id, mydevice1->uuid,
+				mydevice1->name, proxy->user_data);
 	}
 
 	l_queue_destroy(added_list, l_free);
@@ -243,12 +175,11 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	proxy->device_list = registered_list;
 
 	/* Informing removed devices */
-	for (props1 = l_queue_pop_head(removed_list);
-	     props1; props1 = l_queue_pop_head(removed_list)) {
-		proxy->removed_cb(props1->id, proxy->user_data);
+	for (mydevice1 = l_queue_pop_head(removed_list);
+	     mydevice1; mydevice1 = l_queue_pop_head(removed_list)) {
+		proxy->removed_cb(mydevice1->id, proxy->user_data);
 	}
-	l_queue_destroy(removed_list,
-					(l_queue_destroy_func_t) device_props_free);
+	l_queue_destroy(removed_list, (l_queue_destroy_func_t) mydevice_free);
 
 	if (proxy->ready_cb && !proxy->ready_once) {
 		proxy->ready_cb(proxy->user_data);
