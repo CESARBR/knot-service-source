@@ -64,11 +64,7 @@ int storage_write_key_string(const char *pathname, const char *group,
 	int ret = -EINVAL;
 	bool err;
 
-	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
-		ret = -ENOENT;
-		goto failure;
-	}
+	l_settings_load_from_file(settings, pathname);
 
 	err = l_settings_set_string(settings, group, key, value);
 	if (!err)
@@ -110,11 +106,7 @@ int storage_write_key_int(const char *pathname, const char *group,
 	int ret = -EINVAL;
 	bool err;
 
-	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
-		ret = -ENOENT;
-		goto failure;
-	}
+	l_settings_load_from_file(settings, pathname);
 
 	err  = l_settings_set_int(settings, group, key, value);
 	if (!err)
@@ -164,11 +156,7 @@ int storage_write_key_uint64(const char *pathname, const char *group,
 	int ret = -EINVAL;
 	bool err;
 
-	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
-		ret = -ENOENT;
-		goto failure;
-	}
+	l_settings_load_from_file(settings, pathname);
 
 	err = l_settings_set_uint64(settings, group, key, value);
 	if (!err)
