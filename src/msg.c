@@ -358,106 +358,6 @@ static struct l_queue *msg_setdata(int node_socket,
 
 	return messages;
 }
-
-static void duplicate_and_append(knot_msg_config *config,
-				 struct l_queue *msg_config_list)
-{
-	knot_msg_config *msg_config = l_memdup(config, sizeof(*config));
-	l_queue_push_tail(msg_config_list, msg_config);
-}
-
-static struct l_queue *config_to_msg_config_list(struct l_queue *config_list)
-{
-	struct l_queue *msg_config_list;
-
-	if (l_queue_isempty(config_list))
-		return NULL;
-
-	msg_config_list = l_queue_new();
-
-	l_queue_foreach(config_list,
-			(l_queue_foreach_func_t) duplicate_and_append,
-			msg_config_list);
-
-	return msg_config_list;
-}
-
-static bool exists_and_confirmed(struct config *received,
-				 struct l_queue *current_list)
-{
-	struct config *current = l_queue_find(current_list,
-					      (l_queue_match_func_t) config_cmp,
-					      received);
-	return current && current->confirmed;
-}
-
-static struct l_queue *get_changed_config(struct l_queue *current,
-					  struct l_queue *received)
-{
-	struct l_queue *received_copy;
-	struct l_queue *changed_configs;
-
-	/*
-	 * TODO:
-	 * If a sensor_id is not in the list anymore, notify the thing.
-	 */
-	/*
-	 * TODO:
-	 * Define which approach is better, the current or when at least one
-	 * config changes, the whole config message should be sent.
-	 */
-	received_copy = queue_clone(received);
-	l_queue_foreach_remove(received_copy,
-			       (l_queue_remove_func_t) exists_and_confirmed,
-			       current);
-	changed_configs = config_to_msg_config_list(received_copy);
-
-	if (received_copy)
-		l_queue_destroy(received_copy, NULL);
-
-	return changed_configs;
-}
-
-/*
- * Parses the JSON from cloud to get all the configs. If the config is valid,
- * checks if any changed, and put them in the list that will be sent to the
- * thing. Returns the list with the messages to be sent or NULL if any error.
- */
-static struct l_queue *msg_config(int node_socket,
-				  json_raw_t device_message, ssize_t *result)
-{
-	struct session *session;
-	struct l_queue *config = NULL;
-	struct l_queue *changed_config = NULL;
-
-	session = l_hashmap_lookup(session_map, L_INT_TO_PTR(node_socket));
-	if (!session) {
-		hal_log_info("Permission denied!");
-		*result = KNOT_CREDENTIAL_UNAUTHORIZED;
-		return NULL;
-	}
-
-	config = parse_device_config(device_message.data);
-	/* returns 0 if SUCCESS */
-	if (util_config_is_valid(config)) {
-		hal_log_error("Invalid config message");
-		l_queue_destroy(config, l_free);
-		/*
-		 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
-		 * KNOT_INVALID_CONFIG in new protocol
-		 */
-		*result = KNOT_NO_DATA;
-		return NULL;
-	}
-
-	changed_config = get_changed_config(session->config, config);
-
-	session_config_update(session, config);
-
-	*result = KNOT_SUCCESS;
-
-	return changed_config;
-}
 #endif
 
 static bool property_changed(const char *name,
@@ -474,6 +374,8 @@ static bool property_changed(const char *name,
 	/* FIXME: Memory leak & detect if schema has changed */
 	if (strcmp("schema", name) == 0)
 		session->schema = parser_schema_to_list(value);
+	else if (strcmp("config", name) == 0)
+		session->config = parser_config_to_list(value);
 
 	return true;
 }
