@@ -35,6 +35,34 @@
 
 #include "parser.h"
 
+int parser_device(const char *json_str, char *uuid, char *token)
+{
+	json_object *jobj, *json_uuid, *json_token;
+	const char *str;
+	int err = -EINVAL;
+
+	jobj = json_tokener_parse(json_str);
+	if (jobj == NULL)
+		return -EINVAL;
+
+	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
+		goto done;
+
+	if (!json_object_object_get_ex(jobj, "token", &json_token))
+		goto done;
+
+	str = json_object_get_string(json_uuid);
+	strncpy(uuid, str, KNOT_PROTOCOL_UUID_LEN);
+	str = json_object_get_string(json_token);
+	strncpy(token, str, KNOT_PROTOCOL_TOKEN_LEN);
+
+	err = 0; /* Success */
+done:
+	json_object_put(jobj);
+
+	return err;
+}
+
 /*
  * Parsing knot_value_types attribute
  */

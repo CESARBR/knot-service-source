@@ -212,34 +212,6 @@ static json_object *device_json_create(const char *device_name,
 	return device;
 }
 
-static int device_parse_info(const char *json_str, char *uuid, char *token)
-{
-	json_object *jobj, *json_uuid, *json_token;
-	const char *str;
-	int err = -EINVAL;
-
-	jobj = json_tokener_parse(json_str);
-	if (jobj == NULL)
-		return -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "uuid", &json_uuid))
-		goto done;
-
-	if (!json_object_object_get_ex(jobj, "token", &json_token))
-		goto done;
-
-	str = json_object_get_string(json_uuid);
-	strncpy(uuid, str, KNOT_PROTOCOL_UUID_LEN);
-	str = json_object_get_string(json_token);
-	strncpy(token, str, KNOT_PROTOCOL_TOKEN_LEN);
-
-	err = 0; /* Success */
-done:
-	json_object_put(jobj);
-
-	return err;
-}
-
 static json_object *schema_create_object(uint8_t sensor_id, uint8_t value_type,
 					 uint8_t unit, uint16_t type_id,
 					 const char *name)
@@ -609,7 +581,7 @@ int proto_mknode(int proto_socket, const char *device_name,
 	}
 
 	if (response.size == 0 ||
-	    (device_parse_info(response.data, uuid, token) < 0)) {
+	    (parser_device(response.data, uuid, token) < 0)) {
 		hal_log_error("Unexpected response!");
 		result = KNOT_CLOUD_FAILURE;
 		goto fail;
