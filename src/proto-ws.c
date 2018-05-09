@@ -147,6 +147,8 @@ static void parse_config(struct ws_session *session,
 				 json_object_to_json_string(jobjkey),
 				 session->user_data);
 	}
+
+	json_object_put(jobj);
 }
 
 static void parse(struct ws_session *session, const char *in, size_t len)
