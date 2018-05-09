@@ -66,9 +66,11 @@ struct session {
 	bool rollback;			/* Remove from cloud if true */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	struct l_queue *schema;		/* Schema accepted by cloud */
-	struct l_queue *schema_tmp;	/* Schema to be submitted to cloud */
-	struct l_queue *config;		/* knot_config accepted from cloud */
+	struct l_queue *schema_list;	/* Schema accepted by cloud */
+	char *schema;			/* Current schema */
+	struct l_queue *schema_list_tmp;/* Schema to be submitted to cloud */
+	struct l_queue *config_list;	/* knot_config accepted from cloud */
+	char *config;			/* Current config */
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -95,9 +97,9 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->token = NULL;
 	session->id = INT32_MAX;
 	session->node_ops = node_ops;
-	session->schema = NULL;
-	session->schema_tmp = NULL;
-	session->config = NULL;
+	session->schema_list = NULL;
+	session->schema_list_tmp = NULL;
+	session->config_list = NULL;
 
 	return session_ref(session);
 }
@@ -115,9 +117,11 @@ static void session_unref(struct session *session)
 
 	l_free(session->uuid);
 	l_free(session->token);
-	l_queue_destroy(session->schema, l_free);
-	l_queue_destroy(session->schema_tmp, l_free);
-	l_queue_destroy(session->config, l_free);
+	l_queue_destroy(session->schema_list, l_free);
+	l_queue_destroy(session->schema_list_tmp, l_free);
+	l_queue_destroy(session->config_list, l_free);
+	l_free(session->schema);
+	l_free(session->config);
 
 	l_free(session);
 }
@@ -372,11 +376,23 @@ static bool property_changed(const char *name,
 		return false;
 
 	/* FIXME: Memory leak & detect if schema has changed */
-	if (strcmp("schema", name) == 0)
-		session->schema = parser_schema_to_list(value);
-	else if (strcmp("config", name) == 0)
-		session->config = parser_config_to_list(value);
+	if (strcmp("schema", name) == 0) {
+		if (session->schema && strcmp(session->schema, value) == 0)
+			goto done;
 
+		session->schema_list = parser_schema_to_list(value);
+		l_free(session->schema);
+		session->schema = l_strdup(value);
+
+	} else if (strcmp("config", name) == 0) {
+		if (session->config && strcmp(session->config, value) == 0)
+			goto done;
+
+		session->config_list = parser_config_to_list(value);
+		session->config = l_strdup(value);
+	}
+
+done:
 	return true;
 }
 
@@ -566,11 +582,11 @@ static int8_t msg_schema(struct session *session,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
-	if (session->schema_tmp == NULL)
-		session->schema_tmp = l_queue_new();
+	if (session->schema_list_tmp == NULL)
+		session->schema_list_tmp = l_queue_new();
 
-	if (!schema_find(session->schema_tmp, schema->sensor_id))
-		l_queue_push_tail(session->schema_tmp,
+	if (!schema_find(session->schema_list_tmp, schema->sensor_id))
+		l_queue_push_tail(session->schema_list_tmp,
 				  l_memdup(schema, sizeof(*schema)));
 
 	 /*
@@ -585,17 +601,17 @@ static int8_t msg_schema(struct session *session,
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_schema(proto_sock, session->uuid,
-			      session->token, session->schema_tmp);
+			      session->token, session->schema_list_tmp);
 	if (result != KNOT_SUCCESS) {
-		l_queue_destroy(session->schema_tmp, l_free);
-		session->schema_tmp = NULL;
+		l_queue_destroy(session->schema_list_tmp, l_free);
+		session->schema_list_tmp = NULL;
 		goto done;
 	}
 
 	/* If succeeded: free old schema and use the new one */
-	l_queue_destroy(session->schema, l_free);
-	session->schema = session->schema_tmp;
-	session->schema_tmp = NULL;
+	l_queue_destroy(session->schema_list, l_free);
+	session->schema_list = session->schema_list_tmp;
+	session->schema_list_tmp = NULL;
 done:
 	return result;
 }
@@ -619,7 +635,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = schema_find(session->schema, sensor_id);
+	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 			     sensor_id);
@@ -663,7 +679,7 @@ static int8_t msg_config_resp(struct session *session,
 	sensor_id = response->sensor_id;
 
 	/* TODO: Always forward instead of avoid sending repeated configs */
-	l_queue_remove_if(session->config,
+	l_queue_remove_if(session->config_list,
 			  config_sensor_id_cmp,
 			  L_UINT_TO_PTR(sensor_id));
 
@@ -697,7 +713,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	}
 
 	sensor_id = kmdata->sensor_id;
-	schema = schema_find(session->schema, sensor_id);
+	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
