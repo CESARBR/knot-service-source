@@ -372,3 +372,70 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 	json_object_put(jobj);
 	return list;
 }
+
+struct l_queue *parser_sensorid_to_list(const char *json_str)
+{
+	struct l_queue *list;
+	json_object *jobjarray;
+	json_object *jobjentry;
+	json_object *jobjkey;
+	int sensor_id;
+	int i;
+
+	jobjarray = json_tokener_parse(json_str);
+	if (!jobjarray)
+		return NULL;
+
+	list = l_queue_new();
+	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+
+		jobjentry = json_object_array_get_idx(jobjarray, i);
+		if (!jobjentry)
+			break;
+
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(jobjentry,
+					       "sensor_id", &jobjkey))
+			continue;
+
+		errno = 0;
+		sensor_id = json_object_get_int(jobjkey);
+		if (errno == EINVAL)
+			continue;
+
+		/* Order matters: Add to tail to generate the same json */
+		l_queue_push_tail(list,
+				  l_memdup(&sensor_id, sizeof(sensor_id)));
+
+	}
+
+	if (l_queue_isempty(list)) {
+		l_queue_destroy(list, NULL);
+		return NULL;
+	}
+
+	return list;
+}
+
+json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
+{
+	int *id;
+	json_object *ajobj;
+	json_object *entry;
+	json_object *setdatajobj;
+
+	ajobj = json_object_new_array();
+
+	for (id = l_queue_pop_head(list); id;
+	     id = l_queue_pop_head(list)) {
+			entry = json_object_new_object();
+			json_object_object_add(entry, "sensor_id",
+					       json_object_new_int(*id));
+			json_object_array_add(ajobj, json_object_get(entry));
+	}
+
+	setdatajobj = json_object_new_object();
+	json_object_object_add(setdatajobj, key, ajobj);
+
+	return setdatajobj;
+}

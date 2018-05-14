@@ -71,6 +71,8 @@ struct session {
 	struct l_queue *schema_list_tmp;/* Schema to be submitted to cloud */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	char *config;			/* Current config */
+	struct l_queue *getdata_list;	/* List of sensors requested */
+	char *getdata;			/* Current get_data */
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -120,8 +122,10 @@ static void session_unref(struct session *session)
 	l_queue_destroy(session->schema_list, l_free);
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
+	l_queue_destroy(session->getdata_list, l_free);
 	l_free(session->schema);
 	l_free(session->config);
+	l_free(session->getdata);
 
 	l_free(session);
 }
@@ -389,7 +393,16 @@ static bool property_changed(const char *name,
 			goto done;
 
 		session->config_list = parser_config_to_list(value);
+		l_free(session->config);
 		session->config = l_strdup(value);
+	} else if (strcmp("get_data", name) == 0) {
+
+		if (session->getdata && strcmp(session->getdata, value) == 0)
+			goto done;
+
+		session->getdata_list = parser_sensorid_to_list(value);
+		l_free(session->getdata);
+		session->getdata = l_strdup(value);
 	}
 
 done:
@@ -1098,7 +1111,7 @@ static void proxy_added(uint64_t device_id, const char *uuid, const char *name, 
 	struct knot_device *device = device_get(device_id);
 
 	/* Tracks 'proxy' devices that belongs to Cloud. */
-	hal_log_info("Device added: %" PRIu64, device_id);
+	hal_log_info("Device added: %" PRIu64" UUID: %s", device_id, uuid);
 
 	if (!device) {
 		/* Ownership belongs to device.c */
