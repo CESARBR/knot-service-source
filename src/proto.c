@@ -331,85 +331,17 @@ static json_object *data_create_object(uint8_t sensor_id,
 /*
  * Updates the 'devices' db, removing the sensor_id that just sent the data
  */
-void proto_getdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id)
+int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
 {
-	json_object *jobj = NULL, *jobjarray = NULL;
-	json_object *jobjentry = NULL, *jobjkey = NULL;
-	json_object *ajobj = NULL, *setdatajobj = NULL;
 	json_raw_t json;
-	const char *jobjstr;
-	int i, err;
+	int err;
 
 	memset(&json, 0, sizeof(json));
-	err = proto->fetch(proto_sock, uuid, token, &json);
-	if (err < 0) {
-		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
-		goto done;
-	}
+	err = proto->setdata(proto_sock, uuid, token, json_str, &json);
 
-	jobj = json_tokener_parse(json.data);
-	if (!jobj)
-		goto done;
-
-	ajobj = json_object_new_array();
-	setdatajobj = json_object_new_object();
-
-	/*
-	 * Getting 'get_data' from the device properties
-	 * {"devices":[{"uuid":
-	 *		"get_data" : [
-	 *			{"sensor_id": v
-	 *			}]
-	 *		}]
-	 * }
-	 */
-
-	/* 'get_data' is an array */
-	if (!json_object_object_get_ex(jobj, "get_data", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array)
-		goto done;
-
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
-
-		jobjentry = json_object_array_get_idx(jobjarray, i);
-		if (!jobjentry)
-			break;
-
-		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry, "sensor_id",
-								&jobjkey))
-			continue;
-
-		/*
-		 * Creates a list with all the sensor_id in the get_data list
-		 * except for the one that was just received
-		 */
-		if (json_object_get_int(jobjkey) != sensor_id) {
-			json_object_array_add(ajobj,
-					      json_object_get(jobjentry));
-			continue;
-		}
-		/*
-		 * TODO: if the value changed before it was updated, the entry
-		 * should not be erased
-		 */
-	}
-
-	json_object_object_add(setdatajobj, "get_data", json_object_get(ajobj));
-	jobjstr = json_object_to_json_string(setdatajobj);
-
-	err = proto->setdata(proto_sock, uuid, token, jobjstr, &json);
-
-done:
-	if (jobj)
-		json_object_put(jobj);
-	if (setdatajobj)
-		json_object_put(setdatajobj);
-	if (ajobj)
-		json_object_put(ajobj);
 	l_free(json.data);
+
+	return err;
 }
 
 /*

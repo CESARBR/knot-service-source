@@ -130,6 +130,22 @@ static void session_unref(struct session *session)
 	l_free(session);
 }
 
+static bool device_id_cmp(const void *a, const void *b)
+{
+	const uint64_t *val1 = a;
+	const uint64_t *val2 = b;
+
+	return (*val1 == *val2 ? true : false);
+}
+
+static bool sensor_id_cmp(const void *a, const void *b)
+{
+	const uint8_t *val1 = a;
+	const uint8_t val2 = L_PTR_TO_INT(b);
+
+	return (*val1 == val2 ? true : false);
+}
+
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
 	const knot_msg_schema *schema = entry_data;
@@ -396,7 +412,6 @@ static bool property_changed(const char *name,
 		l_free(session->config);
 		session->config = l_strdup(value);
 	} else if (strcmp("get_data", name) == 0) {
-
 		if (session->getdata && strcmp(session->getdata, value) == 0)
 			goto done;
 
@@ -549,17 +564,22 @@ static int8_t msg_auth(struct session *session,
 
 	strncpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
 	strncpy(token, kmauth->token, sizeof(kmauth->token));
+	/* Set UUID & token: Used at property_changed */
+	session->uuid = l_strdup(uuid);
+	session->token = l_strdup(token);
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
-	if (result != KNOT_SUCCESS)
+	if (result != KNOT_SUCCESS) {
+		l_free(session->uuid);
+		l_free(session->token);
+		session->uuid = NULL;
+		session->token = NULL;
 		return result;
+	}
 
 	session->trusted = true;
 	session->rollback = false;
-
-	session->uuid = l_strdup(uuid);
-	session->token = l_strdup(token);
 
 	return KNOT_SUCCESS;
 }
@@ -632,10 +652,13 @@ done:
 static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
+	const char *json_str;
+	json_object *jobj;
 	int proto_sock;
 	int err;
 	int8_t result;
 	uint8_t sensor_id;
+	uint8_t *sensor_id_ptr;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
@@ -673,7 +696,18 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	result = proto_data(proto_sock, session->uuid, session->token,
 			    sensor_id, schema->values.value_type, kdata);
 
-	proto_getdata(proto_sock, session->uuid, session->token, sensor_id);
+	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
+			       sensor_id_cmp, L_INT_TO_PTR(sensor_id));
+	if (sensor_id_ptr == NULL)
+		goto done;
+
+	l_free(sensor_id_ptr);
+	/* Updating 'get_data' array at Cloud */
+	jobj = parser_sensorid_to_json("get_data", session->getdata_list);
+	json_str = json_object_to_json_string(jobj);
+	proto_getdata(proto_sock, session->uuid, session->token, json_str);
+
+	json_object_put(jobj);
 
 done:
 	return result;
@@ -935,8 +969,6 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
 
-	hal_log_info("%s session:%p", __PRETTY_FUNCTION__, user_data);
-
 	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
 	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
 
@@ -1079,14 +1111,6 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 	l_hashmap_insert(session_map, L_INT_TO_PTR(client_socket), session);
 
 	return true;
-}
-
-static bool device_id_cmp(const void *a, const void *b)
-{
-	const uint64_t *val1 = a;
-	const uint64_t *val2 = b;
-
-	return (*val1 == *val2 ? true : false);
 }
 
 static void forget_if_unknown(struct knot_device *device, void *user_data)
