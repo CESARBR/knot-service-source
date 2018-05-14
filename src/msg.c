@@ -72,6 +72,8 @@ struct session {
 	struct l_queue *getdata_list;	/* List of sensors requested */
 	char *getdata;			/* Current get_data */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
+	struct l_queue *setdata_list;	/* Set_data accepted from cloud */
+	char *setdata;			/* Current get_data */
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -101,6 +103,8 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->schema_list = NULL;
 	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
+	session->setdata_list = NULL;
+	session->getdata_list = NULL;
 
 	return session_ref(session);
 }
@@ -122,10 +126,12 @@ static void session_unref(struct session *session)
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->getdata_list, l_free);
+	l_queue_destroy(session->setdata_list, l_free);
 	l_timeout_remove(session->downstream_to);
 	l_free(session->schema);
 	l_free(session->config);
 	l_free(session->getdata);
+	l_free(session->setdata);
 
 	l_free(session);
 }
@@ -257,6 +263,15 @@ static bool property_changed(const char *name,
 		session->getdata_list = parser_sensorid_to_list(value);
 		l_free(session->getdata);
 		session->getdata = l_strdup(value);
+
+	} else if (strcmp("set_data", name) == 0) {
+
+		if (session->setdata && strcmp(session->setdata, value) == 0)
+			goto done;
+
+		session->setdata_list = parser_setdata_to_list(value);
+		l_free(session->setdata);
+		session->setdata = l_strdup(value);
 	}
 
 	/* Timeout created already? */
@@ -647,6 +662,7 @@ static int8_t msg_setdata_resp(struct session *session,
 
 	hal_log_info("THING %s updated data for sensor %d", session->uuid,
 								sensor_id);
+
 	result = KNOT_SUCCESS;
 
 done:
