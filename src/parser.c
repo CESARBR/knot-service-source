@@ -416,6 +416,8 @@ struct l_queue *parser_sensorid_to_list(const char *json_str)
 		return NULL;
 	}
 
+	json_object_put(jobjarray);
+
 	return list;
 }
 
