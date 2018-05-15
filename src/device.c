@@ -279,7 +279,7 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       NULL))
 		hal_log_error("Can't add 'Name' property");
 
-	if (!l_dbus_interface_property(interface, "UUID", 0, "s",
+	if (!l_dbus_interface_property(interface, "Uuid", 0, "s",
 				       property_get_uuid,
 				       NULL))
 		hal_log_error("Can't add 'UUID' property");
