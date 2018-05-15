@@ -73,6 +73,7 @@ struct session {
 	char *config;			/* Current config */
 	struct l_queue *getdata_list;	/* List of sensors requested */
 	char *getdata;			/* Current get_data */
+	struct l_timeout *downstream_to; /* Active when there is data to send */
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -123,6 +124,7 @@ static void session_unref(struct session *session)
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->getdata_list, l_free);
+	l_timeout_remove(session->downstream_to);
 	l_free(session->schema);
 	l_free(session->config);
 	l_free(session->getdata);
@@ -255,70 +257,6 @@ done:
 	return NULL;
 }
 
-/*
- * Parses the json from the cloud with the get_data.
- */
-static struct l_queue *parse_device_getdata(const char *json_str)
-{
-	json_object *jobj, *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list;
-	knot_msg_item *entry;
-	int sensor_id, i;
-
-	jobj = json_tokener_parse(json_str);
-	if (!jobj)
-		return NULL;
-
-	list = l_queue_new();
-
-	/*
-	 * Getting 'get_data' from the device properties
-	 * {"devices":[{"uuid":
-	 *		"get_data" : [
-	 *			{"sensor_id": v
-	 *			}]
-	 * }
-	 */
-
-	/* 'set_data' is an array */
-	if (!json_object_object_get_ex(jobj, "get_data", &jobjarray))
-		goto done;
-
-	if (json_object_get_type(jobjarray) != json_type_array)
-		goto done;
-
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
-
-		jobjentry = json_object_array_get_idx(jobjarray, i);
-		if (!jobjentry)
-			goto done;
-
-		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry,
-					       "sensor_id", &jobjkey))
-			goto done;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
-
-		sensor_id = json_object_get_int(jobjkey);
-
-		entry = l_new(knot_msg_item, 1);
-		entry->sensor_id = sensor_id;
-
-		l_queue_push_tail(list, entry);
-	}
-	json_object_put(jobj);
-
-	return list;
-
-done:
-	l_queue_destroy(list, l_free);
-	json_object_put(jobj);
-
-	return NULL;
-}
-
 static void update_msg_item_header(void *entry_data, void *user_data)
 {
 	knot_msg_item *kmitem = entry_data;
@@ -384,6 +322,56 @@ static struct l_queue *msg_setdata(int node_socket,
 }
 #endif
 
+static void downstream_callback(struct l_timeout *timeout, void *user_data)
+{
+	struct session *session = user_data;
+	struct node_ops *node_ops = session->node_ops;
+	knot_msg_config *config;
+	knot_msg_item item;
+	ssize_t olen, osent;
+	void *opdu;
+	uint8_t *sensor_id;
+	int err;
+
+	config = l_queue_peek_head(session->config_list);
+	if (config) {
+		/* Priority 1: Config message has higher priority */
+		olen = sizeof(*config);
+		opdu = config;
+		goto do_send;
+	}
+
+	/* Priority 2: Set Data */
+
+	/* Priority 3: Get Data */
+	sensor_id = l_queue_peek_head(session->getdata_list);
+	if (!sensor_id)
+		goto disable_timer;
+
+	item.hdr.type = KNOT_MSG_GET_DATA;
+	item.hdr.payload_len = sizeof(*sensor_id);
+	item.sensor_id = *sensor_id;
+	olen = sizeof(item);
+	opdu = &item;
+
+do_send:
+	osent = node_ops->send(session->node_fd, opdu, olen);
+	hal_log_info("Sending downstream data fd(%d)...", session->node_fd);
+	if (osent < 0) {
+		err = -osent;
+		hal_log_error("Can't send downstream data: %s(%d)",
+			      strerror(err), err);
+		goto disable_timer;
+	}
+
+	l_timeout_modify_ms(timeout, 1096);
+
+	return;
+
+disable_timer:
+	hal_log_info("Disabling downstream ...");
+}
+
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
@@ -400,6 +388,7 @@ static bool property_changed(const char *name,
 		if (session->schema && strcmp(session->schema, value) == 0)
 			goto done;
 
+		/* Track to detect if update is required */
 		session->schema_list = parser_schema_to_list(value);
 		l_free(session->schema);
 		session->schema = l_strdup(value);
@@ -408,6 +397,7 @@ static bool property_changed(const char *name,
 		if (session->config && strcmp(session->config, value) == 0)
 			goto done;
 
+		/* Always push to devices when connection is established */
 		session->config_list = parser_config_to_list(value);
 		l_free(session->config);
 		session->config = l_strdup(value);
@@ -415,11 +405,22 @@ static bool property_changed(const char *name,
 		if (session->getdata && strcmp(session->getdata, value) == 0)
 			goto done;
 
+		/* Always push to devices when connection is established */
 		session->getdata_list = parser_sensorid_to_list(value);
 		l_free(session->getdata);
 		session->getdata = l_strdup(value);
 	}
 
+	/* Timeout created already? */
+	if (session->downstream_to) {
+		l_timeout_modify_ms(session->downstream_to, 1096);
+		return true;
+	}
+
+	/* FIXME: choose a better approach to avoid collision */
+	session->downstream_to = l_timeout_create_ms(1096,
+						     downstream_callback,
+						     session, NULL);
 done:
 	return true;
 }
@@ -696,6 +697,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	result = proto_data(proto_sock, session->uuid, session->token,
 			    sensor_id, schema->values.value_type, kdata);
 
+	/* Remove pending get data request & update cloud */
 	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
 			       sensor_id_cmp, L_INT_TO_PTR(sensor_id));
 	if (sensor_id_ptr == NULL)
@@ -716,6 +718,7 @@ done:
 static int8_t msg_config_resp(struct session *session,
 			      const knot_msg_item *response)
 {
+	knot_msg_config *config;
 	uint8_t sensor_id;
 
 	if (!session->trusted) {
@@ -726,9 +729,13 @@ static int8_t msg_config_resp(struct session *session,
 	sensor_id = response->sensor_id;
 
 	/* TODO: Always forward instead of avoid sending repeated configs */
-	l_queue_remove_if(session->config_list,
-			  config_sensor_id_cmp,
-			  L_UINT_TO_PTR(sensor_id));
+	config = l_queue_remove_if(session->config_list,
+				   config_sensor_id_cmp,
+				   L_UINT_TO_PTR(sensor_id));
+	if (!config)
+		return KNOT_INVALID_DATA;
+
+	l_free(config);
 
 	hal_log_info("THING %s received config for sensor %d", session->uuid,
 								sensor_id);
@@ -1030,6 +1037,7 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 		hal_log_info("Reconnected to cloud service");
 	}
 
+	/* Blocking: Wait until response from cloud is received */
 	olen = msg_process(session, ipdu, recvbytes, opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {

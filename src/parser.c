@@ -292,6 +292,8 @@ struct l_queue *parser_config_to_list(const char *json_str)
 		}
 
 		config = l_new(knot_msg_config, 1);
+		config->hdr.type = KNOT_MSG_CONFIG;
+		config->hdr.payload_len = sizeof(config->values) + 1;
 		config->sensor_id = sensor_id;
 		config->values.event_flags = event_flags;
 		config->values.time_sec = time_sec;
