@@ -1,33 +1,31 @@
 Settings hierarchy
 ================
-Interface 	org.cesar.knot.Settings1
+Interface 	br.org.cesar.knot.Settings1
 Object path 	[variable prefix]/
 
 Methods
 
 Properties
-		uint Id [readonly]
+		string Host [readwrite]
 
-		Unique identification exposed to service level. Technology
-		agnostic value to allow mapping a virtual device representation
-		to its actual device.
-
-		string Uuid [read/write, mandatory]
-
-		Remote name. PropertiesChanged is be emitted if this
+		Fog server host name. PropertiesChanged is be emitted if this
 		value changes.
 
-		boolean Online [readonly]
+		uint16 Port [readwrite]
 
-		Indicates if the remote is currently connected.
-		PropertiesChanged signal is emitted when this value
-		changes.
+		Fog server port. PropertiesChanged is be emitted if this
+		value changes.
 
-		boolean Registered [readonly]
+		string Uuid [readwrite]
 
-		Indicates if the remote is registed to cloud service.
-		PropertiesChanged signal is emitted when this value
-		changes.
+		Gateway identifier to use when communicating with the fog server.
+		PropertiesChanged is be emitted if this	value changes.
+
+		string Token [readwrite]
+
+		Gateway token to use when communicating with the fog server.
+		PropertiesChanged is be emitted if this	value changes.
+
 Device hierarchy
 ================
 Interface 	org.cesar.knot.Device1
