@@ -28,7 +28,7 @@ Properties
 
 Device hierarchy
 ================
-Interface 	org.cesar.knot.Device1
+Interface 	br.org.cesar.knot.Device1
 Object path 	[variable prefix]/dev_xx_xx_xx_xx_xx_xx_xx_xx
 
 Methods 	void Pair(dict properties)
@@ -37,15 +37,18 @@ Methods 	void Pair(dict properties)
 		properties: "PublicKey", "PrivateKey". Keys are optional,
 		binding without keys results on non-secure communication.
 
-		Returns: org.cesar.nrf.Error.AlreadyExists
-			org.cesar.nrf.Error.InvalidArguments
+		Returns: br.org.cesar.knot.InvalidArgs
+			br.org.cesar.knot.AlreadyExists
+			br.org.cesar.knot.InProgress
+			br.org.cesar.knot.NotAvailable
 
 		void Forget()
 
 		This method removes all meta-data associated to this device, and
 		automatically disconnects from it.
 
-		Returns: br.org.cesar.knot.nrf.Error.InProgress
+		Returns: br.org.cesar.knot.InProgress
+			br.org.cesar.knot.NotAvailable
 
 Properties
 		string Id [readonly]
@@ -59,9 +62,20 @@ Properties
 		Remote name. PropertiesChanged is be emitted if this
 		value changes.
 
+		string Uuid [readonly, optional]
+
+		Remote identifier in the cloud. PropertiesChanged is be emitted
+		if this	value changes.
+
 		boolean Online [readonly]
 
 		Indicates if the remote is currently connected.
+		PropertiesChanged signal is emitted when this value
+		changes.
+
+		boolean Paired [readonly]
+
+		Indicates if the remote is paired.
 		PropertiesChanged signal is emitted when this value
 		changes.
 
