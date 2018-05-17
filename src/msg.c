@@ -286,14 +286,10 @@ static bool property_changed(const char *name,
 
 	/* Timeout created already? */
 	if (session->downstream_to) {
-		l_timeout_modify_ms(session->downstream_to, 1096);
+		l_timeout_modify_ms(session->downstream_to, 512);
 		return true;
 	}
 
-	/* FIXME: choose a better approach to avoid collision */
-	session->downstream_to = l_timeout_create_ms(1096,
-						     downstream_callback,
-						     session, NULL);
 done:
 	return true;
 }
@@ -765,6 +761,11 @@ static ssize_t msg_process(struct session *session,
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(session, &kreq->auth);
 		rtype = KNOT_MSG_AUTH_RESP;
+		/* Enable downstream after authentication only */
+		session->downstream_to =
+			l_timeout_create_ms(512,
+					    downstream_callback,
+					    session, NULL);
 		break;
 	case KNOT_MSG_SCHEMA:
 	case KNOT_MSG_SCHEMA_END:
