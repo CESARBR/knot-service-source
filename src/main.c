@@ -85,14 +85,14 @@ static void l_main_loop_run()
 	l_signal_remove(sig);
 	l_main_exit();
 }
-
+/*
 static int run_as_nobody()
 {
 	if (setuid(65534))
 		return -errno;
 	return 0;
 }
-
+*/
 static int detach()
 {
 	if (daemon(0, 0))
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 		goto fail_manager;
 	}
 	/* Set user id to nobody */
-	if (settings->run_as_nobody) {
+/*	if (settings->run_as_nobody) {
 		err = run_as_nobody();
 		if (err) {
 			hal_log_error("Failed to run as nobody. " \
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 			goto fail_nobody;
 		}
 	}
-
+*/
 	if (settings->detach) {
 		err = detach();
 		if (err) {
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 	err = EXIT_SUCCESS;
 
 fail_detach:
-fail_nobody:
+/*fail_nobody:*/
 	manager_stop();
 fail_manager:
 	l_main_exit();
