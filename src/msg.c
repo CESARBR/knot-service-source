@@ -48,7 +48,6 @@
 #include "device.h"
 #include "proxy.h"
 #include "proto.h"
-#include "util.h"
 #include "parser.h"
 #include "msg.h"
 
@@ -263,7 +262,7 @@ static bool property_changed(const char *name,
 			goto done;
 
 		config_list = parser_config_to_list(value);
-		if (util_config_is_valid(config_list) != KNOT_SUCCESS) {
+		if (parser_config_is_valid(config_list) != KNOT_SUCCESS) {
 			l_queue_destroy(config_list, l_free);
 			goto done;
 		}

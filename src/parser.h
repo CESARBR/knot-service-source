@@ -32,3 +32,5 @@ struct l_queue *parser_mydevices_to_list(const char *json_str);
 struct l_queue *parser_sensorid_to_list(const char *json_str);
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list);
 int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg);
+
+int8_t parser_config_is_valid(struct l_queue *config_list);
