@@ -92,6 +92,7 @@ static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
 		limit->val_i.value = json_object_get_int(jobjkey);
 		limit->val_i.multiplier = 1;
 		break;
+	/* FIXME: not implemented */
 	case json_type_string:
 	case json_type_null:
 	case json_type_object:
@@ -444,56 +445,36 @@ json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
 	return setdatajobj;
 }
 
-struct l_queue *parser_setdata_to_list(const char *json_str)
+int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 {
-	json_object *jobjarray, *jobjentry, *jobjkey;
-	struct l_queue *list;
-	knot_msg_data *entry;
+	json_object *jobjkey;
 	knot_data data;
-	int sensor_id, i;
-	json_type jtype;
+	int sensor_id;
+	int jtype;
 
-	jobjarray = json_tokener_parse(json_str);
-	if (!jobjarray)
-		return NULL;
+	/* Getting 'sensor_id' */
+	if (!json_object_object_get_ex(jso, "sensor_id", &jobjkey))
+		return -EINVAL;
 
-	list = l_queue_new();
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
+	if (json_object_get_type(jobjkey) != json_type_int)
+		return -EINVAL;
 
-		jobjentry = json_object_array_get_idx(jobjarray, i);
+	sensor_id = json_object_get_int(jobjkey);
 
-		if(!json_object_object_get_ex(jobjentry, "sensor_id", &jobjkey))
-			continue;
+	/* Getting 'value' */
+	memset(&data, 0, sizeof(knot_data));
+	if (!json_object_object_get_ex(jso, "value", &jobjkey))
+		return -EINVAL;
 
-		if (json_object_get_type(jobjkey) != json_type_int)
-			continue;
+	jtype = json_object_get_type(jobjkey);
+	if (jtype != json_type_int &&
+	    jtype != json_type_double && jtype != json_type_boolean)
+		return -EINVAL;
 
-		sensor_id = json_object_get_int(jobjkey);
+	msg->hdr.type = KNOT_MSG_SET_DATA;
+	msg->hdr.payload_len = sizeof(knot_msg_data) - sizeof(knot_msg_header);
+	msg->sensor_id = sensor_id;
+	parse_json_value_types(jobjkey, &msg->payload.values);
 
-		if(json_object_object_get_ex(jobjentry, "value", &jobjkey)) {
-			jtype = json_object_get_type(jobjkey);
-			if (jtype != json_type_boolean &&
-			    jtype != json_type_int &&
-			    jtype != json_type_double)
-				continue;
-
-			memset(&data, 0, sizeof(knot_data));
-			parse_json_value_types(jobjkey, &data.values);
-		} else
-			continue;
-
-		entry = l_new(knot_msg_data, 1);
-		entry->sensor_id = (uint8_t) sensor_id;
-		memcpy(&(entry->payload), &data, sizeof(knot_data));
-		l_queue_push_tail(list, entry);
-	}
-
-	json_object_put(jobjarray);
-
-	if (l_queue_isempty(list)) {
-		l_queue_destroy(list, NULL);
-		return NULL;
-	}
-
-	return list;
+	return 0;
 }

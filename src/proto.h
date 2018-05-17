@@ -91,7 +91,8 @@ int proto_data(int proto_socket, const char *uuid,
 		      uint8_t value_type, const knot_data *value);
 int proto_getdata(int proto_sock, char *uuid, char *token,
 		   const char *json_str);
-void proto_setdata(int proto_sock, char *uuid, char *token, uint8_t sensor_id);
+int proto_setdata(int proto_sock, char *uuid, char *token,
+		   const char *json_str);
 
 int proto_set_proxy_handlers(int sock,
 			     proto_proxy_added_func_t added,

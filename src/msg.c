@@ -72,8 +72,8 @@ struct session {
 	struct l_queue *getdata_list;	/* List of sensors requested */
 	char *getdata;			/* Current get_data */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
-	struct l_queue *setdata_list;	/* Set_data accepted from cloud */
 	char *setdata;			/* Current get_data */
+	json_object *setdata_jso;	/* JSON object representing set_data */
 };
 
 /* Maps sockets to sessions: online devices only.  */
@@ -103,7 +103,6 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->schema_list = NULL;
 	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
-	session->setdata_list = NULL;
 	session->getdata_list = NULL;
 
 	return session_ref(session);
@@ -126,7 +125,6 @@ static void session_unref(struct session *session)
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->getdata_list, l_free);
-	l_queue_destroy(session->setdata_list, l_free);
 	l_timeout_remove(session->downstream_to);
 	l_free(session->schema);
 	l_free(session->config);
@@ -180,22 +178,32 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
+	json_object *jso;
 	knot_msg_config *config;
+	knot_msg_data data;
 	knot_msg_item item;
 	ssize_t olen, osent;
 	void *opdu;
 	uint8_t *sensor_id;
 	int err;
 
+	/* Priority 1: Config message has higher priority */
 	config = l_queue_peek_head(session->config_list);
 	if (config) {
-		/* Priority 1: Config message has higher priority */
-		olen = sizeof(*config);
 		opdu = config;
+		olen = sizeof(*config);
 		goto do_send;
 	}
 
 	/* Priority 2: Set Data */
+	jso = json_object_array_get_idx(session->setdata_jso, 0);
+	if (jso) {
+		if (parser_jso_setdata_to_msg(jso, &data)) {
+			opdu = &data;
+			olen = sizeof(data);
+			goto do_send;
+		}
+	}
 
 	/* Priority 3: Get Data */
 	sensor_id = l_queue_peek_head(session->getdata_list);
@@ -265,11 +273,13 @@ static bool property_changed(const char *name,
 		session->getdata = l_strdup(value);
 
 	} else if (strcmp("set_data", name) == 0) {
-
 		if (session->setdata && strcmp(session->setdata, value) == 0)
 			goto done;
 
-		session->setdata_list = parser_setdata_to_list(value);
+		session->setdata_jso = json_tokener_parse(value);
+		if (!session->setdata_jso)
+			goto done;
+
 		l_free(session->setdata);
 		session->setdata = l_strdup(value);
 	}
@@ -614,6 +624,10 @@ static int8_t msg_setdata_resp(struct session *session,
 			       const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
+	const char *json_str;
+	json_object *jsoarray;
+	json_object *jsokey;
+	json_object *jso;
 	int8_t result;
 	int proto_sock;
 	int err;
@@ -621,7 +635,12 @@ static int8_t msg_setdata_resp(struct session *session,
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
+	 *
+	 * Format to push to cloud:
+	 * "set_data" : [
+	 *		{"sensor_id": v, "value": w}]
 	 */
+
 	const knot_data *kdata = &(kmdata->payload);
 
 	if (!session->trusted) {
@@ -634,8 +653,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 								sensor_id);
-		result = KNOT_INVALID_DATA;
-		goto done;
+		return KNOT_INVALID_DATA;
 	}
 
 	err = knot_schema_is_valid(schema->values.type_id,
@@ -644,26 +662,53 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 					sensor_id, schema->values.type_id);
-		result = KNOT_INVALID_DATA;
-		goto done;
+		return KNOT_INVALID_DATA;
 	}
 
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
 				schema->values.unit, schema->values.value_type);
 
-	/* Fetches the 'devices' db */
 	proto_sock = l_io_get_fd(session->proto_channel);
-	proto_setdata(proto_sock, session->uuid, session->token, sensor_id);
-
 	result = proto_data(proto_sock, session->uuid, session->token,
 			    sensor_id, schema->values.value_type, kdata);
 	if (result != KNOT_SUCCESS)
-		goto done;
+		return result;
 
 	hal_log_info("THING %s updated data for sensor %d", session->uuid,
 								sensor_id);
 
-	result = KNOT_SUCCESS;
+	/* Access first entry */
+	jso = json_object_array_get_idx(session->setdata_jso, 0);
+	if (!jso)
+		goto done;
+
+	if(!json_object_object_get_ex(jso, "sensor_id", &jsokey))
+		goto done;
+
+	if (json_object_get_type(jsokey) != json_type_int)
+		goto done;
+
+	/* Protocol inconsistency */
+	if (sensor_id != json_object_get_int(jsokey))
+		goto done;
+
+	/* Releasing array entry: Removing first entry  */
+	if (json_object_array_del_idx(session->setdata_jso, 0, 1) != 0)
+		goto done;
+
+	l_free(session->setdata);
+	session->setdata =
+		l_strdup(json_object_to_json_string(session->setdata_jso));
+
+	/* Updating 'set_data' array at Cloud */
+	jso = json_object_new_object();
+	jsoarray = json_tokener_parse(session->setdata);
+	json_object_object_add(jso, "set_data", jsoarray);
+	json_str = json_object_to_json_string(jso);
+	proto_setdata(proto_sock, session->uuid, session->token, json_str);
+	json_object_put(jso);
+
+	return KNOT_SUCCESS;
 
 done:
 	return result;

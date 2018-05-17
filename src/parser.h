@@ -28,6 +28,7 @@ int parser_device(const char *json_str, char *uuid, char *token);
 struct l_queue *parser_schema_to_list(const char *json_str);
 struct l_queue *parser_config_to_list(const char *json_str);
 struct l_queue *parser_mydevices_to_list(const char *json_str);
+
 struct l_queue *parser_sensorid_to_list(const char *json_str);
-struct l_queue *parser_setdata_to_list(const char *json_str);
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list);
+int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg);
