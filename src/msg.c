@@ -104,6 +104,7 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
 	session->getdata_list = NULL;
+	session->setdata_jso = NULL;
 
 	return session_ref(session);
 }
@@ -196,12 +197,14 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	}
 
 	/* Priority 2: Set Data */
-	jso = json_object_array_get_idx(session->setdata_jso, 0);
-	if (jso) {
-		if (parser_jso_setdata_to_msg(jso, &data)) {
-			opdu = &data;
-			olen = sizeof(data);
-			goto do_send;
+	if (session->setdata_jso) {
+		jso = json_object_array_get_idx(session->setdata_jso, 0);
+		if (jso) {
+			if (parser_jso_setdata_to_msg(jso, &data)) {
+				opdu = &data;
+				olen = sizeof(data);
+				goto do_send;
+			}
 		}
 	}
 
