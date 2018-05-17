@@ -405,13 +405,11 @@ static int8_t msg_unregister(struct session *session)
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_rmnode(proto_sock, session->uuid, session->token);
 	if (result != KNOT_SUCCESS)
-		goto done;
+		return result;
 
 	session_unref(session);
-	result = KNOT_SUCCESS;
 
-done:
-	return result;
+	return KNOT_SUCCESS;
 }
 
 /* Mandatory before any operation */
@@ -548,8 +546,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	if (!schema) {
 		hal_log_info("sensor_id(0x%02x): data type mismatch!",
 			     sensor_id);
-		result = KNOT_INVALID_DATA;
-		goto done;
+		return KNOT_INVALID_DATA;
 	}
 
 	err = knot_schema_is_valid(schema->values.type_id,
@@ -558,8 +555,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	if (err) {
 		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
 			     sensor_id, schema->values.type_id);
-		result = KNOT_INVALID_DATA;
-		goto done;
+		return KNOT_INVALID_DATA;
 	}
 
 	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
@@ -627,10 +623,10 @@ static int8_t msg_setdata_resp(struct session *session,
 	json_object *jsoarray;
 	json_object *jsokey;
 	json_object *jso;
-	int8_t result;
 	int proto_sock;
 	int err;
 	uint8_t sensor_id;
+	int8_t result;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
