@@ -48,6 +48,7 @@
 #include "device.h"
 #include "proxy.h"
 #include "proto.h"
+#include "util.h"
 #include "parser.h"
 #include "msg.h"
 
@@ -237,6 +238,7 @@ disable_timer:
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
+	struct l_queue *config_list;
 	struct session *session;
 
 	/* FIXME: manage link overload or not connected */
@@ -260,9 +262,15 @@ static bool property_changed(const char *name,
 		if (session->config && strcmp(session->config, value) == 0)
 			goto done;
 
+		config_list = parser_config_to_list(value);
+		if (util_config_is_valid(config_list) != KNOT_SUCCESS) {
+			l_queue_destroy(config_list, l_free);
+			goto done;
+		}
+
 		/* Always push to devices when connection is established */
 		l_queue_destroy(session->config_list, l_free);
-		session->config_list = parser_config_to_list(value);
+		session->config_list = config_list;
 		l_free(session->config);
 		session->config = l_strdup(value);
 	} else if (strcmp("get_data", name) == 0) {
