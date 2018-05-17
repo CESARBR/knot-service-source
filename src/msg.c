@@ -251,6 +251,7 @@ static bool property_changed(const char *name,
 			goto done;
 
 		/* Track to detect if update is required */
+		l_queue_destroy(session->schema_list, l_free);
 		session->schema_list = parser_schema_to_list(value);
 		l_free(session->schema);
 		session->schema = l_strdup(value);
@@ -260,6 +261,7 @@ static bool property_changed(const char *name,
 			goto done;
 
 		/* Always push to devices when connection is established */
+		l_queue_destroy(session->config_list, l_free);
 		session->config_list = parser_config_to_list(value);
 		l_free(session->config);
 		session->config = l_strdup(value);
@@ -268,6 +270,7 @@ static bool property_changed(const char *name,
 			goto done;
 
 		/* Always push to devices when connection is established */
+		l_queue_destroy(session->getdata_list, l_free);
 		session->getdata_list = parser_sensorid_to_list(value);
 		l_free(session->getdata);
 		session->getdata = l_strdup(value);
