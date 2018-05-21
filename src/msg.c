@@ -201,7 +201,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	if (session->setdata_jso) {
 		jso = json_object_array_get_idx(session->setdata_jso, 0);
 		if (jso) {
-			if (parser_jso_setdata_to_msg(jso, &data)) {
+			if (parser_jso_setdata_to_msg(jso, &data) == 0) {
 				opdu = &data;
 				olen = sizeof(data);
 				goto do_send;
