@@ -25,7 +25,8 @@ int device_start(void);
 void device_stop(void);
 
 
-struct knot_device *device_create(const char *id, const char *name, bool paired);
+struct knot_device *device_create(const char *id, const char *name,
+				  bool paired, bool registered);
 void device_destroy(const char *device);
 struct knot_device *device_get(const char *id);
 const char *device_get_id(struct knot_device *device);

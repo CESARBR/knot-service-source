@@ -1083,7 +1083,7 @@ static void proxy_added(const char *device_id, const char *uuid,
 
 	if (!device) {
 		/* Ownership belongs to device.c */
-		device = device_create(device_id, name, true);
+		device = device_create(device_id, name, true, true);
 		if (!device)
 			return;
 	}

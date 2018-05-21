@@ -327,7 +327,8 @@ void device_stop(void)
 	l_dbus_unregister_interface(dbus_get_bus(), DEVICE_INTERFACE);
 }
 
-struct knot_device *device_create(const char *id, const char *name, bool paired)
+struct knot_device *device_create(const char *id, const char *name,
+				  bool paired, bool registered)
 {
 	struct knot_device *device;
 
@@ -337,7 +338,7 @@ struct knot_device *device_create(const char *id, const char *name, bool paired)
 	device->uuid = NULL; /* FIXME */
 	device->paired = paired;
 	device->online = false;
-	device->registered = false;
+	device->registered = registered;
 	device->msg = NULL;
 	device->msg_id = 0;
 
