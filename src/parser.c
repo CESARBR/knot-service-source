@@ -415,11 +415,15 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 	list = l_queue_new();
 	for (i = 0; i < len; i++) {
 		jobjentry = json_object_array_get_idx(jobj, i);
-		/* Getting 'Id' */
+		/* Getting 'Id': Mandatory field for registered device */
 		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
 			continue;
 
 		id = json_object_get_string(jobjkey);
+
+		/* Getting 'schema': Mandatory field for registered device */
+		if (!json_object_object_get_ex(jobjentry, "schema", &jobjkey))
+			continue;
 
 		/* Getting 'Name' */
 		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
