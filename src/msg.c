@@ -243,6 +243,8 @@ static bool property_changed(const char *name,
 {
 	struct l_queue *config_list;
 	struct session *session;
+	struct knot_device *device;
+	char id[KNOT_ID_LEN + 1];
 
 	/* FIXME: manage link overload or not connected */
 
@@ -260,6 +262,11 @@ static bool property_changed(const char *name,
 		session->schema_list = parser_schema_to_list(value);
 		l_free(session->schema);
 		session->schema = l_strdup(value);
+
+		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+		device = device_get(id);
+		if (device)
+			device_set_registered(device, true);
 
 	} else if (strcmp("config", name) == 0) {
 		if (session->config && strcmp(session->config, value) == 0)
