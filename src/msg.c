@@ -768,6 +768,14 @@ static ssize_t msg_process(struct session *session,
 		/* Payload length is set by the caller */
 		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
 		rtype = KNOT_MSG_REGISTER_RESP;
+		if (result != KNOT_SUCCESS)
+			break;
+
+		/* Enable downstream after registration & authentication */
+		session->downstream_to =
+			l_timeout_create_ms(512,
+					    downstream_callback,
+					    session, NULL);
 		break;
 	case KNOT_MSG_UNREGISTER_REQ:
 		result = msg_unregister(session);
@@ -780,7 +788,10 @@ static ssize_t msg_process(struct session *session,
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(session, &kreq->auth);
 		rtype = KNOT_MSG_AUTH_RESP;
-		/* Enable downstream after authentication only */
+		if (result != KNOT_SUCCESS)
+			break;
+
+		/* Enable downstream after authentication */
 		session->downstream_to =
 			l_timeout_create_ms(512,
 					    downstream_callback,
