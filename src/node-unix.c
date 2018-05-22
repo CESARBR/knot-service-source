@@ -57,7 +57,7 @@ static int unix_listen(void)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
+	memcpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, strlen(KNOT_UNIX_SOCKET));
 	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
 		err = -errno;
 		close(sock);

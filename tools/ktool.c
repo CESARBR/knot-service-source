@@ -110,7 +110,7 @@ static int unix_connect(const char *opt_unix)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, opt_unix, strlen(opt_unix));
+	memcpy(addr.sun_path + 1, opt_unix, strlen(opt_unix));
 
 	/*
 	 * FIXME:
@@ -402,8 +402,8 @@ static int authenticate(const char *uuid, const char *token)
 
 	msg.hdr.type = KNOT_MSG_AUTH_REQ;
 	msg.hdr.payload_len = sizeof(msg.uuid) + sizeof(msg.token);
-	strncpy(msg.uuid, uuid, sizeof(msg.uuid));
-	strncpy(msg.token, token, sizeof(msg.token));
+	memcpy(msg.uuid, uuid, sizeof(msg.uuid));
+	memcpy(msg.token, token, sizeof(msg.token));
 
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
@@ -524,8 +524,8 @@ static int cmd_register(void)
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_REGISTER_REQ;
 	msg.hdr.payload_len = len + sizeof(msg.id);
-	msg.id = opt_device_id ? opt_device_id:0x123456789abcdef;
-	strncpy(msg.devName, devname, len);
+	msg.id = opt_device_id ? opt_device_id : 0x123456789abcdef;
+	memcpy(msg.devName, devname, len);
 
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {

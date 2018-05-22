@@ -393,7 +393,7 @@ int proto_start(const struct settings *settings)
 	hal_log_info("proto_ops: %s", proto->name);
 
 	memset(owner_uuid, 0, sizeof(owner_uuid));
-	strncpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
+	memcpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
 
 	return proto->probe(settings->host, settings->port);
 }

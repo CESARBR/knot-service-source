@@ -341,14 +341,14 @@ static void msg_register_get_device_name(const knot_msg_register *kreq,
 	length = MIN(kreq->hdr.payload_len - sizeof(kreq->id),
 			KNOT_PROTOCOL_DEVICE_NAME_LEN - 1);
 
-	strncpy(device_name, kreq->devName, length);
+	memcpy(device_name, kreq->devName, length);
 }
 
 static void msg_credential_create(knot_msg_credential *message,
 				  const char *uuid, const char *token)
 {
-	strncpy(message->uuid, uuid, sizeof(message->uuid));
-	strncpy(message->token, token, sizeof(message->token));
+	memcpy(message->uuid, uuid, sizeof(message->uuid));
+	memcpy(message->token, token, sizeof(message->token));
 
 	/* Payload length includes the result, UUID and TOKEN */
 	message->hdr.payload_len = sizeof(*message) - sizeof(knot_msg_header);
@@ -453,8 +453,8 @@ static int8_t msg_auth(struct session *session,
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
 
-	strncpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
-	strncpy(token, kmauth->token, sizeof(kmauth->token));
+	memcpy(uuid, kmauth->uuid, sizeof(kmauth->uuid));
+	memcpy(token, kmauth->token, sizeof(kmauth->token));
 	/* Set UUID & token: Used at property_changed */
 	session->uuid = l_strdup(uuid);
 	session->token = l_strdup(token);
