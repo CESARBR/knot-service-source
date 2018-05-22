@@ -207,12 +207,10 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 {
 	char token_hdr[MESHBLU_AUTH_TOKEN_SIZE + MESHBLU_TOKEN_SIZE];
 	char uuid_hdr[MESHBLU_AUTH_UUID_SIZE + MESHBLU_UUID_SIZE];
-	char upcase_request[REQUEST_SIZE + 1];
 	struct curl_slist *headers = NULL;
 	CURL *ch;
 	CURLcode rcode;
 	long ehttp;
-	size_t i;
 
 	if (!request || !fetch) {
 		hal_log_error("Invalid argument!");
@@ -233,15 +231,11 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	fetch->data = NULL;
 	fetch->size = 0;
 
-	strncpy(upcase_request, request, sizeof(upcase_request));
-	for (i = 0; i < strlen(upcase_request); i++)
-		upcase_request[i] = toupper(upcase_request[i]);
-
-	curl_easy_setopt(ch, CURLOPT_CUSTOMREQUEST, upcase_request);
+	curl_easy_setopt(ch, CURLOPT_CUSTOMREQUEST, request);
 
 	curl_easy_setopt(ch, CURLOPT_URL, action);
 
-	hal_log_info("HTTP(%s): %s", upcase_request, action);
+	hal_log_info("HTTP(%s): %s", request, action);
 
 	if (uuid && token) {
 
