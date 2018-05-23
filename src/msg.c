@@ -80,6 +80,7 @@ struct session {
 /* Maps sockets to sessions: online devices only.  */
 static struct l_hashmap *session_map;
 static struct l_queue *device_id_list;
+static struct l_timeout *start_to;
 
 static struct session *session_ref(struct session *session)
 {
@@ -1153,9 +1154,43 @@ static void proxy_ready(void *user_data)
 		    service_ready, user_data);
 }
 
+static void start_timeout(struct l_timeout *timeout, void *user_data)
+{
+	struct settings *settings = user_data;
+	int sock;
+
+	/* FIXME: how to manage disconnection from cloud? */
+	sock = proto_connect();
+	if (sock < 0)
+		goto connect_fail;
+
+	/* 'settings' may be changed by D-Bus interface */
+	if (proto_signin(sock, settings->uuid, settings->token,
+			 NULL, NULL) != KNOT_SUCCESS)
+		goto signin_fail;
+
+	/* Step1: Getting Cloud (device) proxies using owner credential */
+	proto_set_proxy_handlers(sock,
+				 proxy_added,
+				 proxy_removed,
+				 proxy_ready,
+				 settings);
+
+	/* Last operation: Enable if cloud is connected & authenticated */
+	node_start(session_accept_cb);
+
+	return;
+
+signin_fail:
+	proto_close(sock);
+
+connect_fail:
+	/* Schedule this callback to 5 seconds */
+	l_timeout_modify(timeout, 5);
+}
+
 int msg_start(struct settings *settings)
 {
-	int sock;
 	int err;
 
 	session_map = l_hashmap_new();
@@ -1172,44 +1207,22 @@ int msg_start(struct settings *settings)
 		goto proto_fail;
 	}
 
-	err = node_start(session_accept_cb);
-	if (err < 0) {
-		hal_log_error("node_start(): %s(%d)", strerror(-err), -err);
-		goto node_fail;
-	}
-
-	/* FIXME: how to manage disconnection from cloud? */
-	sock = proto_connect();
-	if (sock < 0)
-		goto connect_fail;
-
-	if (proto_signin(sock, settings->uuid, settings->token,
-			 NULL, NULL) != KNOT_SUCCESS) {
-		err = -EACCES;
-		goto signin_fail;
-	}
-
 	device_id_list = l_queue_new();
+	start_to =  l_timeout_create_ms(1, start_timeout, settings, NULL);
 
-	/* Step1: Getting Cloud (device) proxies using owner credential */
-	return proto_set_proxy_handlers(sock,
-					proxy_added,
-					proxy_removed,
-					proxy_ready,
-					settings);
-signin_fail:
-	proto_close(sock);
-connect_fail:
-	node_stop();
-node_fail:
-	proto_stop();
+	return (start_to ? 0 : -ENOMEM);
+
 proto_fail:
 	device_stop();
+
 	return err;
 }
 
 void msg_stop(void)
 {
+	if (start_to)
+		l_timeout_remove(start_to);
+
 	node_stop();
 	proxy_stop();
 	proto_stop();
