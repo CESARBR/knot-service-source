@@ -1184,8 +1184,10 @@ int msg_start(struct settings *settings)
 		goto connect_fail;
 
 	if (proto_signin(sock, settings->uuid, settings->token,
-			 NULL, NULL) != KNOT_SUCCESS)
+			 NULL, NULL) != KNOT_SUCCESS) {
+		err = -EACCES;
 		goto signin_fail;
+	}
 
 	device_id_list = l_queue_new();
 
