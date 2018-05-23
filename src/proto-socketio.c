@@ -535,8 +535,8 @@ done:
 	return err;
 }
 
-static int socketio_update(int sock, const char *uuid, const char *token,
-					const char *jreq, json_raw_t *json)
+static int socketio_update(int sock, const char *uuid,
+			   const char *token, const char *jreq)
 {
 	int err;
 	struct json_object *jobj, *jarray;

@@ -334,15 +334,7 @@ static json_object *data_create_object(uint8_t sensor_id,
  */
 int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
 {
-	json_raw_t json;
-	int err;
-
-	memset(&json, 0, sizeof(json));
-	err = proto->setdata(proto_sock, uuid, token, json_str, &json);
-
-	l_free(json.data);
-
-	return err;
+	return proto->setdata(proto_sock, uuid, token, json_str);
 }
 
 /*
@@ -351,15 +343,7 @@ int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
  */
 int proto_setdata(int proto_sock, char *uuid, char *token, const char *json_str)
 {
-	json_raw_t json;
-	int err;
-
-	memset(&json, 0, sizeof(json));
-	err = proto->setdata(proto_sock, uuid, token, json_str, &json);
-
-	l_free(json.data);
-
-	return err;
+	return proto->setdata(proto_sock, uuid, token, json_str);
 }
 
 static struct proto_ops *get_proto_ops(const char *protocol_name)
@@ -497,18 +481,13 @@ int proto_schema(int proto_socket, const char *uuid,
 {
 	json_object *jschema_list;
 	const char *jschema_list_as_string;
-	json_raw_t response;
 	int result, err;
 
 	jschema_list = schema_create_list(schema_list);
 	jschema_list_as_string = json_object_to_json_string(jschema_list);
 
-	memset(&response, 0, sizeof(response));
 	err = proto->schema(proto_socket, uuid, token,
-			    jschema_list_as_string, &response);
-
-	if (response.data)
-		l_free(response.data);
+			    jschema_list_as_string);
 
 	json_object_put(jschema_list);
 

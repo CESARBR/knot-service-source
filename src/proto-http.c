@@ -398,10 +398,12 @@ static int http_rmnode(int sock, const char *uuid, const char *token,
 }
 
 static int http_schema(int sock, const char *uuid, const char *token,
-					const char *jreq, json_raw_t *json)
+					const char *jreq)
 {
 	/* Length: device_uri + '/' + UUID + '\0' */
 	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
+	json_raw_t json;
+	int ret;
 
 	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
 
@@ -411,7 +413,12 @@ static int http_schema(int sock, const char *uuid, const char *token,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, jreq, uuid, token, json, "PUT");
+	ret = fetch_url(sock, uri, jreq, uuid, token, &json, "PUT");
+
+	if (json.data)
+		free(json.data);
+
+	return ret;
 }
 
 static int http_data(int sock, const char *uuid, const char *token,
@@ -488,11 +495,13 @@ static void http_remove(void)
 	l_free(data_uri);
 }
 
-static int http_setdata(int sock, const char *uuid, const char *token,
-					const char *jreq, json_raw_t *json)
+static int http_setdata(int sock, const char *uuid,
+			const char *token, const char *jreq)
 {
 	/* Length: device_uri + '/' + UUID + '\0' */
 	char uri[strlen(device_uri) + 2 + MESHBLU_UUID_SIZE];
+	json_raw_t json;
+	int ret;
 
 	snprintf(uri, sizeof(uri), "%s/%s", device_uri, uuid);
 
@@ -502,7 +511,11 @@ static int http_setdata(int sock, const char *uuid, const char *token,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, jreq, uuid, token, json, "PUT");
+	ret = fetch_url(sock, uri, jreq, uuid, token, &json, "PUT");
+	if (json.data)
+		free(json.data);
+
+	return ret;
 }
 
 /* Gets all the data from the device with the given uuid and token */

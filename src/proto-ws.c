@@ -427,8 +427,8 @@ done:
 	return ret;
 }
 
-static int ws_update(int sock, const char *uuid, const char *token,
-		     const char *jreq, json_raw_t *json)
+static int ws_update(int sock, const char *uuid,
+		     const char *token, const char *jreq)
 {
 	json_object *jobj_uuid;
 	json_object *jobj_schema;
@@ -499,10 +499,6 @@ static int ws_update(int sock, const char *uuid, const char *token,
 
 	if (strcmp("error", (const char *) session->rsp) == 0)
                 return -EACCES;
-
-	/* TODO: Avoid another allocation */
-	json->data = l_strndup((const char *) session->data, session->size);
-	json->size = session->size;
 
 fail:
 	hal_log_error("WS(update): %s(%d)", strerror(-ret), -ret);
