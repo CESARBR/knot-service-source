@@ -69,7 +69,6 @@ struct proto_proxy {
 };
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
-static char owner_uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 static struct l_timeout *timeout;
 static struct proto_proxy *proxy;
 
@@ -192,8 +191,9 @@ done:
 	l_free(json.data);
 }
 
-static json_object *device_json_create(const char *device_name,
-					 const char *device_id)
+static json_object *device_json_create(const char *owner_uuid,
+				       const char *device_name,
+				       const char *device_id)
 {
 	json_object *device;
 
@@ -392,9 +392,6 @@ int proto_start(const struct settings *settings)
 
 	hal_log_info("proto_ops: %s", proto->name);
 
-	memset(owner_uuid, 0, sizeof(owner_uuid));
-	memcpy(owner_uuid, settings->uuid, sizeof(owner_uuid));
-
 	return proto->probe(settings->host, settings->port);
 }
 
@@ -424,8 +421,9 @@ void proto_close(int prot_sock)
 	proto->close(prot_sock);
 }
 
-int proto_mknode(int proto_socket, const char *device_name,
-			const char *device_id, char *uuid, char *token)
+int proto_mknode(int proto_socket, const char *owner_uuid,
+		 const char *device_name, const char *device_id,
+		 char *uuid, char *token)
 {
 	json_object *device;
 	const char *device_as_string;
@@ -433,7 +431,7 @@ int proto_mknode(int proto_socket, const char *device_name,
 	int err, result;
 
 	memset(&response, 0, sizeof(response));
-	device = device_json_create(device_name, device_id);
+	device = device_json_create(owner_uuid, device_name, device_id);
 	if (!device) {
 		hal_log_error("JSON: no memory");
 		result = KNOT_ERROR_UNKNOWN;

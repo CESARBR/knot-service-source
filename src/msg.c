@@ -81,6 +81,7 @@ struct session {
 static struct l_hashmap *session_map;
 static struct l_queue *device_id_list;
 static struct l_timeout *start_to;
+static const char *owner_uuid;
 
 static struct session *session_ref(struct session *session)
 {
@@ -390,7 +391,8 @@ static int8_t msg_register(struct session *session,
 	memset(token, 0, sizeof(token));
 	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, kreq->id);
 	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_mknode(proto_sock, device_name, id, uuid, token);
+	result = proto_mknode(proto_sock, owner_uuid,
+			      device_name, id, uuid, token);
 	if (result != KNOT_SUCCESS)
 		return result;
 
@@ -1169,6 +1171,8 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 			 NULL, NULL) != KNOT_SUCCESS)
 		goto signin_fail;
 
+	/* Keep a reference to a valid credential */
+	owner_uuid = settings->uuid;
 	/* Step1: Getting Cloud (device) proxies using owner credential */
 	proto_set_proxy_handlers(sock,
 				 proxy_added,
