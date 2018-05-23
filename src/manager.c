@@ -221,16 +221,11 @@ static void setup_interface(struct l_dbus_interface *interface)
 		hal_log_error("Can't add 'Token' property");
 }
 
-int manager_start(struct settings *settings)
+static void setup_complete(void *user_data)
 {
+	struct settings *settings = user_data;
 	const char *path = "/";
 	int err;
-
-	err = dbus_start();
-	if (err) {
-		hal_log_error("dbus_start(): %s", strerror(-err));
-		return err;
-	}
 
 	/* Manager object */
 	if (!l_dbus_register_interface(dbus_get_bus(),
@@ -240,17 +235,32 @@ int manager_start(struct settings *settings)
 		hal_log_error("dbus: unable to register %s",
 			      SETTINGS_INTERFACE);
 
-	if (!l_dbus_register_object(dbus_get_bus(),
-				    path,
-				    settings, NULL,
-				    SETTINGS_INTERFACE, settings,
-				    L_DBUS_INTERFACE_PROPERTIES, settings,
-				    NULL))
-		hal_log_error("dbus: unable to register object %s", path);
+	if (!l_dbus_object_add_interface(dbus_get_bus(),
+					 path,
+					 SETTINGS_INTERFACE,
+					 settings))
+		hal_log_error("dbus: unable to add %s to %s",
+			      SETTINGS_INTERFACE, path);
+
+	if (!l_dbus_object_add_interface(dbus_get_bus(),
+					 path,
+					 L_DBUS_INTERFACE_PROPERTIES,
+					 settings))
+		hal_log_error("dbus: unable to add %s to %s",
+			      L_DBUS_INTERFACE_PROPERTIES, path);
 
 	err = msg_start(settings);
 	if (err < 0)
 		hal_log_error("msg_start(): %s", strerror(-err));
+}
+
+int manager_start(struct settings *settings)
+{
+	int err;
+
+	err = dbus_start(setup_complete, settings);
+	if (err)
+		hal_log_error("dbus_start(): %s", strerror(-err));
 
 	return err;
 }

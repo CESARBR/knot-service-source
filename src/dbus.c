@@ -25,7 +25,13 @@
 
 #include "dbus.h"
 
+struct setup {
+	dbus_setup_completed_func_t complete;
+	void *user_data;
+};
+
 static struct l_dbus *g_dbus = NULL;
+static struct setup *setup;
 
 struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg)
 {
@@ -60,20 +66,23 @@ static void dbus_disconnect_callback(void *user_data)
 static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 					bool queued, void *user_data)
 {
+	struct setup *setup = user_data;
+
 	if (!success) {
 		hal_log_error("Name request failed");
 		return;
 	}
+
+	if (!l_dbus_object_manager_enable(g_dbus))
+		hal_log_error("Unable to register the ObjectManager");
+
+	setup->complete(setup->user_data);
 }
 
 static void dbus_ready_callback(void *user_data)
 {
 	l_dbus_name_acquire(g_dbus, KNOT_SERVICE, false, false, true,
-			    dbus_request_name_callback, NULL);
-
-	if (!l_dbus_object_manager_enable(g_dbus))
-		hal_log_error("Unable to register the ObjectManager");
-
+			    dbus_request_name_callback, user_data);
 }
 
 struct l_dbus *dbus_get_bus(void)
@@ -81,11 +90,16 @@ struct l_dbus *dbus_get_bus(void)
 	return g_dbus;
 }
 
-int dbus_start(void)
+int dbus_start(dbus_setup_completed_func_t setup_cb, void *user_data)
 {
+
+	setup = l_new(struct setup, 1);
+	setup->complete = setup_cb;
+	setup->user_data = user_data;
+
 	g_dbus = l_dbus_new_default(L_DBUS_SYSTEM_BUS);
 
-	l_dbus_set_ready_handler(g_dbus, dbus_ready_callback, g_dbus, NULL);
+	l_dbus_set_ready_handler(g_dbus, dbus_ready_callback, setup, NULL);
 
 	l_dbus_set_disconnect_handler(g_dbus,
 				      dbus_disconnect_callback,
@@ -97,5 +111,5 @@ int dbus_start(void)
 
 void dbus_stop(void)
 {
-
+	l_free(setup);
 }
