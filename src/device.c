@@ -453,7 +453,7 @@ bool device_set_connected(struct knot_device *device, bool connected)
 	device->connected = connected;
 
 	l_dbus_property_changed(dbus_get_bus(), device->path,
-				DEVICE_INTERFACE, "Paired");
+				DEVICE_INTERFACE, "Connected");
 
 	return true;
 }
