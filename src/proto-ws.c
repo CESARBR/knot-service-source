@@ -542,6 +542,8 @@ static int ws_data(int sock, const char *uuid,
 
 	ret = ws_send_msg(ws, false);
 	json_object_put(jarray);
+	if (strcmp("data", (const char *) session->rsp) == 0)
+                return -EACCES;
 
 	return ret;
 }
