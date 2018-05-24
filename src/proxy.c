@@ -182,8 +182,7 @@ static void property_changed(struct l_dbus_proxy *ellproxy,
 		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
 			device_set_paired(device, bvalue);
 	} else if (strcmp("Connected", propname) == 0) {
-		if (l_dbus_message_get_arguments(msg, "b", &bvalue))
-			device_set_connected(device, bvalue);
+		/* Ignoring for now ... It is being mapped to Online */
 	} else {
 		/* Ignore other properties */
 		return;
