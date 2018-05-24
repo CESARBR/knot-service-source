@@ -506,7 +506,6 @@ int proto_data(int proto_socket, const char *uuid,
 {
 	struct json_object *data;
 	const char *data_as_string;
-	json_raw_t response;
 	int result, err;
 
 	data = data_create_object(sensor_id, value_type, value);
@@ -517,11 +516,7 @@ int proto_data(int proto_socket, const char *uuid,
 
 	data_as_string = json_object_to_json_string(data);
 
-	memset(&response, 0, sizeof(response));
-	err = proto->data(proto_socket, uuid, token, data_as_string, &response);
-
-	if (response.data)
-		l_free(response.data);
+	err = proto->data(proto_socket, uuid, token, data_as_string);
 
 	json_object_put(data);
 

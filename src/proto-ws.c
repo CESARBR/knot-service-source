@@ -166,6 +166,8 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 		return;
 	}
 
+	hal_log_info("session:%p CMD:<%s> RX:<%s>", session, session->rsp, session->data);
+
 	/* Skip if subscribe is not active */
 	if (!session->prop_cb)
 		return;
@@ -406,8 +408,6 @@ static int ws_rmnode(int sock, const char *uuid,
 	json_object_array_add(jarray, jobj);
 
 	jobjstring = json_object_to_json_string(jarray);
-	hal_log_info("WS TX JSON %s", jobjstring);
-
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
@@ -488,7 +488,6 @@ static int ws_update(int sock, const char *uuid,
 	json_object_object_add(jobj_set, "$set", jobj_schema);
 
 	jobjstring = json_object_to_json_string(jarray_out);
-	hal_log_info("WS TX JSON %s", jobjstring);
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
@@ -507,8 +506,8 @@ fail:
 	return ret;
 }
 
-static int ws_data(int sock, const char *uuid, const char *token,
-		   const char *jreq, json_raw_t *json)
+static int ws_data(int sock, const char *uuid,
+		   const char *token, const char *jreq)
 {
 	json_object *jobj, *jarray;
 	const char *jobjstring;
@@ -537,21 +536,13 @@ static int ws_data(int sock, const char *uuid, const char *token,
 	json_object_array_add(jarray, jobj);
 
 	jobjstring = json_object_to_json_string(jarray);
-	hal_log_info("WS TX JSON %s", jobjstring);
 
 	session->size = snprintf((char *) &(session->data[LWS_PRE]),
 				WS_RX_BUFFER_SIZE, "%s", jobjstring);
 
 	ret = ws_send_msg(ws, false);
 	json_object_put(jarray);
-	if (ret != 0)
-		goto done;
 
-	/* TODO: Avoid another allocation */
-	json->data = l_strndup((const char *) session->data, session->size);
-	json->size = session->size;
-
-done:
 	return ret;
 }
 

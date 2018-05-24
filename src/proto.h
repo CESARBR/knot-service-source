@@ -56,8 +56,8 @@ struct proto_ops {
 	/* Abstraction for device data */
 	int (*schema) (int sock, const char *uuid,
 		       const char *token, const char *jreq);
-	int (*data) (int sock, const char *uuid, const char *token,
-					const char *jreq, json_raw_t *jbuf);
+	int (*data) (int sock, const char *uuid,
+		     const char *token, const char *jreq);
 	int (*fetch) (int sock, const char *uuid, const char *token,
 							json_raw_t *json);
 	int (*setdata) (int sock, const char *uuid,

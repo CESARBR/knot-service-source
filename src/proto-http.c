@@ -145,7 +145,12 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb,
 							void *user_data)
 {
 	json_raw_t *json = (json_raw_t *) user_data;
-	size_t realsize = size * nmemb;
+	size_t realsize;
+
+	if (!json)
+		return 0;
+
+	realsize = size * nmemb;
 
 	json->data = (char *) realloc(json->data, json->size + realsize + 1);
 	if (json->data == NULL) {
@@ -212,7 +217,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 	CURLcode rcode;
 	long ehttp;
 
-	if (!request || !fetch) {
+	if (!request) {
 		hal_log_error("Invalid argument!");
 		return -EINVAL;
 	}
@@ -225,11 +230,13 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 		return -ENOMEM;
 	}
 
-	if (fetch->data)
-		free(fetch->data);
+	if (fetch) {
+		if (fetch->data)
+			free(fetch->data);
 
-	fetch->data = NULL;
-	fetch->size = 0;
+		fetch->data = NULL;
+		fetch->size = 0;
+	}
 
 	curl_easy_setopt(ch, CURLOPT_CUSTOMREQUEST, request);
 
@@ -300,7 +307,7 @@ static int fetch_url(int sockfd, const char *action, const char *json,
 		return -EIO;
 	}
 
-	if (fetch->data)
+	if (fetch && fetch->data)
 		hal_log_info(" JSON RX: %s", fetch->data);
 	else
 		hal_log_info(" JSON RX: Empty");
@@ -421,8 +428,8 @@ static int http_schema(int sock, const char *uuid, const char *token,
 	return ret;
 }
 
-static int http_data(int sock, const char *uuid, const char *token,
-					     const char *jreq, json_raw_t *json)
+static int http_data(int sock, const char *uuid,
+		     const char *token, const char *jreq)
 {
 	/* Length: data_uri + '/' + UUID + '\0' */
 	char uri[strlen(data_uri) + 2 + MESHBLU_UUID_SIZE];
@@ -435,7 +442,7 @@ static int http_data(int sock, const char *uuid, const char *token,
 	 * mapped to generic Linux -errno codes.
 	 */
 
-	return fetch_url(sock, uri, jreq, uuid, token, json, "POST");
+	return fetch_url(sock, uri, jreq, uuid, token, NULL, "POST");
 }
 
 static void http_close(int sock)
