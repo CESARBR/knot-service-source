@@ -177,6 +177,7 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 
 static void ws_close(int sock)
 {
+	close(sock);
 }
 
 static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
