@@ -160,11 +160,12 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 
 	session->size = MIN(WS_RX_BUFFER_SIZE, len - index - 1); /* skip ']'*/
 
-	if (strcmp("config", (const char *) session->rsp) != 0) {
 		memset(session->data, 0, WS_RX_BUFFER_SIZE);
 		strncpy((char *) session->data, &in[index], session->size);
+	if (strcmp("config", (const char *) session->rsp) != 0)
 		return;
-	}
+	else // If receive config, wait for the following response
+		session->got_response = false;
 
 	hal_log_info("session:%p CMD:<%s> RX:<%s>", session, session->rsp, session->data);
 
