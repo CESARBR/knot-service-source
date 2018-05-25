@@ -212,6 +212,9 @@ static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
 
 	json_object_put(jarray);
 
+	if (strcmp("registered", (const char *) session->rsp) != 0)
+		return -EACCES;
+
 	/* TODO: Avoid another allocation */
 	json->data = l_strndup((const char *) session->data, session->size);
 	json->size = session->size;
