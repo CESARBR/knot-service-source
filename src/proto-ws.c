@@ -48,6 +48,7 @@ struct l_timeout *poll_timeout;
 
 struct ws_session {
 	bool got_response;	/* FIXME: find better approach */
+	bool force_close;
 	uint16_t size;		/* Amount TX or RX */
 	proto_property_changed_func_t prop_cb; /* Subscribe callback */
 	void *user_data;
@@ -178,7 +179,14 @@ static void parse(struct ws_session *session, const char *in, size_t len)
 
 static void ws_close(int sock)
 {
-	close(sock);
+	struct ws_session *session;
+	struct lws *ws = l_hashmap_remove(lws_list, L_INT_TO_PTR(sock));
+
+	if (!ws)
+		return;
+	session = lws_wsi_user(ws);
+	session->force_close = true;
+	lws_callback_on_writable(ws);
 }
 
 static int ws_mknode(int sock, const char *device_json, json_raw_t *json)
@@ -565,6 +573,8 @@ static int callback_lws_ws(struct lws *wsi,
 		session->got_response = true;
 		break;
 	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		if (session->force_close)
+			return -1;
 		if (session->size == 0)
 			break;
 

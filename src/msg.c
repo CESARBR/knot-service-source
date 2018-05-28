@@ -112,12 +112,9 @@ static struct session *session_new(struct node_ops *node_ops)
 	return session_ref(session);
 }
 
-static void session_unref(struct session *session)
+static void session_destroy(struct session *session)
 {
 	if (unlikely(!session))
-                return;
-
-        if (__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
 	l_io_destroy(session->node_channel);
@@ -136,6 +133,17 @@ static void session_unref(struct session *session)
 	l_free(session->setdata);
 
 	l_free(session);
+}
+
+static void session_unref(struct session *session)
+{
+	if (unlikely(!session))
+		return;
+
+	if (__sync_sub_and_fetch(&session->refs, 1))
+		return;
+
+	session_destroy(session);
 }
 
 static bool device_id_cmp(const void *a, const void *b)
@@ -929,7 +937,7 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
 
 	session_proto_disconnect(session);
-
+	session_destroy(session);
 }
 
 static void session_node_destroy_to(struct l_timeout *timeout,
