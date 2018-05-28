@@ -149,6 +149,12 @@ static void parse_config(struct ws_session *session,
 				 session->user_data);
 	}
 
+	if (json_object_object_get_ex(jobj, "online", &jobjkey)) {
+		session->prop_cb("online",
+				 json_object_to_json_string(jobjkey),
+				 session->user_data);
+	}
+
 	json_object_put(jobj);
 }
 

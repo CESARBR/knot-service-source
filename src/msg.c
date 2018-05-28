@@ -332,6 +332,11 @@ static bool property_changed(const char *name,
 
 		l_free(session->setdata);
 		session->setdata = l_strdup(value);
+	} else if (strcmp("online", name) == 0) {
+		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+		device = device_get(id);
+		if (device)
+			device_set_online(device, (strcmp("true", value) == 0));
 	}
 
 	/* Timeout created already? */
