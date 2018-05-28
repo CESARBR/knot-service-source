@@ -154,21 +154,28 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	if (device->msg)
 		return dbus_error_busy(msg);
 
-	/* FIXME: potential race condition. Registration might be in progress */
-
-	/* Registered to cloud ? */
-	if (device->uuid)
-		proto_rmnode_by_uuid(device->uuid);
-
 	device->msg = l_dbus_message_ref(msg);
 
 	ellproxy = proxy_get(device->id);
 	if (!ellproxy)
 		return dbus_error_not_available(msg);
 
-	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
-						  method_reply, device, NULL);
+	/* FIXME: potential race condition. Registration might be in progress */
 
+	/* Registered to cloud ? */
+	if (device->uuid) {
+		/*
+		 *  At msg.c@proxy_removed() will manage additional
+		 *  KNoT operations sending unregister request if the
+		 *  peer (thing) is connected.
+		 */
+		proto_rmnode_by_uuid(device->uuid);
+		return l_dbus_message_new_method_return(msg);
+	}
+
+	/* Remove from lower layers only */
+	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget",
+					  NULL, method_reply, device, NULL);
 	return NULL;
 }
 
