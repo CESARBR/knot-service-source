@@ -775,13 +775,14 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-
 	nbytes = read(sock, &recv, sizeof(recv));
 	if (nbytes < 0) {
 		err = errno;
 		printf("read(): %s(%d)\n", strerror(err), err);
 		return TRUE;
 	}
+
+	printf("message: %i", recv.hdr.type);
 	switch (recv.hdr.type) {
 	case KNOT_MSG_SET_CONFIG:
 		printf("sensor_id: %d\n", recv.config.sensor_id);
@@ -857,7 +858,16 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		json_object_put(jobj);
 
 		break;
+	case KNOT_MSG_UNREGISTER_REQ:
+		resp.hdr.type = KNOT_MSG_UNREGISTER_RESP;
+		nbytes = write(sock, &resp, sizeof(knot_msg_header) + resp.hdr.payload_len);
+		if (nbytes < 0) {
+			err = errno;
+			printf("node_ops: %s(%d)\n", strerror(err), err);
+			return TRUE;
+		}
 
+		break;
 	}
 
 	return TRUE;
