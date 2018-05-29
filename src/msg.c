@@ -82,6 +82,7 @@ static struct l_hashmap *session_map;
 static struct l_queue *device_id_list;
 static struct l_timeout *start_to;
 static const char *owner_uuid;
+static bool proxy_enabled = false;
 
 static struct session *session_ref(struct session *session)
 {
@@ -1194,9 +1195,10 @@ static void proxy_ready(void *user_data)
 	hal_log_info("Protocol proxy is ready");
 
 	/* Step2: Getting service (device) proxies. eg: nrfd objects  */
-	proxy_start("br.org.cesar.knot.nrf", NULL,
-		    "br.org.cesar.knot.nrf.Device1",
-		    service_ready, user_data);
+	if (proxy_start("br.org.cesar.knot.nrf", NULL,
+			"br.org.cesar.knot.nrf.Device1",
+			service_ready, user_data) == 0)
+		proxy_enabled = true;
 }
 
 static void start_timeout(struct l_timeout *timeout, void *user_data)
@@ -1271,7 +1273,8 @@ void msg_stop(void)
 		l_timeout_remove(start_to);
 
 	node_stop();
-	proxy_stop();
+	if (proxy_enabled)
+		proxy_stop();
 	proto_stop();
 	device_stop();
 
