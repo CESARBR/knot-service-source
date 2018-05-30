@@ -320,6 +320,7 @@ struct knot_device *device_create(const char *id, const char *name,
 	struct knot_device *device;
 
 	device = l_new(struct knot_device, 1);
+	device->refs = 0;
 	device->id = l_strdup(id);
 	device->name = l_strdup(name);
 	device->uuid = NULL; /* FIXME */
