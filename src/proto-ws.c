@@ -38,7 +38,9 @@
 #include "proto.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define WS_RX_BUFFER_SIZE	4096
+
+/* WS RX Buffer: Critical to mydevices */
+#define WS_RX_BUFFER_SIZE	10240
 
 static const char *host_address;
 static int host_port;
