@@ -129,7 +129,6 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 
 	hal_log_info("Id: %s proxy added: %s %s",
 			     id, path, interface);
-	device_set_name(device, name);
 	l_hashmap_insert(proxy->ellproxy_list, id, ellproxy);
 }
 
