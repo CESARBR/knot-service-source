@@ -40,7 +40,7 @@
 #define DEFAULT_HOST			"localhost"
 #define DEFAULT_PORT			3000
 #ifdef HAVE_WEBSOCKETS
-#define DEFAULT_PROTO			"socketio"
+#define DEFAULT_PROTO			"ws"
 #else
 #define DEFAULT_PROTO                   "http"
 #endif
