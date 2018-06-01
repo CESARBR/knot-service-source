@@ -303,7 +303,13 @@ static bool property_changed(const char *name,
 			goto done;
 
 		config_list = parser_config_to_list(value);
+		if (config_list == NULL) {
+			hal_log_error("config: parse error!");
+			goto done;
+		}
+
 		if (parser_config_is_valid(config_list) != KNOT_SUCCESS) {
+			hal_log_error("config: invalid format!");
 			l_queue_destroy(config_list, l_free);
 			goto done;
 		}
