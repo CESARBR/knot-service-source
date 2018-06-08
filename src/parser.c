@@ -114,6 +114,11 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 	if (!jobjarray)
 		return NULL;
 
+	if (json_object_get_type(jobjarray) != json_type_array) {
+		json_object_put(jobjarray);
+		return NULL;
+	}
+
 	list = l_queue_new();
 	/* Expected JSON object is in the following format:
 	 *

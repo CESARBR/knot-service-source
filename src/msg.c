@@ -271,7 +271,7 @@ disable_timer:
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
-	struct l_queue *config_list;
+	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
 	char id[KNOT_ID_LEN + 1];
@@ -288,8 +288,14 @@ static bool property_changed(const char *name,
 			goto done;
 
 		/* Track to detect if update is required */
+		list = parser_schema_to_list(value);
+		if (list == NULL) {
+			hal_log_error("schema: parse error!");
+			goto done;
+		}
+
 		l_queue_destroy(session->schema_list, l_free);
-		session->schema_list = parser_schema_to_list(value);
+		session->schema_list = list;
 		l_free(session->schema);
 		session->schema = l_strdup(value);
 
@@ -302,21 +308,21 @@ static bool property_changed(const char *name,
 		if (session->config && strcmp(session->config, value) == 0)
 			goto done;
 
-		config_list = parser_config_to_list(value);
-		if (config_list == NULL) {
+		list = parser_config_to_list(value);
+		if (list == NULL) {
 			hal_log_error("config: parse error!");
 			goto done;
 		}
 
-		if (parser_config_is_valid(config_list) != KNOT_SUCCESS) {
+		if (parser_config_is_valid(list) != KNOT_SUCCESS) {
 			hal_log_error("config: invalid format!");
-			l_queue_destroy(config_list, l_free);
+			l_queue_destroy(list, l_free);
 			goto done;
 		}
 
 		/* Always push to devices when connection is established */
 		l_queue_destroy(session->config_list, l_free);
-		session->config_list = config_list;
+		session->config_list = list;
 		l_free(session->config);
 		session->config = l_strdup(value);
 	} else if (strcmp("get_data", name) == 0) {
