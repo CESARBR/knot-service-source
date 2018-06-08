@@ -271,6 +271,7 @@ disable_timer:
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
+	json_object *jso;
 	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
@@ -339,12 +340,19 @@ static bool property_changed(const char *name,
 		if (session->setdata && strcmp(session->setdata, value) == 0)
 			goto done;
 
-		session->setdata_jso = json_tokener_parse(value);
-		if (!session->setdata_jso)
+		jso = json_tokener_parse(value);
+		if (!jso)
 			goto done;
+
+		if (json_object_get_type(jso) != json_type_array) {
+			json_object_put(jso);
+			return NULL;
+		}
 
 		l_free(session->setdata);
 		session->setdata = l_strdup(value);
+		session->setdata_jso = jso;
+
 	} else if (strcmp("online", name) == 0) {
 		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
 		device = device_get(id);
