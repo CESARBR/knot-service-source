@@ -416,6 +416,12 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 	jobj = json_tokener_parse(json_str);
 	if (!jobj)
 		return NULL;
+
+	if (json_object_get_type(jobj) != json_type_array) {
+		json_object_put(jobj);
+		return NULL;
+	}
+
 	len = json_object_array_length(jobj);
 	if (len == 0) {
 		json_object_put(jobj);
