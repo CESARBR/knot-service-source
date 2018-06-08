@@ -331,8 +331,14 @@ static bool property_changed(const char *name,
 			goto done;
 
 		/* Always push to devices when connection is established */
+		list = parser_sensorid_to_list(value);
+		if (list == NULL) {
+			hal_log_error("get_data: parse error!");
+			goto done;
+		}
+
 		l_queue_destroy(session->getdata_list, l_free);
-		session->getdata_list = parser_sensorid_to_list(value);
+		session->getdata_list = list;
 		l_free(session->getdata);
 		session->getdata = l_strdup(value);
 
