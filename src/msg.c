@@ -53,6 +53,7 @@
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define KNOT_ID_LEN 16
+#define ROLLBACK_TICKS		5 /* Equals to 5*1096ms */
 
 struct session {
 	int refs;
@@ -62,7 +63,7 @@ struct session {
 	struct l_io *proto_channel;	/* Cloud event source */
 	int node_fd;			/* Unix socket */
 	uint64_t id;			/* Device identification */
-	bool rollback;			/* Remove from cloud if true */
+	int rollback;			/* Counter: remove if schema is not received */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
@@ -206,6 +207,27 @@ static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 	return config->sensor_id == sensor_id;
 }
 
+static int8_t msg_unregister(struct session *session)
+{
+	int proto_sock;
+	int8_t result;
+
+	if (!session->trusted) {
+		hal_log_info("unregister: Permission denied!");
+		return KNOT_CREDENTIAL_UNAUTHORIZED;
+	}
+
+	hal_log_info("rmnode: %.36s", session->uuid);
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_rmnode(proto_sock, session->uuid, session->token);
+	if (result != KNOT_SUCCESS)
+		return result;
+
+	session_unref(session);
+
+	return KNOT_SUCCESS;
+}
+
 static void downstream_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
@@ -218,6 +240,22 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	void *opdu;
 	uint8_t *sensor_id;
 	int err;
+
+	/* Waiting schema? */
+	if (session->rollback) {
+		if (session->rollback > ROLLBACK_TICKS) {
+			msg_unregister(session);
+			hal_log_info("Removing %s (rollback)", session->uuid);
+			return;
+		}
+
+		l_timeout_modify_ms(timeout, 1096);
+		hal_log_info("Waiting schema...");
+		session->rollback++;
+		return;
+	}
+
+	/* Wait schema before sending downstream data */
 
 	/* Priority 1: Config message has higher priority */
 	config = l_queue_peek_head(session->config_list);
@@ -468,28 +506,7 @@ static int8_t msg_register(struct session *session,
 	session->id = kreq->id;			/* Device Id */
 	session->uuid = l_strdup(uuid);
 	session->token = l_strdup(token);
-	session->rollback = true;		/* Reset after sending SCHEMA */
-
-	return KNOT_SUCCESS;
-}
-
-static int8_t msg_unregister(struct session *session)
-{
-	int proto_sock;
-	int8_t result;
-
-	if (!session->trusted) {
-		hal_log_info("unregister: Permission denied!");
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
-	}
-
-	hal_log_info("rmnode: %.36s", session->uuid);
-	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_rmnode(proto_sock, session->uuid, session->token);
-	if (result != KNOT_SUCCESS)
-		return result;
-
-	session_unref(session);
+	session->rollback = 1; /* Initial counter value */
 
 	return KNOT_SUCCESS;
 }
@@ -529,6 +546,9 @@ static int8_t msg_auth(struct session *session,
 
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
+
+	session->rollback = 0; /* Rollback disabled */
+
 	if (result != KNOT_SUCCESS) {
 		l_free(session->uuid);
 		l_free(session->token);
@@ -538,7 +558,6 @@ static int8_t msg_auth(struct session *session,
 	}
 
 	session->trusted = true;
-	session->rollback = false;
 
 	return KNOT_SUCCESS;
 }
@@ -553,13 +572,6 @@ static int8_t msg_schema(struct session *session,
 		hal_log_info("schema: not authorized!");
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
-
-	/*
-	 * For security reason, remove from rollback avoiding clonning attack.
-	 * If schema is being sent means that credentals (UUID/token) has been
-	 * properly received (registration complete).
-	 */
-	session->rollback = false;
 
 	/*
 	 * {
@@ -581,11 +593,6 @@ static int8_t msg_schema(struct session *session,
 		l_queue_push_tail(session->schema_list_tmp,
 				  l_memdup(schema, sizeof(*schema)));
 
-	 /*
-	  * TODO: Missing timer to wait for end of schema
-	  * transfer & clear schema_tmp.
-	  */
-
 	if (!eof) {
 		result = KNOT_SUCCESS;
 		goto done;
@@ -604,6 +611,14 @@ static int8_t msg_schema(struct session *session,
 	l_queue_destroy(session->schema_list, l_free);
 	session->schema_list = session->schema_list_tmp;
 	session->schema_list_tmp = NULL;
+
+	/*
+	 * For security reason, remove from rollback avoiding clonning attack.
+	 * If schema is being sent means that credentals (UUID/token) has been
+	 * properly received (registration complete).
+	 */
+	session->rollback = 0; /* Rollback disabled */
+
 done:
 	return result;
 }
@@ -994,7 +1009,7 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
 
 	session_proto_disconnect(session);
-	session_destroy(session);
+	session_unref(session);
 }
 
 static void session_node_destroy_to(struct l_timeout *timeout,
