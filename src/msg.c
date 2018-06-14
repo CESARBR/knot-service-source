@@ -244,6 +244,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	/* Waiting schema? */
 	if (session->rollback) {
 		if (session->rollback > ROLLBACK_TICKS) {
+			session->rollback = 0;
 			msg_unregister(session);
 			hal_log_info("Removing %s (rollback)", session->uuid);
 			return;
@@ -908,24 +909,6 @@ static ssize_t msg_process(struct session *session,
 	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
 }
 
-static void session_proto_disconnect(struct session *session)
-{
-	struct l_io *channel;
-	int proto_sock;
-
-	if (!session->proto_channel)
-		return;
-
-	proto_sock = l_io_get_fd(session->proto_channel);
-	proto_close(proto_sock);
-
-	channel = session->proto_channel;
-	session->proto_channel = NULL;
-	l_io_destroy(channel);
-
-	/* Channel cleanup will be held at disconnect callback */
-}
-
 static void session_proto_disconnected_cb(struct l_io *channel,
 					  void *user_data)
 {
@@ -1004,11 +987,35 @@ static int session_proto_connect(struct session *session)
 static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
+	struct l_io *proto_channel;
+	int proto_sock;
 
 	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
 	session = l_hashmap_remove(session_map, L_INT_TO_PTR(session->node_fd));
 
-	session_proto_disconnect(session);
+	hal_log_info("session(%p) disconnected (node)", session);
+
+	if (session->rollback) {
+		msg_unregister(session);
+		l_timeout_remove(session->downstream_to);
+		session->downstream_to = NULL;
+
+		hal_log_info("Removing %s (rollback)", session->uuid);
+	}
+
+	/* Disconnect from fog/cloud */
+	if (!session->proto_channel)
+		return;
+
+	proto_sock = l_io_get_fd(session->proto_channel);
+	proto_close(proto_sock);
+
+	proto_channel = session->proto_channel;
+	session->proto_channel = NULL;
+	l_io_destroy(proto_channel);
+
+	/* Channel cleanup will be held at disconnect callback */
+
 	session_unref(session);
 }
 
