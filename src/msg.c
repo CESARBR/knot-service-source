@@ -99,6 +99,7 @@ static struct session *session_new(struct node_ops *node_ops)
 	struct session *session;
 
 	session = l_new(struct session, 1);
+	session->trusted = false;
 	session->refs = 0;
 	session->uuid = NULL;
 	session->token = NULL;
@@ -223,7 +224,15 @@ static int8_t msg_unregister(struct session *session)
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	session_unref(session);
+	l_timeout_remove(session->downstream_to);
+	session->downstream_to = NULL;
+
+	l_free(session->uuid);
+	session->uuid = NULL;
+	l_free(session->token);
+	session->token = NULL;
+	session->trusted = false;
+	session->id = INT32_MAX;
 
 	return KNOT_SUCCESS;
 }
@@ -1015,6 +1024,8 @@ static void session_proto_disconnected_cb(struct l_io *channel,
 		session->proto_channel = NULL;
 		l_io_destroy(channel);
 	}
+
+	session_unref(session);
 }
 
 static struct l_io *create_proto_channel(int proto_sock,
@@ -1063,8 +1074,10 @@ static int session_proto_connect(struct session *session)
 static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
+	struct knot_device *device;
 	struct l_io *proto_channel;
 	int proto_sock;
+	char id[KNOT_ID_LEN + 1];
 
 	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
 	session = l_queue_remove_if(session_list,
@@ -1075,9 +1088,6 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 
 	if (session->rollback) {
 		msg_unregister(session);
-		l_timeout_remove(session->downstream_to);
-		session->downstream_to = NULL;
-
 		hal_log_info("Removing %s (rollback)", session->uuid);
 	}
 
@@ -1085,15 +1095,29 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 	if (!session->proto_channel)
 		return;
 
+	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	device = device_get(id);
+	if (device)
+		device_set_online(device, false);
+
 	proto_sock = l_io_get_fd(session->proto_channel);
 	proto_close(proto_sock);
 
+	/* Remove proto disconnect watch */
 	proto_channel = session->proto_channel;
+	l_io_set_disconnect_handler(proto_channel, NULL, NULL, NULL);
+	session_unref(session);
+
 	session->proto_channel = NULL;
 	l_io_destroy(proto_channel);
 
 	/* Channel cleanup will be held at disconnect callback */
+	session_unref(session);
+}
 
+static void session_node_destroy_cb(void *user_data)
+{
+	struct session *session = user_data;
 	session_unref(session);
 }
 
@@ -1193,7 +1217,7 @@ static struct l_io *create_node_channel(int node_socket,
 	l_io_set_disconnect_handler(channel,
 				    session_node_disconnected_cb,
 				    session_ref(session),
-				    NULL);
+				    session_node_destroy_cb);
 
 	return channel;
 }
