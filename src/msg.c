@@ -344,6 +344,7 @@ static bool property_changed(const char *name,
 	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
+	struct mydevice *mydevice;
 	char id[KNOT_ID_LEN + 1];
 
 	/* FIXME: manage link overload or not connected */
@@ -370,6 +371,11 @@ static bool property_changed(const char *name,
 		session->schema = l_strdup(value);
 
 		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+
+		mydevice = l_queue_find(device_id_list, device_id_cmp, id);
+		if (!mydevice)
+			goto done;
+
 		device = device_get(id);
 		if (device)
 			device_set_registered(device, true);
@@ -1318,6 +1324,7 @@ static void proxy_added(const char *device_id, const char *uuid,
 	}
 
 	device_set_uuid(device, uuid);
+	device_set_registered(device, true);
 
 	mydevice->uuid = l_strdup(uuid);
 	mydevice->id = l_strdup(device_id);
