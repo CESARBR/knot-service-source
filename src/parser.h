@@ -22,6 +22,7 @@ struct mydevice {
        char *id;
        char *uuid;
        char *name;
+       struct l_timeout *unreg_timeout;
 };
 
 int parser_device(const char *json_str, char *uuid, char *token);
