@@ -149,7 +149,7 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	struct l_dbus_proxy *ellproxy;
 
 	if (!device->paired)
-		return dbus_error_not_available(msg);
+		return dbus_error_not_paired(msg, "Not paired");
 
 	if (device->msg)
 		return dbus_error_busy(msg);

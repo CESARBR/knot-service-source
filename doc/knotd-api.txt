@@ -47,7 +47,8 @@ Methods 	void Pair(dict properties)
 		This method removes all meta-data associated to this device, and
 		automatically disconnects from it.
 
-		Returns: br.org.cesar.knot.InProgress
+		Returns: br.org.cesar.knot.NotPaired
+			br.org.cesar.knot.InProgress
 			br.org.cesar.knot.NotAvailable
 
 Properties
