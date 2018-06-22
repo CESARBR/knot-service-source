@@ -491,6 +491,7 @@ static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
+	struct knot_device *device;
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
@@ -536,6 +537,10 @@ static int8_t msg_register(struct session *session,
 
 	if (result != KNOT_SUCCESS)
 		return result;
+
+	/* Set online as soon as the device connects to the fog */
+	device = device_get(id);
+	device_set_online(device, true);
 
 	msg_credential_create(krsp, uuid, token);
 
