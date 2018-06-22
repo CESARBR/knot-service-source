@@ -90,6 +90,7 @@ static struct session *session_ref(struct session *session)
 		return NULL;
 
 	__sync_fetch_and_add(&session->refs, 1);
+	hal_log_info("session_ref(%p): %d", session, session->refs);
 
 	return session;
 }
@@ -142,6 +143,7 @@ static void session_unref(struct session *session)
 	if (unlikely(!session))
 		return;
 
+	hal_log_info("session_unref(%p): %d", session, session->refs - 1);
 	if (__sync_sub_and_fetch(&session->refs, 1))
 		return;
 
@@ -887,7 +889,6 @@ static void device_forget_destroy(struct mydevice *mydevice)
 	mydevice = l_queue_remove_if(device_id_list, device_id_cmp,
 			mydevice->id);
 
-	device_destroy(mydevice->id);
 	mydevice_free(mydevice);
 }
 
@@ -1071,34 +1072,15 @@ static int session_proto_connect(struct session *session)
 	return 0;
 }
 
-static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
+static void session_cleanup(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
-	struct knot_device *device;
 	struct l_io *proto_channel;
 	int proto_sock;
-	char id[KNOT_ID_LEN + 1];
-
-	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
-	session = l_queue_remove_if(session_list,
-				    session_node_fd_cmp,
-				    L_INT_TO_PTR(session->node_fd));
-
-	hal_log_info("session(%p) disconnected (node)", session);
-
-	if (session->rollback) {
-		msg_unregister(session);
-		hal_log_info("Removing %s (rollback)", session->uuid);
-	}
 
 	/* Disconnect from fog/cloud */
 	if (!session->proto_channel)
 		return;
-
-	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
-	device = device_get(id);
-	if (device)
-		device_set_online(device, false);
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	proto_close(proto_sock);
@@ -1113,6 +1095,33 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 
 	/* Channel cleanup will be held at disconnect callback */
 	session_unref(session);
+}
+
+static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
+{
+	struct session *session = user_data;
+	struct knot_device *device;
+	char id[KNOT_ID_LEN + 1];
+
+	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
+	session = l_queue_remove_if(session_list,
+				    session_node_fd_cmp,
+				    L_INT_TO_PTR(session->node_fd));
+
+	hal_log_info("session(%p) disconnected (node)", session);
+
+	if (session->rollback) {
+		msg_unregister(session);
+		hal_log_info("Removing %s (rollback)", session->uuid);
+	}
+
+	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	device = device_get(id);
+	if (device)
+		device_set_online(device, false);
+
+	/* Delay 5 seconds session cleanup */
+	l_timeout_create(5, session_cleanup, session, NULL);
 }
 
 static void session_node_destroy_cb(void *user_data)

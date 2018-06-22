@@ -49,6 +49,7 @@ static struct l_hashmap *device_list;
 
 static void device_free(struct knot_device *device)
 {
+	hal_log_info("device_free(%p)", device);
 	if (unlikely(!device))
 		return;
 
@@ -72,6 +73,8 @@ static struct knot_device *device_ref(struct knot_device *device)
 
 	__sync_fetch_and_add(&device->refs, 1);
 
+	hal_log_info("device_ref(%p): %d", device, device->refs);
+
 	return device;
 }
 
@@ -80,21 +83,36 @@ static void device_unref(struct knot_device *device)
 	if (unlikely(!device))
 		return;
 
+	hal_log_info("device_unref(%p): %d", device, device->refs - 1);
 	if (__sync_sub_and_fetch(&device->refs, 1))
 		return;
 
 	device_free(device);
 }
 
-static void unregister_object(const void *key, void *value, void *user_data)
+static void unregister(void *user_data)
+{
+	struct knot_device *device = user_data;
+
+	/* Automatically calls device_unref() */
+	l_dbus_unregister_object(dbus_get_bus(), device->path);
+
+	/* Release last reference */
+	l_hashmap_remove(device_list, device->id);
+	device_unref(device);
+}
+
+static void foreach_unregister_object(const void *key,
+				      void *value, void *user_data)
 {
 	struct knot_device *device = value;
+
 
 	/* Automatically calls device_unref() */
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
 }
 
-static void method_reply(struct l_dbus_proxy *proxy,
+static void method_pair_reply(struct l_dbus_proxy *proxy,
 		       struct l_dbus_message *result,
 		       void *user_data)
 {
@@ -102,7 +120,28 @@ static void method_reply(struct l_dbus_proxy *proxy,
 	struct l_dbus_message *reply;
 
 	if (l_dbus_message_is_error(result)) {
-		l_error("Failed to Pair/Forget device %s" , device->id);
+		l_error("Failed to Pair() device %s" , device->id);
+		return;
+	}
+
+	reply = l_dbus_message_new_method_return(device->msg);
+	l_dbus_send(dbus_get_bus(), reply);
+	l_dbus_message_unref(device->msg);
+	device->msg = NULL;
+
+	device->msg_id = 0;
+}
+
+static void method_forget_reply(struct l_dbus_proxy *proxy,
+		       struct l_dbus_message *result,
+		       void *user_data)
+{
+	struct knot_device *device = user_data;
+	struct l_dbus_message *reply;
+
+
+	if (l_dbus_message_is_error(result)) {
+		l_error("Failed to Forget() device %s" , device->id);
 		return;
 	}
 
@@ -130,13 +169,13 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	if (device->msg)
 		return dbus_error_busy(msg);
 
-	device->msg = l_dbus_message_ref(msg);
 	ellproxy = proxy_get(device->id);
 	if (!ellproxy)
 		return dbus_error_not_available(msg);
 
+	device->msg = l_dbus_message_ref(msg);
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Pair", NULL,
-						  method_reply, device, NULL);
+					  method_pair_reply, device, NULL);
 
 	return NULL;
 }
@@ -148,13 +187,12 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	struct knot_device *device = user_data;
 	struct l_dbus_proxy *ellproxy;
 
+
 	if (!device->paired)
 		return dbus_error_not_available(msg);
 
 	if (device->msg)
 		return dbus_error_busy(msg);
-
-	device->msg = l_dbus_message_ref(msg);
 
 	ellproxy = proxy_get(device->id);
 	if (!ellproxy)
@@ -163,6 +201,7 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	/* FIXME: potential race condition. Registration might be in progress */
 
 	/* Registered to cloud ? */
+
 	if (device->uuid) {
 		/*
 		 *  At msg.c@proxy_removed() will manage additional
@@ -174,8 +213,10 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	}
 
 	/* Remove from lower layers only */
+	device->msg = l_dbus_message_ref(msg);
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget",
-					  NULL, method_reply, device, NULL);
+						  NULL, method_forget_reply,
+						  device, unregister);
 	return NULL;
 }
 
@@ -316,7 +357,7 @@ int device_start(void)
 
 void device_stop(void)
 {
-	l_hashmap_foreach(device_list, unregister_object, NULL);
+	l_hashmap_foreach(device_list, foreach_unregister_object, NULL);
 	l_hashmap_destroy(device_list, (l_hashmap_destroy_func_t) device_unref);
 	l_dbus_unregister_interface(dbus_get_bus(), DEVICE_INTERFACE);
 }
@@ -359,15 +400,12 @@ void device_destroy(const char *id)
 {
 	struct knot_device *device;
 
-	device = l_hashmap_remove(device_list, id);
+
+	device = l_hashmap_lookup(device_list, id);
 	if (!device)
 		return;
 
-	/* Automatically calls device_unref() */
-	l_dbus_unregister_object(dbus_get_bus(), device->path);
-
-	/* Release last reference */
-	device_unref(device);
+	unregister(device);
 }
 
 bool device_set_name(struct knot_device *device, const char *name)
@@ -490,7 +528,8 @@ bool device_forget(struct knot_device *device)
 		return false;
 
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
-						  method_reply, device, NULL);
+						  method_forget_reply,
+						  device, unregister);
 
 	return true;
 }
