@@ -1256,17 +1256,11 @@ static struct session *session_create(struct node_ops *node_ops,
 	int err;
 
 	session = session_new(node_ops);
-	err = session_proto_connect(session);
-	if (err < 0) {
-		session_unref(session);
-		return NULL;
-	}
 
 	session->node_channel = create_node_channel(client_socket, session);
 	session->node_fd = client_socket; /* Required to manage disconnections */
 
-	hal_log_info("[session %p] node:%p proto:%p",
-		     session, session->node_channel, session->proto_channel);
+	hal_log_info("[session %p] Session created", session);
 
 	return session;
 }
