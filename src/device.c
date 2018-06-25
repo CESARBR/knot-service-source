@@ -141,7 +141,7 @@ static void method_forget_reply(struct l_dbus_proxy *proxy,
 
 
 	if (l_dbus_message_is_error(result)) {
-		l_error("Failed to Forget() device %s" , device->id);
+		hal_log_error("Failed to Forget() device %s" , device->id);
 		return;
 	}
 
@@ -188,17 +188,21 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	struct l_dbus_proxy *ellproxy;
 
 
-	if (!device->paired)
+	if (!device->paired) {
+		hal_log_error("Forget() error: not paired!");
 		return dbus_error_not_available(msg);
+	}
 
-	if (device->msg)
+	if (device->msg) {
+		hal_log_error("Forget() error: in progress!");
 		return dbus_error_busy(msg);
+	}
 
 	ellproxy = proxy_get(device->id);
 	if (!ellproxy)
 		return dbus_error_not_available(msg);
 
-	/* FIXME: potential race condition. Registration might be in progress */
+	device->msg = l_dbus_message_ref(msg);
 
 	/* Registered to cloud ? */
 
@@ -209,11 +213,11 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 		 *  peer (thing) is connected.
 		 */
 		proto_rmnode_by_uuid(device->uuid);
-		return l_dbus_message_new_method_return(msg);
+		/* Reply sent at method_forget_reply */
+		return NULL;
 	}
 
 	/* Remove from lower layers only */
-	device->msg = l_dbus_message_ref(msg);
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget",
 						  NULL, method_forget_reply,
 						  device, unregister);
@@ -513,13 +517,16 @@ bool device_forget(struct knot_device *device)
 {
 	struct l_dbus_proxy *ellproxy;
 
+	/*
+	 * The following scenarios are possible:
+	 * 1. Unregister response received from the node (thing)
+	 * 2. Timeout occured: Unregister not received
+	 * 3. nrfd removed the object (see proxy_removed)
+	 * 4. Zombie device detected: unregisted from cloud, but
+	 *    it is still being marked as paired.
+	 */
 	if (!device->paired)
 		return false;
-
-	if (device->msg) {
-		hal_log_error("error: Pair/Forget in progress!");
-		return false;
-	}
 
 	/* TODO: Fix potential race condition with D-Bus method call */
 

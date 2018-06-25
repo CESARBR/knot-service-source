@@ -528,7 +528,8 @@ static int8_t msg_register(struct session *session,
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	hal_log_info("[session %p] UUID: %s, TOKEN: %s", session, uuid, token);
+	hal_log_info("[session %p] Registered UUID: %s, TOKEN: %s",
+		     session, uuid, token);
 
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
@@ -611,6 +612,9 @@ static int8_t msg_auth(struct session *session,
 	mydevice = l_queue_find(device_id_list, device_uuid_cmp, session->uuid);
 	if (mydevice)
 		session->id = strtoull(mydevice->id, NULL, 16);
+
+	hal_log_info("[session %p] Authenticating UUID: %s, TOKEN: %s",
+		     session, uuid, token);
 
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
@@ -893,9 +897,7 @@ static void device_forget_destroy(struct mydevice *mydevice)
 	device = device_get(mydevice->id);
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %s removed", mydevice->id);
-	else
-		hal_log_info("Can't remove proxy for %s" , mydevice->id);
+		hal_log_info("Removing proxy for %s", mydevice->id);
 
 	mydevice = l_queue_remove_if(device_id_list, device_id_cmp,
 			mydevice->id);
@@ -1253,7 +1255,6 @@ static struct session *session_create(struct node_ops *node_ops,
 				      int client_socket)
 {
 	struct session *session;
-	int err;
 
 	session = session_new(node_ops);
 
@@ -1292,9 +1293,7 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 	hal_log_info("Device %s not found at Cloud", id);
 
 	if (device_forget(device))
-		hal_log_info("Proxy for %s removed", id);
-	else
-		hal_log_info("Can't remove proxy for %s" , id);
+		hal_log_info("Removing proxy for %s", id);
 }
 
 static void proxy_added(const char *device_id, const char *uuid,
@@ -1330,6 +1329,8 @@ static void proxy_added(const char *device_id, const char *uuid,
 static void unregister_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct mydevice *mydevice = user_data;
+
+	hal_log_info("Unregister response not received");
 
 	device_forget_destroy(mydevice);
 }
