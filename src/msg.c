@@ -216,11 +216,12 @@ static int8_t msg_unregister(struct session *session)
 	int8_t result;
 
 	if (!session->trusted) {
-		hal_log_info("unregister: Permission denied!");
+		hal_log_info("[session %p] unregister: Permission denied!",
+			     session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
-	hal_log_info("rmnode: %.36s", session->uuid);
+	hal_log_info("[session %p] rmnode: %.36s", session, session->uuid);
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_rmnode(proto_sock, session->uuid, session->token);
 	if (result != KNOT_SUCCESS)
@@ -273,12 +274,13 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 		if (session->rollback > ROLLBACK_TICKS) {
 			session->rollback = 0;
 			msg_unregister(session);
-			hal_log_info("Removing %s (rollback)", session->uuid);
+			hal_log_info("[session %p] Removing %s (rollback)",
+				     session, session->uuid);
 			return;
 		}
 
 		l_timeout_modify_ms(timeout, 1096);
-		hal_log_info("Waiting schema...");
+		hal_log_info("[session %p] Waiting schema...", session);
 		session->rollback++;
 		return;
 	}
@@ -318,11 +320,12 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 
 do_send:
 	osent = node_ops->send(session->node_fd, opdu, olen);
-	hal_log_info("Sending downstream data fd(%d)...", session->node_fd);
+	hal_log_info("[session %p] Sending downstream data fd(%d)...",
+		     session, session->node_fd);
 	if (osent < 0) {
 		err = -osent;
-		hal_log_error("Can't send downstream data: %s(%d)",
-			      strerror(err), err);
+		hal_log_error("[session %p] Can't send downstream data: " \
+			      "%s(%d)", session, strerror(err), err);
 		goto disable_timer;
 	}
 
@@ -331,7 +334,7 @@ do_send:
 	return;
 
 disable_timer:
-	hal_log_info("Disabling downstream ...");
+	hal_log_info("[session %p] Disabling downstream ...", session);
 }
 
 static bool property_changed(const char *name,
@@ -356,7 +359,8 @@ static bool property_changed(const char *name,
 		/* Track to detect if update is required */
 		list = parser_schema_to_list(value);
 		if (list == NULL) {
-			hal_log_error("schema: parse error!");
+			hal_log_error("[session %p] schema: parse error!",
+				      session);
 			goto done;
 		}
 
@@ -376,12 +380,14 @@ static bool property_changed(const char *name,
 
 		list = parser_config_to_list(value);
 		if (list == NULL) {
-			hal_log_error("config: parse error!");
+			hal_log_error("[session %p] config: parse error!",
+				      session);
 			goto done;
 		}
 
 		if (parser_config_is_valid(list) != KNOT_SUCCESS) {
-			hal_log_error("config: invalid format!");
+			hal_log_error("[session %p] config: invalid format!",
+				      session);
 			l_queue_destroy(list, l_free);
 			goto done;
 		}
@@ -398,7 +404,8 @@ static bool property_changed(const char *name,
 		/* Always push to devices when connection is established */
 		list = parser_sensorid_to_list(value);
 		if (list == NULL) {
-			hal_log_error("get_data: parse error!");
+			hal_log_error("[session %p] get_data: parse error!",
+				      session);
 			goto done;
 		}
 
@@ -493,7 +500,7 @@ static int8_t msg_register(struct session *session,
 
 	if (!msg_register_has_valid_length(kreq, ilen)
 		|| !msg_register_has_valid_device_name(kreq)) {
-		hal_log_error("Missing device name!");
+		hal_log_error("[session %p] Missing device name!", session);
 		return KNOT_REGISTER_INVALID_DEVICENAME;
 	}
 
@@ -502,10 +509,11 @@ static int8_t msg_register(struct session *session,
 	 * if response does not arrives in 20 seconds. If this device was
 	 * previously added we just send the uuid/token again.
 	 */
-	hal_log_info("Registering (id 0x%016" PRIx64 ")", kreq->id);
+	hal_log_info("[session %p] Registering (id 0x%016" PRIx64 ")",
+		     session, kreq->id);
 
 	if (session->trusted && kreq->id == session->id) {
-		hal_log_info("Register: trusted device");
+		hal_log_info("[session %p] Register: trusted device", session);
 		msg_credential_create(krsp, session->uuid, session->token);
 		return KNOT_SUCCESS;
 	}
@@ -520,7 +528,7 @@ static int8_t msg_register(struct session *session,
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	hal_log_info("UUID: %s, TOKEN: %s", uuid, token);
+	hal_log_info("[session %p] UUID: %s, TOKEN: %s", session, uuid, token);
 
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
@@ -563,8 +571,8 @@ static bool msg_unregister_req(void *user_data)
 	osent = node_ops->send(session->node_fd, opdu, olen);
 	if (osent < 0) {
 		err = -osent;
-		hal_log_error("Can't send unregister message: %s(%d)",
-				strerror(err), err);
+		hal_log_error("[session %p] Can't send unregister message: %s(%d)",
+				session, strerror(err), err);
 		return false;
 	}
 
@@ -582,7 +590,7 @@ static int8_t msg_auth(struct session *session,
 	int8_t result;
 
 	if (session->trusted) {
-		hal_log_info("Authenticated already");
+		hal_log_info("[session %p] Authenticated already", session);
 		return KNOT_SUCCESS;
 	}
 
@@ -629,7 +637,7 @@ static int8_t msg_schema(struct session *session,
 	int8_t result;
 
 	if (!session->trusted) {
-		hal_log_info("schema: not authorized!");
+		hal_log_info("[session %p] schema: not authorized!", session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -700,15 +708,15 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	const knot_data *kdata = &(kmdata->payload);
 
 	if (!session->trusted) {
-		hal_log_info("data: Permission denied!");
+		hal_log_info("[session %p] data: Permission denied!", session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
-		hal_log_info("sensor_id(0x%02x): data type mismatch!",
-			     sensor_id);
+		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
+			     session, sensor_id);
 		return KNOT_INVALID_DATA;
 	}
 
@@ -716,13 +724,13 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 				   schema->values.value_type,
 				   schema->values.unit);
 	if (err) {
-		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
-			     sensor_id, schema->values.type_id);
+		hal_log_info("[session %p] sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
+			     session, sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
-	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
-		     schema->values.unit, schema->values.value_type);
+	hal_log_info("[session %p] sensor:%d, unit:%d, value_type:%d", session,
+		     sensor_id, schema->values.unit, schema->values.value_type);
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_data(proto_sock, session->uuid, session->token,
@@ -753,7 +761,8 @@ static int8_t msg_config_resp(struct session *session,
 	uint8_t sensor_id;
 
 	if (!session->trusted) {
-		hal_log_info("config resp: Permission denied!");
+		hal_log_info("[session %p] config resp: Permission denied!",
+			     session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
@@ -768,8 +777,8 @@ static int8_t msg_config_resp(struct session *session,
 
 	l_free(config);
 
-	hal_log_info("THING %s received config for sensor %d", session->uuid,
-								sensor_id);
+	hal_log_info("[session %p] THING %s received config for sensor %d",
+		     session, session->uuid, sensor_id);
 
 	return KNOT_SUCCESS;
 }
@@ -802,15 +811,16 @@ static int8_t msg_setdata_resp(struct session *session,
 	const knot_data *kdata = &(kmdata->payload);
 
 	if (!session->trusted) {
-		hal_log_info("setdata: Permission denied!");
+		hal_log_info("[session %p] setdata: Permission denied!",
+			     session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
 	}
 
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
-		hal_log_info("sensor_id(0x%02x): data type mismatch!",
-								sensor_id);
+		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
+			     session, sensor_id);
 		return KNOT_INVALID_DATA;
 	}
 
@@ -818,13 +828,14 @@ static int8_t msg_setdata_resp(struct session *session,
 				   schema->values.value_type,
 				   schema->values.unit);
 	if (err) {
-		hal_log_info("sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
-					sensor_id, schema->values.type_id);
+		hal_log_info("[session %p] sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
+			     session, sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
-	hal_log_info("sensor:%d, unit:%d, value_type:%d", sensor_id,
-				schema->values.unit, schema->values.value_type);
+	hal_log_info("[session %p] sensor:%d, unit:%d, value_type:%d",
+		     session, sensor_id, schema->values.unit,
+		     schema->values.value_type);
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_data(proto_sock, session->uuid, session->token,
@@ -832,8 +843,8 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (result != KNOT_SUCCESS)
 		return result;
 
-	hal_log_info("THING %s updated data for sensor %d", session->uuid,
-								sensor_id);
+	hal_log_info("[session %p] THING %s updated data for sensor %d",
+		     session, session->uuid, sensor_id);
 
 	/* Access first entry */
 	jso = json_object_array_get_idx(session->setdata_jso, 0);
@@ -915,7 +926,8 @@ static ssize_t msg_process(struct session *session,
 
 	/* Verify if output PDU has a min length */
 	if (omtu < sizeof(knot_msg)) {
-		hal_log_error("Output PDU: invalid PDU length");
+		hal_log_error("[session %p] Output PDU: invalid PDU length",
+			      session);
 		return -EINVAL;
 	}
 
@@ -924,18 +936,19 @@ static ssize_t msg_process(struct session *session,
 
 	/* At least header should be received */
 	if (ilen < sizeof(knot_msg_header)) {
-		hal_log_error("KNOT PDU: invalid minimum length");
+		hal_log_error("[session %p] KNOT PDU: invalid minimum length",
+			      session);
 		return -EINVAL;
 	}
 
 	/* Checking PDU length consistency */
 	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
-		hal_log_error("KNOT PDU: length mismatch");
+		hal_log_error("[session %p] KNOT PDU: len mismatch", session);
 		return -EINVAL;
 	}
 
-	hal_log_info("KNOT OP: 0x%02X LEN: %02x",
-				kreq->hdr.type, kreq->hdr.payload_len);
+	hal_log_info("[session %p] KNOT OP: 0x%02X LEN: %02x",
+		     session, kreq->hdr.type, kreq->hdr.payload_len);
 
 	switch (kreq->hdr.type) {
 	case KNOT_MSG_REGISTER_REQ:
@@ -1040,7 +1053,8 @@ static struct l_io *create_proto_channel(int proto_sock,
 
 	channel = l_io_new(proto_sock);
 	if (channel == NULL) {
-		hal_log_error("Can't create proto channel");
+		hal_log_error("[session %p] Can't create proto channel",
+			      session);
 		return NULL;
 	}
 
@@ -1061,8 +1075,8 @@ static int session_proto_connect(struct session *session)
 
 	proto_sock = proto_connect();
 	if (proto_sock < 0) {
-		hal_log_info("Cloud connect(): %s(%d)",
-			     strerror(-proto_sock), -proto_sock);
+		hal_log_info("[session %p] Cloud connect(): %s(%d)",
+			     session, strerror(-proto_sock), -proto_sock);
 		return proto_sock;
 	}
 
@@ -1108,11 +1122,12 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 				    session_node_fd_cmp,
 				    L_INT_TO_PTR(session->node_fd));
 
-	hal_log_info("session(%p) disconnected (node)", session);
+	hal_log_info("[session %p] disconnected (node)", session);
 
 	if (session->rollback) {
 		msg_unregister(session);
-		hal_log_info("Removing %s (rollback)", session->uuid);
+		hal_log_info("[session %p] Removing %s (rollback)",
+			     session, session->uuid);
 	}
 
 	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
@@ -1167,7 +1182,8 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 	recvbytes = node_ops->recv(node_socket, ipdu, sizeof(ipdu));
 	if (recvbytes <= 0) {
 		err = errno;
-		hal_log_error("readv(): %s(%d)", strerror(err), err);
+		hal_log_error("[session %p] readv(): %s(%d)",
+			      session, strerror(err), err);
 		on_node_channel_data_error(channel);
 		return false;
 	}
@@ -1176,12 +1192,14 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 		err = session_proto_connect(session);
 		if (err) {
 			/* TODO:  missing reply an error */
-			hal_log_error("Can't connect to cloud service!");
+			hal_log_error("[session %p] Can't connect to cloud \
+				      service!", session);
 			on_node_channel_data_error(channel);
 			return false;
 		}
 
-		hal_log_info("Reconnected to cloud service");
+		hal_log_info("[session %p] Reconnected to cloud service",
+			     session);
 	}
 
 	/* Blocking: Wait until response from cloud is received */
@@ -1189,8 +1207,8 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
-		hal_log_error("KNOT IoT proto error: %s(%zd)",
-			      strerror(-olen), -olen);
+		hal_log_error("[session %p] KNOT IoT proto error: %s(%zd)",
+			      session, strerror(-olen), -olen);
 		on_node_channel_data_error(channel);
 		return false;
 	}
@@ -1202,8 +1220,8 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 	/* Response from the gateway: error or response for the given command */
 	sentbytes = node_ops->send(node_socket, opdu, olen);
 	if (sentbytes < 0)
-		hal_log_error("node_ops: %s(%zd)",
-			      strerror(-sentbytes), -sentbytes);
+		hal_log_error("[session %p] node_ops: %s(%zd)",
+			      session, strerror(-sentbytes), -sentbytes);
 
 	return true;
 }
@@ -1247,8 +1265,8 @@ static struct session *session_create(struct node_ops *node_ops,
 	session->node_channel = create_node_channel(client_socket, session);
 	session->node_fd = client_socket; /* Required to manage disconnections */
 
-	hal_log_info("node:%p proto:%p",
-		     session->node_channel, session->proto_channel);
+	hal_log_info("[session %p] node:%p proto:%p",
+		     session, session->node_channel, session->proto_channel);
 
 	return session;
 }
