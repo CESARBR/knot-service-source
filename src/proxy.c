@@ -78,6 +78,19 @@ static void foreach_device(const void *key, void *value, void *user_data)
 	foreach->func(device, foreach->user_data);
 }
 
+static void ellproxy_destroy(const void *key, void *value, void *user_data)
+{
+	struct knot_device *device;
+	const char *id = key;
+
+	/* Proxy is destroyed already. Access device directly instead */
+	device = device_get(id);
+	if (device_get_paired(device) == true)
+		return;
+
+	device_destroy(id);
+}
+
 static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
 	struct service_proxy *proxy = user_data;
@@ -88,9 +101,11 @@ static void service_appeared(struct l_dbus *dbus, void *user_data)
 static void service_disappeared(struct l_dbus *dbus, void *user_data)
 {
 	struct service_proxy *proxy = user_data;
+
 	hal_log_info("Service disappeared: %s", proxy->name);
 
 	/* FIXME: Investigate if proxy should be released */
+	l_hashmap_foreach(proxy->ellproxy_list, ellproxy_destroy, NULL);
 	l_hashmap_destroy(proxy->ellproxy_list, NULL);
 	proxy->ellproxy_list = NULL;
 }

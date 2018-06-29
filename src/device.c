@@ -404,7 +404,6 @@ void device_destroy(const char *id)
 {
 	struct knot_device *device;
 
-
 	device = l_hashmap_lookup(device_list, id);
 	if (!device)
 		return;
@@ -475,6 +474,14 @@ bool device_set_paired(struct knot_device *device, bool paired)
 				DEVICE_INTERFACE, "Paired");
 
 	return true;
+}
+
+bool device_get_paired(struct knot_device *device)
+{
+	if (unlikely(!device))
+		return false;
+
+	return device->paired;
 }
 
 bool device_set_online(struct knot_device *device, bool online)
