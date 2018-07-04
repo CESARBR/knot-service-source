@@ -59,7 +59,7 @@ static void usage(void)
 		"\t-p, --port              Remote port\n"
 		"\t-P, --proto             Protocol used to communicate with cloud server: http, socketio, ws\n"
 		"\t-n, --nodetach          Disable running in background\n"
-		"\t-b, --disable-nobody    Disable running as nobody\n"
+		"\t-r, --user-root	   Run as root(default is knot)\n"
 		"\t-H, --help              Show help options\n");
 }
 
@@ -69,7 +69,7 @@ static const struct option main_options[] = {
 	{ "port",		required_argument,	NULL, 'p' },
 	{ "proto",		required_argument,	NULL, 'P' },
 	{ "nodetach",		no_argument,		NULL, 'n' },
-	{ "disable-nobody",	no_argument,		NULL, 'b' },
+	{ "user-root",		no_argument,		NULL, 'r' },
 	{ "help",		no_argument,		NULL, 'H' },
 	{ }
 };
@@ -100,8 +100,8 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 		case 'n':
 			settings->detach = false;
 			break;
-		case 'b':
-			settings->run_as_nobody = false;
+		case 'r':
+			settings->run_as_root = true;
 			break;
 		case 'H':
 			usage();
@@ -136,7 +136,7 @@ struct settings *settings_load(int argc, char *argv[])
 	settings->port = UINT32_MAX;
 	settings->proto = DEFAULT_PROTO;
 	settings->detach = detach;
-	settings->run_as_nobody = true;
+	settings->run_as_root = false;
 	settings->help = help;
 	settings->uuid = NULL;
 	settings->token = NULL;

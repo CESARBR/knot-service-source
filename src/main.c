@@ -85,14 +85,14 @@ static void l_main_loop_run()
 	l_signal_remove(sig);
 	l_main_exit();
 }
-/*
-static int run_as_nobody()
+
+static int run_as_user_knot(void)
 {
-	if (setuid(65534))
+	if (setuid(1003))
 		return -errno;
 	return 0;
 }
-*/
+
 static int detach()
 {
 	if (daemon(0, 0))
@@ -127,16 +127,17 @@ int main(int argc, char *argv[])
 			      strerror(-err), -err);
 		goto fail_manager;
 	}
-	/* Set user id to nobody */
-/*	if (settings->run_as_nobody) {
-		err = run_as_nobody();
+
+	/* Set user id to user 'knot' */
+	if (settings->run_as_root == false) {
+		err = run_as_user_knot();
 		if (err) {
-			hal_log_error("Failed to run as nobody. " \
+			hal_log_error("Failed to run as user 'knot' " \
 				"%s (%d). Exiting ...", strerror(-err), -err);
-			goto fail_nobody;
+			goto fail_user_knot;
 		}
 	}
-*/
+
 	if (settings->detach) {
 		err = detach();
 		if (err) {
@@ -153,7 +154,7 @@ int main(int argc, char *argv[])
 	err = EXIT_SUCCESS;
 
 fail_detach:
-/*fail_nobody:*/
+fail_user_knot:
 	manager_stop();
 fail_manager:
 	l_main_exit();

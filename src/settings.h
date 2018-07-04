@@ -30,7 +30,7 @@ struct settings {
 
 	bool help;
 	bool detach;
-	bool run_as_nobody;
+	bool run_as_root;
 };
 
 struct settings *settings_load(int argc, char *argv[]);
