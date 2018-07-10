@@ -559,6 +559,7 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 	if (!json_object_object_get_ex(jso, "value", &jobjkey))
 		return -EINVAL;
 
+	/* TODO: RAW is not supported */
 	jtype = json_object_get_type(jobjkey);
 	if (jtype != json_type_int &&
 	    jtype != json_type_double && jtype != json_type_boolean)

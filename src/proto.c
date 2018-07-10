@@ -296,11 +296,28 @@ static bool knot_data_as_boolean(const knot_data *data)
 	return data->values.val_b;
 }
 
+static char *knot_data_as_raw(const knot_data *data, size_t *encoded_len)
+{
+	char *encoded;
+	size_t olen;
+
+	/* TODO: size should not be fixed */
+	encoded = l_base64_encode(data->raw, KNOT_DATA_RAW_SIZE, 0, &olen);
+	if (!encoded)
+		return NULL;
+
+	*encoded_len = olen;
+
+	return encoded;
+}
+
 static json_object *data_create_object(uint8_t sensor_id,
 				       uint8_t value_type,
 				       const knot_data *value)
 {
 	json_object *data;
+	char *encoded;
+	size_t encoded_len;
 
 	data = json_object_new_object();
 	json_object_object_add(data, "sensor_id",
@@ -320,6 +337,15 @@ static json_object *data_create_object(uint8_t sensor_id,
 			json_object_new_boolean(knot_data_as_boolean(value)));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
+		/* Encode as base64 */
+		encoded = knot_data_as_raw(value, &encoded_len);
+		if (!encoded) {
+			json_object_put(data);
+			return NULL;
+		}
+
+		json_object_object_add(data, "value",
+			json_object_new_string_len(encoded, encoded_len));
 		break;
 	default:
 		json_object_put(data);
