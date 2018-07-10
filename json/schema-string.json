@@ -1,0 +1,9 @@
+{
+	"schema": {
+		"sensor_id": 210,
+		"value_type": 04,
+		"unit": 0,
+		"type_id": 0000,
+		"name": "string"
+	}
+}

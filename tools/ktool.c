@@ -339,6 +339,12 @@ static void read_json_entry(struct json_object *jobj,
 			msg->hdr.payload_len = sizeof(knot_value_type_int);
 			break;
 		case json_type_string:
+			str = json_object_get_string(jobj);
+
+			memset(kdata->raw, 0, sizeof(kdata->raw));
+			strncpy((char *) kdata->raw, str, sizeof(kdata->raw));
+			msg->hdr.payload_len = sizeof(kdata->raw);
+			break;
 		case json_type_null:
 			/* FIXME: */
 			break;
