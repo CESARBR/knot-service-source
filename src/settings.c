@@ -132,6 +132,7 @@ struct settings *settings_load(int argc, char *argv[])
 	settings = l_new(struct settings, 1);
 
 	settings->config_path = DEFAULT_CONFIG_PATH;
+	settings->configfd = -1;
 	settings->host = NULL;
 	settings->port = UINT32_MAX;
 	settings->proto = DEFAULT_PROTO;
@@ -150,6 +151,10 @@ struct settings *settings_load(int argc, char *argv[])
 		goto failure;
 	}
 
+	settings->configfd = storage_open(settings->config_path);
+	if (settings->configfd  < 0)
+		goto failure;
+
 	/*
 	 * Command line options (host and port) have higher priority
 	 * than values read from config file. UUID should
@@ -157,20 +162,20 @@ struct settings *settings_load(int argc, char *argv[])
 	 */
 
 	/* UUID & Token are  mandatory */
-	uuid = storage_read_key_string(settings->config_path, "Cloud","Uuid");
+	uuid = storage_read_key_string(settings->configfd, "Cloud","Uuid");
 	if (uuid == NULL) {
 		fprintf(stderr, "%s UUID missing!\n", settings->config_path);
 		goto failure;
 	}
 
-	token = storage_read_key_string(settings->config_path, "Cloud","Token");
+	token = storage_read_key_string(settings->configfd, "Cloud","Token");
 	if (token == NULL) {
 		fprintf(stderr, "%s Token missing!\n", settings->config_path);
 		goto failure;
 	}
 
 	if (settings->host == NULL) {
-		host = storage_read_key_string(settings->config_path,
+		host = storage_read_key_string(settings->configfd,
 					       "Cloud","Host");
 		if(!host)
 			settings->host = l_strdup(DEFAULT_HOST);
@@ -179,7 +184,7 @@ struct settings *settings_load(int argc, char *argv[])
 	}
 
 	if (settings->port == UINT32_MAX) {
-		if (storage_read_key_int(settings->config_path, "Cloud", "Port",
+		if (storage_read_key_int(settings->configfd, "Cloud", "Port",
 					(int *) &port) < 0)
 			settings->port = DEFAULT_PORT;
 		else
@@ -200,6 +205,9 @@ done:
 
 void settings_free(struct settings *settings)
 {
+	if (settings->configfd >= 0)
+		storage_close(settings->configfd);
+
 	l_free(settings->host);
 	l_free(settings->uuid);
 	l_free(settings->token);

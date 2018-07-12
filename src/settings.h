@@ -21,6 +21,7 @@
 
 struct settings {
 	const char *config_path;
+	int configfd;
 
 	char *host;
 	unsigned int port;

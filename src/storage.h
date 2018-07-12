@@ -19,22 +19,31 @@
  *
  */
 
-int storage_write_key_string(const char *pathname, const char *group,
+typedef void (*storage_foreach_func_t) (const char *mac, const char *id,
+					const char *name, void *user_data);
+
+void storage_foreach_nrf24_keys(int fd,
+				storage_foreach_func_t func, void *user_data);
+
+int storage_write_key_string(int fd, const char *group,
 			     const char *key, const char *value);
 
-char *storage_read_key_string(const char *pathname, const char *group,
+char *storage_read_key_string(int fd, const char *group,
 			      const char *key);
 
-int storage_write_key_int(const char *pathname, const char *group,
+int storage_write_key_int(int fd, const char *group,
 			  const char *key, int value);
 
-int storage_read_key_int(const char *pathname, const char *group,
+int storage_read_key_int(int fd, const char *group,
 			 const char *key, int *value);
 
-int storage_write_key_uint64(const char *pathname, const char *group,
+int storage_write_key_uint64(int fd, const char *group,
 			     const char *key, uint64_t value);
 
-int storage_read_key_uint64(const char *pathname, const char *group,
+int storage_read_key_uint64(int fd, const char *group,
 			    const char *key, uint64_t *value);
 
-int storage_remove_group(const char *pathname, const char *group);
+int storage_remove_group(int fd, const char *group);
+
+int storage_open(const char *pathname);
+int storage_close(int fd);

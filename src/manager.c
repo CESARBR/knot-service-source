@@ -71,7 +71,7 @@ static struct l_dbus_message *property_set_port(struct l_dbus *dbus,
 	settings->port = port;
 	hal_log_info("Set('Port' = %" PRIu16")", port);
 
-	storage_write_key_int(settings->config_path, "Cloud", "Port", port);
+	storage_write_key_int(settings->configfd, "Cloud", "Port", port);
 
 	l_dbus_property_changed(dbus,
 				l_dbus_message_get_path(msg),
@@ -110,7 +110,7 @@ static struct l_dbus_message *property_set_host(struct l_dbus *dbus,
 	settings->host = l_strdup(host);
 	hal_log_info("Set('Host' = %s)", settings->host);
 
-	storage_write_key_string(settings->config_path, "Cloud", "Host", host);
+	storage_write_key_string(settings->configfd, "Cloud", "Host", host);
 	l_dbus_property_changed(dbus,
 				l_dbus_message_get_path(msg),
 				SETTINGS_INTERFACE,
@@ -148,7 +148,7 @@ static struct l_dbus_message *property_set_uuid(struct l_dbus *dbus,
 	settings->uuid = l_strdup(uuid);
 	hal_log_info("Set('Uuid' = %s)", settings->uuid);
 
-	storage_write_key_string(settings->config_path, "Cloud", "Uuid", uuid);
+	storage_write_key_string(settings->configfd, "Cloud", "Uuid", uuid);
 
 	l_dbus_property_changed(dbus,
 				l_dbus_message_get_path(msg),
@@ -187,7 +187,7 @@ static struct l_dbus_message *property_set_token(struct l_dbus *dbus,
 	settings->token = l_strdup(token);
 	hal_log_info("Set('Token' = %s)", settings->token);
 
-	storage_write_key_string(settings->config_path,
+	storage_write_key_string(settings->configfd,
 				 "Cloud", "Token", token);
 
 	l_dbus_property_changed(dbus,
