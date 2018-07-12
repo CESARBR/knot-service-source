@@ -76,10 +76,16 @@ static int save_settings(int fd, struct l_settings *settings)
 	int err = 0;
 
 	res = l_settings_to_data(settings, &res_len);
-	ftruncate(fd, 0);
+
+	if (ftruncate(fd, 0) == -1) {
+		err = -errno;
+		goto failure;
+	}
+
 	if (pwrite(fd, res, res_len, 0) < 0)
 		err = -errno;
 
+failure:
 	l_free(res);
 
 	return err;
