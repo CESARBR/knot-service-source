@@ -35,6 +35,8 @@
 
 #include "parser.h"
 
+#define MIN(x,y) ((x)<(y)?(x):(y))
+
 int parser_device(const char *json_str, char *uuid, char *token)
 {
 	json_object *jobj, *json_uuid, *json_token;
@@ -66,11 +68,14 @@ done:
 /*
  * Parsing knot_value_types attribute
  */
-static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
+static void parse_json2data(json_object *jobj, knot_data *kdata)
 {
+	knot_value_types *limit = &(kdata->values);
 	json_object *jobjkey;
 	const char *str;
 	int32_t ipart, fpart;
+	uint8_t *u8val;
+	size_t written;
 
 	jobjkey = jobj;
 	switch (json_object_get_type(jobjkey)) {
@@ -92,8 +97,13 @@ static void parse_json_value_types(json_object *jobj, knot_value_types *limit)
 		limit->val_i.value = json_object_get_int(jobjkey);
 		limit->val_i.multiplier = 1;
 		break;
-	/* FIXME: not implemented */
 	case json_type_string:
+		str = json_object_get_string(jobjkey);
+		u8val = l_base64_decode(str, strlen(str), &written);
+		memcpy(kdata->raw, u8val, MIN(KNOT_DATA_RAW_SIZE, written));
+		l_free(u8val);
+		break;
+	/* FIXME: not implemented */
 	case json_type_null:
 	case json_type_object:
 	case json_type_array:
@@ -215,7 +225,8 @@ struct l_queue *parser_config_to_list(const char *json_str)
 	struct l_queue *list;
 	knot_msg_config *config;
 	int sensor_id, event_flags, time_sec, i;
-	knot_value_types lower_limit, upper_limit;
+	knot_data lower_data;
+	knot_data upper_data;
 	json_type jtype;
 
 	jobjarray = json_tokener_parse(json_str);
@@ -275,7 +286,7 @@ struct l_queue *parser_config_to_list(const char *json_str)
 
 		/* If 'lower_limit' is defined, gets it. */
 
-		memset(&lower_limit, 0, sizeof(knot_value_types));
+		memset(&lower_data, 0, sizeof(knot_data));
 		if (json_object_object_get_ex(jobjentry, "lower_limit",
 								&jobjkey)) {
 			jtype = json_object_get_type(jobjkey);
@@ -284,13 +295,12 @@ struct l_queue *parser_config_to_list(const char *json_str)
 				jtype != json_type_boolean)
 				goto done;
 
-			parse_json_value_types(jobjkey,
-						&lower_limit);
+			parse_json2data(jobjkey, &lower_data);
 		}
 
 		/* If 'upper_limit' is defined, gets it. */
 
-		memset(&upper_limit, 0, sizeof(knot_value_types));
+		memset(&upper_data, 0, sizeof(knot_value_types));
 		if (json_object_object_get_ex(jobjentry,
 					      "upper_limit", &jobjkey)) {
 			jtype = json_object_get_type(jobjkey);
@@ -299,7 +309,7 @@ struct l_queue *parser_config_to_list(const char *json_str)
 					jtype != json_type_boolean)
 				goto done;
 
-			parse_json_value_types(jobjkey, &upper_limit);
+			parse_json2data(jobjkey, &upper_data);
 		}
 
 		config = l_new(knot_msg_config, 1);
@@ -308,9 +318,9 @@ struct l_queue *parser_config_to_list(const char *json_str)
 		config->sensor_id = sensor_id;
 		config->values.event_flags = event_flags;
 		config->values.time_sec = time_sec;
-		memcpy(&(config->values.lower_limit), &lower_limit,
+		memcpy(&(config->values.lower_limit), &lower_data.values,
 						sizeof(knot_value_types));
-		memcpy(&(config->values.upper_limit), &upper_limit,
+		memcpy(&(config->values.upper_limit), &upper_data.values,
 						sizeof(knot_value_types));
 		l_queue_push_tail(list, config);
 	}
@@ -559,16 +569,16 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 	if (!json_object_object_get_ex(jso, "value", &jobjkey))
 		return -EINVAL;
 
-	/* TODO: RAW is not supported */
 	jtype = json_object_get_type(jobjkey);
 	if (jtype != json_type_int &&
-	    jtype != json_type_double && jtype != json_type_boolean)
+	    jtype != json_type_double && jtype != json_type_boolean &&
+		jtype != json_type_string)
 		return -EINVAL;
 
 	msg->hdr.type = KNOT_MSG_SET_DATA;
 	msg->hdr.payload_len = sizeof(knot_msg_data) - sizeof(knot_msg_header);
 	msg->sensor_id = sensor_id;
-	parse_json_value_types(jobjkey, &msg->payload.values);
+	parse_json2data(jobjkey, &msg->payload);
 
 	return 0;
 }
