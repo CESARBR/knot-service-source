@@ -199,8 +199,10 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	}
 
 	ellproxy = proxy_get(device->id);
-	if (!ellproxy)
+	if (!ellproxy) {
+		hal_log_error("Forget() error: proxy not available!");
 		return dbus_error_not_available(msg);
+	}
 
 	device->msg = l_dbus_message_ref(msg);
 
