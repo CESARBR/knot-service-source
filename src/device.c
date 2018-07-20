@@ -121,11 +121,13 @@ static void method_pair_reply(struct l_dbus_proxy *proxy,
 
 	if (l_dbus_message_is_error(result)) {
 		l_error("Failed to Pair() device %s" , device->id);
-		return;
+		goto fail;
 	}
 
 	reply = l_dbus_message_new_method_return(device->msg);
 	l_dbus_send(dbus_get_bus(), reply);
+
+fail:
 	l_dbus_message_unref(device->msg);
 	device->msg = NULL;
 
@@ -142,7 +144,7 @@ static void method_forget_reply(struct l_dbus_proxy *proxy,
 
 	if (l_dbus_message_is_error(result)) {
 		hal_log_error("Failed to Forget() device %s" , device->id);
-		return;
+		goto fail;
 	}
 
 	if (device->msg == NULL)
@@ -150,6 +152,8 @@ static void method_forget_reply(struct l_dbus_proxy *proxy,
 
 	reply = l_dbus_message_new_method_return(device->msg);
 	l_dbus_send(dbus_get_bus(), reply);
+
+fail:
 	l_dbus_message_unref(device->msg);
 	device->msg = NULL;
 
