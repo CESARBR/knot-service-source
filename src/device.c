@@ -112,51 +112,41 @@ static void foreach_unregister_object(const void *key,
 	l_dbus_unregister_object(dbus_get_bus(), device->path);
 }
 
-static void method_pair_reply(struct l_dbus_proxy *proxy,
+static void method_reply(struct l_dbus_proxy *proxy,
 		       struct l_dbus_message *result,
 		       void *user_data)
 {
 	struct knot_device *device = user_data;
 	struct l_dbus_message *reply;
+	const char *name;
+	const char *text;
 
 	if (l_dbus_message_is_error(result)) {
-		l_error("Failed to Pair() device %s" , device->id);
-		goto fail;
+		if (l_dbus_message_get_error(result, &name, &text) == false)
+			goto skip;
+
+		if (device->msg == NULL)
+		    goto skip;
+
+		hal_log_error("Failed to %s() device %s: %s" ,
+			      l_dbus_message_get_member(device->msg),
+			      device->id, text);
+
+
+		reply = dbus_error_failed(device->msg, text);
+	} else {
+		if (device->msg == NULL)
+		    goto skip;
+
+		reply = l_dbus_message_new_method_return(device->msg);
 	}
 
-	reply = l_dbus_message_new_method_return(device->msg);
 	l_dbus_send(dbus_get_bus(), reply);
 
-fail:
 	l_dbus_message_unref(device->msg);
 	device->msg = NULL;
 
-	device->msg_id = 0;
-}
-
-static void method_forget_reply(struct l_dbus_proxy *proxy,
-		       struct l_dbus_message *result,
-		       void *user_data)
-{
-	struct knot_device *device = user_data;
-	struct l_dbus_message *reply;
-
-
-	if (l_dbus_message_is_error(result)) {
-		hal_log_error("Failed to Forget() device %s" , device->id);
-		goto fail;
-	}
-
-	if (device->msg == NULL)
-		return;
-
-	reply = l_dbus_message_new_method_return(device->msg);
-	l_dbus_send(dbus_get_bus(), reply);
-
-fail:
-	l_dbus_message_unref(device->msg);
-	device->msg = NULL;
-
+skip:
 	device->msg_id = 0;
 }
 
@@ -179,7 +169,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 
 	device->msg = l_dbus_message_ref(msg);
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Pair", NULL,
-					  method_pair_reply, device, NULL);
+					  method_reply, device, NULL);
 
 	return NULL;
 }
@@ -209,7 +199,6 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	}
 
 	device->msg = l_dbus_message_ref(msg);
-
 	/* Registered to cloud ? */
 
 	if (device->uuid) {
@@ -219,13 +208,13 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 		 *  peer (thing) is connected.
 		 */
 		proto_rmnode_by_uuid(device->uuid);
-		/* Reply sent at method_forget_reply */
+		/* Reply sent at method_reply */
 		return NULL;
 	}
 
 	/* Remove from lower layers only */
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget",
-						  NULL, method_forget_reply,
+						  NULL, method_reply,
 						  device, unregister);
 	return NULL;
 }
@@ -548,7 +537,7 @@ bool device_forget(struct knot_device *device)
 		return false;
 
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
-						  method_forget_reply,
+						  method_reply,
 						  device, unregister);
 
 	return true;

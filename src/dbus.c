@@ -58,6 +58,13 @@ struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg)
 					"Operation not available");
 }
 
+struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
+					  const char *str)
+{
+        return l_dbus_message_new_error(msg, KNOT_SERVICE ".Failed",
+					"%s", str);
+}
+
 static void dbus_disconnect_callback(void *user_data)
 {
 	hal_log_info("D-Bus disconnected");

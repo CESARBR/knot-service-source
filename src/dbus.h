@@ -28,6 +28,8 @@ struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
 						 const char *emsg);
 struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg);
 struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg);
+struct l_dbus_message *dbus_error_failed(struct l_dbus_message *msg,
+					  const char *str);
 
 typedef void (*dbus_setup_completed_func_t) (void *user_data);
 int dbus_start(dbus_setup_completed_func_t setup_cb, void *user_data);
