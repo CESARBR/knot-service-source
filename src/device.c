@@ -533,8 +533,11 @@ bool device_forget(struct knot_device *device)
 	/* TODO: Fix potential race condition with D-Bus method call */
 
 	ellproxy = proxy_get(device->id);
-	if (!ellproxy)
+	if (!ellproxy) {
+		hal_log_info("Source proxy not found: destroying local object...");
+		unregister(device);
 		return false;
+	}
 
 	device->msg_id = l_dbus_proxy_method_call(ellproxy, "Forget", NULL,
 						  method_reply,

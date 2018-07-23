@@ -1354,6 +1354,8 @@ static void proxy_removed(const char *device_id, void *user_data)
 						 device_id_cmp,
 						 device_id);
 
+	hal_log_info("Device removed: %s", device_id);
+
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
 		/* Other service or created by external apps(eg: ktool) */
