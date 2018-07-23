@@ -192,12 +192,6 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 		return dbus_error_busy(msg);
 	}
 
-	ellproxy = proxy_get(device->id);
-	if (!ellproxy) {
-		hal_log_error("Forget() error: proxy not available!");
-		return dbus_error_not_available(msg);
-	}
-
 	device->msg = l_dbus_message_ref(msg);
 	/* Registered to cloud ? */
 
@@ -210,6 +204,12 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 		proto_rmnode_by_uuid(device->uuid);
 		/* Reply sent at method_reply */
 		return NULL;
+	}
+
+	ellproxy = proxy_get(device->id);
+	if (!ellproxy) {
+		hal_log_error("Forget() error: proxy not available!");
+		return dbus_error_not_available(msg);
 	}
 
 	/* Remove from lower layers only */
