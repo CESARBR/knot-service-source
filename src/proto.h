@@ -89,7 +89,7 @@ int proto_schema(int proto_socket, const char *uuid,
 		 const char *token, struct l_queue *schema_list);
 int proto_data(int proto_socket, const char *uuid,
 		      const char *token, uint8_t sensor_id,
-		      uint8_t value_type, const knot_data *value);
+		      uint8_t value_type, const knot_value_type *value);
 int proto_getdata(int proto_sock, char *uuid, char *token,
 		   const char *json_str);
 int proto_setdata(int proto_sock, char *uuid, char *token,

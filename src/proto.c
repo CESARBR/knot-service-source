@@ -35,8 +35,8 @@
 #include <ell/ell.h>
 
 #include <json-c/json.h>
-#include <knot_types.h>
-#include <knot_protocol.h>
+#include <knot/knot_types.h>
+#include <knot/knot_protocol.h>
 #include <hal/linux_log.h>
 
 #include "settings.h"
@@ -262,41 +262,41 @@ static json_object *schema_create_list(struct l_queue *schema_list)
 /*
  * TODO: consider moving this to knot-protocol
  */
-static int knot_data_as_int(const knot_data *data)
+static int knot_value_as_int(const knot_value_type *data)
 {
-	return data->values.val_i.value;
+	return data->val_i.value;
 }
 
 /*
  * TODO: consider moving this to knot-protocol
  */
-static int knot_data_get_double_length(const knot_data *data)
+static int knot_value_get_double_length(const knot_value_type *data)
 {
 	char buffer[12]; /* INT_MAX 2147483647 */
 	/* FIXME: precision */
-	return sprintf(buffer, "%d", data->values.val_f.value_dec);
+	return sprintf(buffer, "%d", data->val_f.value_dec);
 }
 
 /*
  * TODO: consider moving this to knot-protocol
  */
-static double knot_data_as_double(const knot_data *data)
+static double knot_value_as_double(const knot_value_type *data)
 {
-	int length = knot_data_get_double_length(data);
-	return data->values.val_f.multiplier *
-		(data->values.val_f.value_int +
-		(data->values.val_f.value_dec / pow(10, length)));
+	int length = knot_value_get_double_length(data);
+	return data->val_f.multiplier *
+		(data->val_f.value_int +
+		(data->val_f.value_dec / pow(10, length)));
 }
 
 /*
  * TODO: consider moving this to knot-protocol
  */
-static bool knot_data_as_boolean(const knot_data *data)
+static bool knot_value_as_boolean(const knot_value_type *data)
 {
-	return data->values.val_b;
+	return data->val_b;
 }
 
-static char *knot_data_as_raw(const knot_data *data, size_t *encoded_len)
+static char *knot_value_as_raw(const knot_value_type *data, size_t *encoded_len)
 {
 	char *encoded;
 	size_t olen;
@@ -313,7 +313,7 @@ static char *knot_data_as_raw(const knot_data *data, size_t *encoded_len)
 
 static json_object *data_create_object(uint8_t sensor_id,
 				       uint8_t value_type,
-				       const knot_data *value)
+				       const knot_value_type *value)
 {
 	json_object *data;
 	char *encoded;
@@ -326,19 +326,19 @@ static json_object *data_create_object(uint8_t sensor_id,
 	switch (value_type) {
 	case KNOT_VALUE_TYPE_INT:
 		json_object_object_add(data, "value",
-				json_object_new_int(knot_data_as_int(value)));
+				json_object_new_int(knot_value_as_int(value)));
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 		json_object_object_add(data, "value",
-			json_object_new_double(knot_data_as_double(value)));
+			json_object_new_double(knot_value_as_double(value)));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(data, "value",
-			json_object_new_boolean(knot_data_as_boolean(value)));
+			json_object_new_boolean(knot_value_as_boolean(value)));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		/* Encode as base64 */
-		encoded = knot_data_as_raw(value, &encoded_len);
+		encoded = knot_value_as_raw(value, &encoded_len);
 		if (!encoded) {
 			json_object_put(data);
 			return NULL;
@@ -528,7 +528,7 @@ int proto_schema(int proto_socket, const char *uuid,
 
 int proto_data(int proto_socket, const char *uuid,
 		      const char *token, uint8_t sensor_id,
-		      uint8_t value_type, const knot_data *value)
+		      uint8_t value_type, const knot_value_type *value)
 {
 	struct json_object *data;
 	const char *data_as_string;

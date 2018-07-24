@@ -29,8 +29,8 @@
 
 #include <glib.h>
 
-#include <knot_protocol.h>
-#include <knot_types.h>
+#include <knot/knot_protocol.h>
+#include <knot/knot_types.h>
 
 /* device name for the register */
 #define	KTEST_DEVICE_NAME	"ktest_unit_test"

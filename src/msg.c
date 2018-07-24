@@ -39,8 +39,8 @@
 
 #include <json-c/json.h>
 
-#include <knot_types.h>
-#include <knot_protocol.h>
+#include <knot/knot_types.h>
+#include <knot/knot_protocol.h>
 #include <hal/linux_log.h>
 
 #include "settings.h"
@@ -720,7 +720,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
 	 */
-	const knot_data *kdata = &(kmdata->payload);
+	const knot_value_type *kvalue = &(kmdata->payload);
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] data: Permission denied!", session);
@@ -749,7 +749,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type, kdata);
+			    sensor_id, schema->values.value_type, kvalue);
 
 	/* Remove pending get data request & update cloud */
 	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
@@ -823,7 +823,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	 *		{"sensor_id": v, "value": w}]
 	 */
 
-	const knot_data *kdata = &(kmdata->payload);
+	const knot_value_type *kvalue = &(kmdata->payload);
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] setdata: Permission denied!",
@@ -854,7 +854,7 @@ static int8_t msg_setdata_resp(struct session *session,
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type, kdata);
+			    sensor_id, schema->values.value_type, kvalue);
 	if (result != KNOT_SUCCESS)
 		return result;
 

@@ -23,8 +23,8 @@
 #include <ell/ell.h>
 
 #include "hal/linux_log.h"
-#include <knot_types.h>
-#include <knot_protocol.h>
+#include <knot/knot_types.h>
+#include <knot/knot_protocol.h>
 
 #include "dbus.h"
 #include "settings.h"

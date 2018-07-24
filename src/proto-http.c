@@ -41,8 +41,8 @@
 
 #include <json-c/json.h>
 
-#include <knot_types.h>
-#include <knot_protocol.h>
+#include <knot/knot_types.h>
+#include <knot/knot_protocol.h>
 #include <hal/linux_log.h>
 
 #include "settings.h"

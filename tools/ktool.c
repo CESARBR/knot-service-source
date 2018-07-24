@@ -35,8 +35,8 @@
 #include <termios.h>
 #include <json-c/json.h>
 
-#include <knot_protocol.h>
-#include <knot_types.h>
+#include <knot/knot_protocol.h>
+#include <knot/knot_types.h>
 
 struct schema {
 	GSList *list;
@@ -299,7 +299,7 @@ static void read_json_entry(struct json_object *jobj,
 					const char *key, void *user_data)
 {
 	knot_msg_data *msg = user_data;
-	knot_data *kdata = &(msg->payload);
+	knot_value_type *kvalue = &(msg->payload);
 	knot_value_type_bool *kbool;
 	knot_value_type_float *kfloat;
 	knot_value_type_int *kint;
@@ -314,7 +314,7 @@ static void read_json_entry(struct json_object *jobj,
 	else if (strcmp("value", key) == 0) {
 		switch (type) {
 		case json_type_boolean:
-			kbool = (knot_value_type_bool *) &(kdata->values.val_b);
+			kbool = (knot_value_type_bool *) &(kvalue->val_b);
 			*kbool = json_object_get_boolean(jobj);
 			msg->hdr.payload_len = sizeof(knot_value_type_bool);
 			break;
@@ -325,15 +325,14 @@ static void read_json_entry(struct json_object *jobj,
 			if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
 				break;
 
-			kfloat = (knot_value_type_float *) &(kdata->
-								values.val_f);
+			kfloat = (knot_value_type_float *) &(kvalue->val_f);
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
 			kfloat->multiplier = 1; /* TODO: */
 			msg->hdr.payload_len = sizeof(knot_value_type_float);
 			break;
 		case json_type_int:
-			kint = (knot_value_type_int *) &(kdata->values.val_i);
+			kint = (knot_value_type_int *) &(kvalue->val_i);
 			kint->value = json_object_get_int(jobj);
 			kint->multiplier = 1;
 			msg->hdr.payload_len = sizeof(knot_value_type_int);
@@ -341,9 +340,9 @@ static void read_json_entry(struct json_object *jobj,
 		case json_type_string:
 			str = json_object_get_string(jobj);
 
-			memset(kdata->raw, 0, sizeof(kdata->raw));
-			strncpy((char *) kdata->raw, str, sizeof(kdata->raw));
-			msg->hdr.payload_len = sizeof(kdata->raw);
+			memset(kvalue->raw, 0, sizeof(kvalue->raw));
+			strncpy((char *) kvalue->raw, str, sizeof(kvalue->raw));
+			msg->hdr.payload_len = sizeof(kvalue->raw);
 			break;
 		case json_type_null:
 			/* FIXME: */
@@ -818,14 +817,14 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	case KNOT_MSG_SET_DATA:
 		printf("sensor_id: %d\n", recv.data.sensor_id);
 		printf("value: %d.%d\n",
-				recv.data.payload.values.val_f.value_int,
-				recv.data.payload.values.val_f.value_dec);
+				recv.data.payload.val_f.value_int,
+				recv.data.payload.val_f.value_dec);
 		resp.hdr.type = KNOT_MSG_DATA_RESP;
-		resp.hdr.payload_len = sizeof(knot_data) +
+		resp.hdr.payload_len = sizeof(knot_value_type) +
 						sizeof(resp.data.sensor_id);
 		resp.data.sensor_id = recv.data.sensor_id;
 		memcpy(&(resp.data.payload), &(recv.data.payload),
-							sizeof(knot_data));
+		       sizeof(knot_value_type));
 		nbytes = write(sock, &resp, sizeof(knot_msg_data));
 		if (nbytes < 0) {
 			err = errno;
