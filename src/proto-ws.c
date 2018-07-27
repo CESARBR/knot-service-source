@@ -40,7 +40,7 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
 /* WS RX Buffer: Critical to mydevices */
-#define WS_RX_BUFFER_SIZE	10240
+#define WS_RX_BUFFER_SIZE	32768
 
 static const char *host_address;
 static int host_port;
