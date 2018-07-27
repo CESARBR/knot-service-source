@@ -296,13 +296,13 @@ static bool knot_value_as_boolean(const knot_value_type *data)
 	return data->val_b;
 }
 
-static char *knot_value_as_raw(const knot_value_type *data, size_t *encoded_len)
+static char *knot_value_as_raw(const knot_value_type *data,
+			       uint8_t kval_len, size_t *encoded_len)
 {
 	char *encoded;
 	size_t olen;
 
-	/* TODO: size should not be fixed */
-	encoded = l_base64_encode(data->raw, KNOT_DATA_RAW_SIZE, 0, &olen);
+	encoded = l_base64_encode(data->raw, kval_len, 0, &olen);
 	if (!encoded)
 		return NULL;
 
@@ -311,9 +311,9 @@ static char *knot_value_as_raw(const knot_value_type *data, size_t *encoded_len)
 	return encoded;
 }
 
-static json_object *data_create_object(uint8_t sensor_id,
-				       uint8_t value_type,
-				       const knot_value_type *value)
+static json_object *data_create_object(uint8_t sensor_id, uint8_t value_type,
+				       const knot_value_type *value,
+				       uint8_t kval_len)
 {
 	json_object *data;
 	char *encoded;
@@ -338,7 +338,7 @@ static json_object *data_create_object(uint8_t sensor_id,
 		break;
 	case KNOT_VALUE_TYPE_RAW:
 		/* Encode as base64 */
-		encoded = knot_value_as_raw(value, &encoded_len);
+		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
 		if (!encoded) {
 			json_object_put(data);
 			return NULL;
@@ -526,15 +526,15 @@ int proto_schema(int proto_socket, const char *uuid,
 	return result;
 }
 
-int proto_data(int proto_socket, const char *uuid,
-		      const char *token, uint8_t sensor_id,
-		      uint8_t value_type, const knot_value_type *value)
+int proto_data(int proto_socket, const char *uuid, const char *token,
+	       uint8_t sensor_id, uint8_t value_type,
+	       const knot_value_type *value, uint8_t kval_len)
 {
 	struct json_object *data;
 	const char *data_as_string;
 	int result, err;
 
-	data = data_create_object(sensor_id, value_type, value);
+	data = data_create_object(sensor_id, value_type, value, kval_len);
 	if (!data) {
 		result = KNOT_INVALID_DATA;
 		goto done;

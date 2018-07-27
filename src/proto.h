@@ -87,9 +87,9 @@ int proto_signin(int proto_socket, const char *uuid, const char *token,
 		 proto_property_changed_func_t prop_cb, void *user_data);
 int proto_schema(int proto_socket, const char *uuid,
 		 const char *token, struct l_queue *schema_list);
-int proto_data(int proto_socket, const char *uuid,
-		      const char *token, uint8_t sensor_id,
-		      uint8_t value_type, const knot_value_type *value);
+int proto_data(int proto_socket, const char *uuid, const char *token,
+	       uint8_t sensor_id, uint8_t value_type,
+	       const knot_value_type *value, uint8_t kval_len);
 int proto_getdata(int proto_sock, char *uuid, char *token,
 		   const char *json_str);
 int proto_setdata(int proto_sock, char *uuid, char *token,

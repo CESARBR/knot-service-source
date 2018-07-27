@@ -30,7 +30,6 @@
 
 #include <knot/knot_types.h>
 #include <knot/knot_protocol.h>
-#include <hal/linux_log.h>
 
 #include <json-c/json.h>
 
@@ -69,18 +68,19 @@ done:
 /*
  * Parsing knot_value_type attribute
  */
-static void parse_json2data(json_object *jobj, knot_value_type *kvalue)
+static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 {
 	json_object *jobjkey;
 	const char *str;
 	int32_t ipart, fpart;
 	uint8_t *u8val;
-	size_t written;
+	size_t olen;
 
 	jobjkey = jobj;
 	switch (json_object_get_type(jobjkey)) {
 	case json_type_boolean:
 		kvalue->val_b = json_object_get_boolean(jobjkey);
+		olen = sizeof(kvalue->val_b);
 		break;
 	case json_type_double:
 		/* Trick to get integral and fractional parts */
@@ -88,19 +88,25 @@ static void parse_json2data(json_object *jobj, knot_value_type *kvalue)
 		/* FIXME: how to handle overflow? */
 		if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
 			break;
+
 		kvalue->val_f.value_int = ipart;
 		kvalue->val_f.value_dec = fpart;
 		kvalue->val_f.multiplier = 1; /* TODO: */
+		olen = sizeof(kvalue->val_f);
 		break;
 	case json_type_int:
 
 		kvalue->val_i.value = json_object_get_int(jobjkey);
 		kvalue->val_i.multiplier = 1;
+		olen = sizeof(kvalue->val_i);
 		break;
 	case json_type_string:
 		str = json_object_get_string(jobjkey);
-		u8val = l_base64_decode(str, strlen(str), &written);
-		memcpy(kvalue->raw, u8val, MIN(KNOT_DATA_RAW_SIZE, written));
+		u8val = l_base64_decode(str, strlen(str), &olen);
+		if (olen > KNOT_DATA_RAW_SIZE)
+			olen = KNOT_DATA_RAW_SIZE; /* truncate */
+
+		memcpy(kvalue->raw, u8val, olen);
 		l_free(u8val);
 		break;
 	/* FIXME: not implemented */
@@ -110,6 +116,8 @@ static void parse_json2data(json_object *jobj, knot_value_type *kvalue)
 	default:
 		break;
 	}
+
+	return olen;
 }
 
 struct l_queue *parser_schema_to_list(const char *json_str)
@@ -551,9 +559,9 @@ json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
 int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 {
 	json_object *jobjkey;
-	knot_value_type data;
 	int sensor_id;
 	int jtype;
+	int olen;
 
 	/* Getting 'sensor_id' */
 	if (!json_object_object_get_ex(jso, "sensor_id", &jobjkey))
@@ -565,7 +573,6 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 	sensor_id = json_object_get_int(jobjkey);
 
 	/* Getting 'value' */
-	memset(&data, 0, sizeof(knot_value_type));
 	if (!json_object_object_get_ex(jso, "value", &jobjkey))
 		return -EINVAL;
 
@@ -575,10 +582,13 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 		jtype != json_type_string)
 		return -EINVAL;
 
-	msg->hdr.type = KNOT_MSG_SET_DATA;
-	msg->hdr.payload_len = sizeof(knot_msg_data) - sizeof(knot_msg_header);
+	olen = parse_json2data(jobjkey, &msg->payload);
+	if (olen < 0)
+		return -EINVAL;
+
 	msg->sensor_id = sensor_id;
-	parse_json2data(jobjkey, &msg->payload);
+	msg->hdr.type = KNOT_MSG_SET_DATA;
+	msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
 
 	return 0;
 }

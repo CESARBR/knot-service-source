@@ -301,7 +301,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 		if (jso) {
 			if (parser_jso_setdata_to_msg(jso, &data) == 0) {
 				opdu = &data;
-				olen = sizeof(data);
+				olen = sizeof(data.hdr) + data.hdr.payload_len;
 				goto do_send;
 			}
 		}
@@ -716,6 +716,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	int8_t result;
 	uint8_t sensor_id;
 	uint8_t *sensor_id_ptr;
+	uint8_t kval_len;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
@@ -748,8 +749,10 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 		     sensor_id, schema->values.unit, schema->values.value_type);
 
 	proto_sock = l_io_get_fd(session->proto_channel);
+	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
 	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type, kvalue);
+			    sensor_id, schema->values.value_type,
+			    kvalue, kval_len);
 
 	/* Remove pending get data request & update cloud */
 	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
@@ -814,6 +817,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	int err;
 	uint8_t sensor_id;
 	int8_t result;
+	uint8_t kval_len;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
 	 * and a primitive KNOT type
@@ -853,8 +857,10 @@ static int8_t msg_setdata_resp(struct session *session,
 		     schema->values.value_type);
 
 	proto_sock = l_io_get_fd(session->proto_channel);
+	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
 	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type, kvalue);
+			    sensor_id, schema->values.value_type,
+			    kvalue, kval_len);
 	if (result != KNOT_SUCCESS)
 		return result;
 
