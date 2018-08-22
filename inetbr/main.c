@@ -29,81 +29,95 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <glib.h>
-
+#include <ell/ell.h>
 #include <hal/linux_log.h>
 
+#include "settings.h"
 #include "manager.h"
 
-static gboolean opt_detach = TRUE;
-static int opt_port4 = 9994;
-static int opt_port6 = 9996;
-
-static GMainLoop *main_loop;
-
-static void sig_term(int sig)
+static void main_loop_quit(struct l_timeout *timeout, void *user_data)
 {
-	g_main_loop_quit(main_loop);
+	l_main_quit();
 }
 
-static GOptionEntry options[] = {
-	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
-					G_OPTION_ARG_NONE, &opt_detach,
-					"Logging in foreground" },
-	{ "port4", 'p', 0, G_OPTION_ARG_INT, &opt_port4,
-			"IPv4 port", "localhost IPv4 port. Default 9994" },
-	{ "port6", 'P', 0, G_OPTION_ARG_INT, &opt_port6,
-			"IPv6 port", "localhost IPv6 port. Default 9996" },
-	{ NULL },
-};
+static void l_terminate(void)
+{
+	static bool terminating = false;
+
+	if (terminating)
+		return;
+
+	terminating = true;
+
+	l_timeout_create(1, main_loop_quit, NULL, NULL);
+}
+
+static void l_signal_handler(struct l_signal *signal, uint32_t signo,
+							void *user_data)
+{
+	switch (signo) {
+	case SIGINT:
+	case SIGTERM:
+		l_terminate();
+		break;
+	}
+}
 
 int main(int argc, char *argv[])
 {
-	GOptionContext *context;
-	GError *gerr = NULL;
-	int err;
+	struct settings *settings;
+	struct l_signal *sig;
+	sigset_t mask;
+	int err = EXIT_FAILURE;
 
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-	signal(SIGPIPE, SIG_IGN);
+	settings = settings_load(argc, argv);
+	if (settings == NULL)
+		return err;
 
-	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, options, NULL);
-
-	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		g_printerr("Invalid arguments: %s\n", gerr->message);
-		g_error_free(gerr);
-		g_option_context_free(context);
-		return EXIT_FAILURE;
+	if (settings->help) {
+		settings_free(settings);
+		return EXIT_SUCCESS;
 	}
 
-	g_option_context_free(context);
-
-	err = manager_start(opt_port4, opt_port6);
-	if (err < 0) {
-		g_error("%s(%d)", strerror(-err), -err);
-		return EXIT_FAILURE;
-	}
-
-	hal_log_init("inetbrd", opt_detach);
+	hal_log_init("inetbrd", settings->detach);
 	hal_log_info("KNOT IPv4/IPv6 Border Router");
 
-	if (opt_detach) {
+	if (settings->detach) {
 		if (daemon(0, 0)) {
 			hal_log_error("Can't start daemon!");
-			manager_stop();
 			return EXIT_FAILURE;
 		}
 	}
 
-	main_loop = g_main_loop_new(NULL, FALSE);
+	if (!l_main_init())
+		goto main_fail;
 
-	g_main_loop_run(main_loop);
+	err = manager_start(settings->port4, settings->port6);
+	if (err < 0) {
+		fprintf(stderr, "%s(%d)\n", strerror(-err), -err);
+		goto manager_fail;
+	}
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
+
+	sig = l_signal_create(&mask, l_signal_handler, NULL, NULL);
+
+	l_main_run();
 
 	manager_stop();
+
+	l_signal_remove(sig);
+	err = EXIT_SUCCESS;
+
+manager_fail:
+	l_main_exit();
+
+main_fail:
 	hal_log_close();
+	settings_free(settings);
 
-	g_main_loop_unref(main_loop);
+	return err;
 
-	return EXIT_SUCCESS;
 }

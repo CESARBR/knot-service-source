@@ -36,13 +36,14 @@ src_knotd_LDFLAGS = $(AM_LDFLAGS)
 src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
+			inetbr/settings.c inetbr/settings.h \
 			inetbr/manager.c inetbr/manager.h \
 			inetbr/inet4.c inetbr/inet4.h \
 			inetbr/inet6.c inetbr/inet6.h unix.h
 
-inetbr_inetbrd_LDADD = @GLIB_LIBS@ @KNOTHAL_LIBS@ $(modules_ldadd) -lm
+inetbr_inetbrd_LDADD = @ELL_LIBS@  @KNOTHAL_LIBS@ $(modules_ldadd) -lm
 inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
-inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @GLIB_CFLAGS@ @KNOTHAL_CFLAGS@
+inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@  @KNOTHAL_CFLAGS@
 
 tools_ktool_SOURCES = tools/ktool.c
 tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@

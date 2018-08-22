@@ -35,32 +35,40 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 
-#include <glib.h>
-
+#include <ell/ell.h>
 #include <hal/linux_log.h>
 
 #include "unix.h"
 #include "inet4.h"
 
-static gint io4_watch = -1;
-static GHashTable *inet_hash4 = NULL;
+static struct l_io *io4;
+static struct l_hashmap *inet_hash4;
 
 struct watch4 {
-	int id;				/* glib watch */
+	struct l_io *io;		/* ELL watch */
 	int sock;			/* Unix socket */
 	int cli_sock;			/* DGRAM socket */
 	struct sockaddr_in addr;
 };
 
-static void downlink4_destroy(gpointer user_data)
+static void downlink4_destroy(void *user_data)
 {
-	g_hash_table_remove(inet_hash4, user_data);
+	char *ipv4 = user_data;
+	struct watch4 *watch;
 
-	g_free(user_data);
+	/* Unix socket gets disconnected: remote or local initiated */
+	watch = l_hashmap_remove(inet_hash4, ipv4);
+
+	l_free(ipv4);
+
+	if (!watch)
+		return;
+
+	hal_log_info("destroyed watch(%p) io(%p)", watch, watch->io);
+	l_free(watch);
 }
 
-static gboolean downlink4_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
+static bool downlink4_cb(struct l_io *io, void *user_data)
 {
 	const char *ipv4 = user_data;
 	struct sockaddr_in addr;
@@ -69,20 +77,17 @@ static gboolean downlink4_cb(GIOChannel *io, GIOCondition cond,
 	ssize_t len;
 	int sock, err;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
-		return FALSE;
-
-	sock = g_io_channel_unix_get_fd(io);
+	sock = l_io_get_fd(io);
 	len = read(sock, buffer, sizeof(buffer));
 	if (len < 0) {
 		err = errno;
 		hal_log_error("read(): %s(%d)", strerror(err), err);
-		return TRUE;
+		return false;
 	}
 
-	watch = g_hash_table_lookup(inet_hash4, ipv4);
+	watch = l_hashmap_lookup(inet_hash4, ipv4);
 	if (!watch)
-		return TRUE;
+		return false;
 
 	memcpy(&addr, &watch->addr, sizeof(addr));
 	if (sendto(watch->cli_sock, buffer, len, 0,
@@ -91,13 +96,11 @@ static gboolean downlink4_cb(GIOChannel *io, GIOCondition cond,
 		hal_log_error("sendto(%s):  %s(%d)", ipv4, strerror(err), err);
 	}
 
-	return TRUE;
+	return true;
 }
 
-static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
+static bool read_inet4_cb(struct l_io *io, void *user_data)
 {
-	GIOCondition down_cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in addr4;
 	struct watch4 *watch;
 	char buffer[1280];
@@ -108,10 +111,7 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 	int cli_sock;
 	int sock;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
-		return FALSE;
-
-	cli_sock = g_io_channel_unix_get_fd(io);
+	cli_sock = l_io_get_fd(io);
 
 	addrlen = sizeof(addr4);
 	memset(&addr4, 0, sizeof(addr4));
@@ -120,36 +120,31 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 
 	inet_ntop(AF_INET, &(addr4.sin_addr), ipv4_str, INET_ADDRSTRLEN);
 
-	watch = g_hash_table_lookup(inet_hash4, ipv4_str);
-	if (watch)
+	watch = l_hashmap_lookup(inet_hash4, ipv4_str);
+	if (watch) {
 		sock = watch->sock;
-	else {
+	} else {
 		/* New peer */
 		sock = unix_connect();
 		if (sock < 0)
-			return TRUE;
+			return true;
 
-		watch = g_new0(struct watch4, 1);
-		io = g_io_channel_unix_new(sock);
-		g_io_channel_set_close_on_unref(io, TRUE);
+		watch = l_new(struct watch4, 1);
+		watch->io = l_io_new(sock);
+		l_io_set_close_on_destroy(watch->io, true);
 		watch->sock = sock;
 		watch->cli_sock = cli_sock;
-		watch->id = g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
-						 down_cond,
-						 downlink4_cb,
-						 g_strdup(ipv4_str),
-						 downlink4_destroy);
-		g_io_channel_unref(io);
 
-		g_hash_table_insert(inet_hash4,
-				    g_strdup(ipv4_str),
-				    watch);
+		l_io_set_read_handler(watch->io, downlink4_cb,
+				      l_strdup(ipv4_str),
+				      downlink4_destroy);
+		l_hashmap_insert(inet_hash4, ipv4_str, watch);
 	}
 
 	memcpy(&watch->addr, &addr4, sizeof(watch->addr));
 
-	hal_log_info("%s, watch: %d sock:%d > %d, port:%d, len:%zu",
-		     ipv4_str, watch->id, cli_sock, sock, addr4.sin_port, len);
+	hal_log_info("%s, watch: %p io: %p sock:%d > %d, port:%d, len:%zu",
+		     ipv4_str, watch, watch->io, cli_sock, sock, addr4.sin_port, len);
 
 	len = write(sock, buffer, len);
 	if (len < 0) {
@@ -157,17 +152,17 @@ static gboolean read_inet4_cb(GIOChannel *io, GIOCondition cond,
 		hal_log_info("write(): %s(%d)", strerror(err), err);
 	}
 
-	return TRUE;
+	return true;
 }
 
 int inet4_start(int port4)
 {
-	GIOCondition cond = G_IO_ERR | G_IO_HUP | G_IO_NVAL | G_IO_IN;
 	struct sockaddr_in addr4;
-	GIOChannel *io4;
 	int on = 1;
 	int err;
 	int sock;
+
+	hal_log_info("Starting UDP IPv4 at port %d...", port4);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock < 0) {
@@ -194,14 +189,11 @@ int inet4_start(int port4)
 		goto fail;
 	}
 
-	io4 = g_io_channel_unix_new(sock);
-	g_io_channel_set_close_on_unref(io4, TRUE);
-	io4_watch = g_io_add_watch_full(io4, G_PRIORITY_DEFAULT,
-				  cond, read_inet4_cb, NULL, NULL);
-	g_io_channel_unref(io4);
+	io4 = l_io_new(sock);
+	l_io_set_close_on_destroy(io4, true);
+	l_io_set_read_handler(io4, read_inet4_cb, NULL, NULL);
 
-	inet_hash4 = g_hash_table_new_full(g_str_hash, g_str_equal,
-						g_free, g_free);
+	inet_hash4 = l_hashmap_string_new();
 
 	return 0;
 
@@ -211,19 +203,9 @@ fail:
 	return -err;
 }
 
-static void remove_downlink4_source(gpointer key, gpointer value,
-						gpointer user_data)
-{
-	struct watch4 *watch = value;
-
-	g_source_remove(watch->id);
-}
-
 void inet4_stop(void)
 {
-	g_hash_table_foreach(inet_hash4, remove_downlink4_source, NULL);
-	g_hash_table_destroy(inet_hash4);
-
-	if (io4_watch > 0)
-		g_source_remove(io4_watch);
+	l_hashmap_destroy(inet_hash4, NULL);
+	if (io4)
+		l_io_destroy(io4);
 }
