@@ -19,57 +19,5 @@
  *
  */
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-
-#include "udp4.h"
-#include "tcp4.h"
-#include "inet6.h"
-#include "tcp6.h"
-
-#include "manager.h"
-
-int manager_start(int port4, int port6)
-{
-	int ret;
-
-	ret = udp4_start(port4);
-	if (ret < 0)
-		return ret;
-
-	ret = tcp4_start(port4);
-	if (ret < 0)
-		goto tcp4_fail;
-
-	ret = inet6_start(port6);
-	if (ret < 0)
-		goto udp6_fail;
-
-	ret = tcp6_start(port6);
-	if (ret < 0)
-		goto tcp6_fail;
-
-	return ret;
-
-tcp6_fail:
-	inet6_stop();
-udp6_fail:
-	tcp4_stop();
-tcp4_fail:
-	udp4_stop();
-
-	return ret;
-}
-
-void manager_stop(void)
-{
-	udp4_stop();
-	tcp4_stop();
-	inet6_stop();
-	tcp6_stop();
-}
+int tcp6_start(int port6);
+void tcp6_stop(void);
