@@ -27,7 +27,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "inet4.h"
+#include "udp4.h"
 #include "tcp4.h"
 #include "inet6.h"
 
@@ -37,7 +37,7 @@ int manager_start(int port4, int port6)
 {
 	int ret;
 
-	ret = inet4_start(port4);
+	ret = udp4_start(port4);
 	if (ret < 0)
 		return ret;
 
@@ -47,18 +47,18 @@ int manager_start(int port4, int port6)
 
 	ret = inet6_start(port6);
 	if (ret < 0)
-		inet4_stop();
+		udp4_stop();
 
 	return ret;
 
 tcp4_fail:
-	inet4_stop();
+	udp4_stop();
 	return ret;
 }
 
 void manager_stop(void)
 {
-	inet4_stop();
+	udp4_stop();
 	tcp4_stop();
 	inet6_stop();
 }

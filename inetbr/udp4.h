@@ -19,5 +19,5 @@
  *
  */
 
-int inet4_start(int port4);
-void inet4_stop(void);
+int udp4_start(int port4);
+void udp4_stop(void);

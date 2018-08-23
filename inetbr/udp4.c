@@ -39,10 +39,10 @@
 #include <hal/linux_log.h>
 
 #include "unix.h"
-#include "inet4.h"
+#include "udp4.h"
 
 static struct l_io *io4;
-static struct l_hashmap *inet_hash4;
+static struct l_hashmap *udp_hash4;
 
 struct watch4 {
 	struct l_io *io;		/* ELL watch */
@@ -57,7 +57,7 @@ static void downlink4_destroy(void *user_data)
 	struct watch4 *watch;
 
 	/* Unix socket gets disconnected: remote or local initiated */
-	watch = l_hashmap_remove(inet_hash4, ipv4);
+	watch = l_hashmap_remove(udp_hash4, ipv4);
 
 	l_free(ipv4);
 
@@ -85,7 +85,7 @@ static bool downlink4_cb(struct l_io *io, void *user_data)
 		return false;
 	}
 
-	watch = l_hashmap_lookup(inet_hash4, ipv4);
+	watch = l_hashmap_lookup(udp_hash4, ipv4);
 	if (!watch)
 		return false;
 
@@ -99,7 +99,7 @@ static bool downlink4_cb(struct l_io *io, void *user_data)
 	return true;
 }
 
-static bool read_inet4_cb(struct l_io *io, void *user_data)
+static bool read_udp4_cb(struct l_io *io, void *user_data)
 {
 	struct sockaddr_in addr4;
 	struct watch4 *watch;
@@ -120,7 +120,7 @@ static bool read_inet4_cb(struct l_io *io, void *user_data)
 
 	inet_ntop(AF_INET, &(addr4.sin_addr), ipv4_str, INET_ADDRSTRLEN);
 
-	watch = l_hashmap_lookup(inet_hash4, ipv4_str);
+	watch = l_hashmap_lookup(udp_hash4, ipv4_str);
 	if (watch) {
 		sock = watch->sock;
 	} else {
@@ -138,7 +138,7 @@ static bool read_inet4_cb(struct l_io *io, void *user_data)
 		l_io_set_read_handler(watch->io, downlink4_cb,
 				      l_strdup(ipv4_str),
 				      downlink4_destroy);
-		l_hashmap_insert(inet_hash4, ipv4_str, watch);
+		l_hashmap_insert(udp_hash4, ipv4_str, watch);
 	}
 
 	memcpy(&watch->addr, &addr4, sizeof(watch->addr));
@@ -155,7 +155,7 @@ static bool read_inet4_cb(struct l_io *io, void *user_data)
 	return true;
 }
 
-int inet4_start(int port4)
+int udp4_start(int port4)
 {
 	struct sockaddr_in addr4;
 	int on = 1;
@@ -191,9 +191,9 @@ int inet4_start(int port4)
 
 	io4 = l_io_new(sock);
 	l_io_set_close_on_destroy(io4, true);
-	l_io_set_read_handler(io4, read_inet4_cb, NULL, NULL);
+	l_io_set_read_handler(io4, read_udp4_cb, NULL, NULL);
 
-	inet_hash4 = l_hashmap_string_new();
+	udp_hash4 = l_hashmap_string_new();
 
 	return 0;
 
@@ -203,9 +203,9 @@ fail:
 	return -err;
 }
 
-void inet4_stop(void)
+void udp4_stop(void)
 {
-	l_hashmap_destroy(inet_hash4, NULL);
+	l_hashmap_destroy(udp_hash4, NULL);
 	if (io4)
 		l_io_destroy(io4);
 }
