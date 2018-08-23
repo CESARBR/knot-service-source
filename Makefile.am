@@ -39,6 +39,7 @@ inetbr_inetbrd_SOURCES = inetbr/main.c \
 			inetbr/settings.c inetbr/settings.h \
 			inetbr/manager.c inetbr/manager.h \
 			inetbr/inet4.c inetbr/inet4.h \
+			inetbr/tcp4.c inetbr/tcp4.h \
 			inetbr/inet6.c inetbr/inet6.h unix.h
 
 inetbr_inetbrd_LDADD = @ELL_LIBS@  @KNOTHAL_LIBS@ $(modules_ldadd) -lm
