@@ -19,5 +19,5 @@
  *
  */
 
-int inet6_start(int port6);
-void inet6_stop(void);
+int udp6_start(int port6);
+void udp6_stop(void);

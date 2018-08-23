@@ -39,10 +39,10 @@
 #include <hal/linux_log.h>
 
 #include "unix.h"
-#include "inet6.h"
+#include "udp6.h"
 
 static struct l_io *io6;
-static struct l_hashmap *inet_hash6;
+static struct l_hashmap *udp_hash6;
 
 struct watch6 {
 	struct l_io *io;		/* ELL watch */
@@ -57,7 +57,7 @@ static void downlink6_destroy(void *user_data)
 	struct watch6 *watch;
 
 	/* Unix socket gets disconnected: remote or local initiated */
-	watch = l_hashmap_remove(inet_hash6, ipv6);
+	watch = l_hashmap_remove(udp_hash6, ipv6);
 
 	l_free(ipv6);
 
@@ -87,7 +87,7 @@ static bool downlink6_cb(struct l_io *io, void *user_data)
 		return false;
 	}
 
-	watch = l_hashmap_lookup(inet_hash6, ipv6);
+	watch = l_hashmap_lookup(udp_hash6, ipv6);
 	if (!watch)
 		return false;
 
@@ -101,7 +101,7 @@ static bool downlink6_cb(struct l_io *io, void *user_data)
 	return true;
 }
 
-static bool read_inet6_cb(struct l_io *io, void *user_data)
+static bool read_udp6_cb(struct l_io *io, void *user_data)
 {
 	struct sockaddr_in6 addr6;
 	struct watch6 *watch;
@@ -122,7 +122,7 @@ static bool read_inet6_cb(struct l_io *io, void *user_data)
 
 	inet_ntop(AF_INET6, &(addr6.sin6_addr), ipv6_str, INET6_ADDRSTRLEN);
 
-	watch = l_hashmap_lookup(inet_hash6, ipv6_str);
+	watch = l_hashmap_lookup(udp_hash6, ipv6_str);
 	if (watch) {
 		sock = watch->sock;
 	} else {
@@ -139,7 +139,7 @@ static bool read_inet6_cb(struct l_io *io, void *user_data)
 
 		l_io_set_read_handler(watch->io, downlink6_cb, l_strdup(ipv6_str),
 				      downlink6_destroy);
-		l_hashmap_insert(inet_hash6, ipv6_str, watch);
+		l_hashmap_insert(udp_hash6, ipv6_str, watch);
 	}
 
 	memcpy(&watch->addr, &addr6, sizeof(watch->addr));
@@ -156,7 +156,7 @@ static bool read_inet6_cb(struct l_io *io, void *user_data)
 	return true;
 }
 
-int inet6_start(int port6)
+int udp6_start(int port6)
 {
 	struct sockaddr_in6 addr6;
 	int on = 1;
@@ -192,9 +192,9 @@ int inet6_start(int port6)
 
 	io6 = l_io_new(sock);
 	l_io_set_close_on_destroy(io6, true);
-	l_io_set_read_handler(io6, read_inet6_cb, NULL, NULL);
+	l_io_set_read_handler(io6, read_udp6_cb, NULL, NULL);
 
-	inet_hash6 = l_hashmap_string_new();
+	udp_hash6 = l_hashmap_string_new();
 
 	return 0;
 
@@ -204,9 +204,9 @@ fail:
 	return -err;
 }
 
-void inet6_stop(void)
+void udp6_stop(void)
 {
-	l_hashmap_destroy(inet_hash6, NULL);
+	l_hashmap_destroy(udp_hash6, NULL);
 	if (io6)
 		l_io_destroy(io6);
 }

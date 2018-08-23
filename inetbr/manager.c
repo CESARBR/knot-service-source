@@ -29,7 +29,7 @@
 
 #include "udp4.h"
 #include "tcp4.h"
-#include "inet6.h"
+#include "udp6.h"
 #include "tcp6.h"
 
 #include "manager.h"
@@ -46,7 +46,7 @@ int manager_start(int port4, int port6)
 	if (ret < 0)
 		goto tcp4_fail;
 
-	ret = inet6_start(port6);
+	ret = udp6_start(port6);
 	if (ret < 0)
 		goto udp6_fail;
 
@@ -57,7 +57,7 @@ int manager_start(int port4, int port6)
 	return ret;
 
 tcp6_fail:
-	inet6_stop();
+	udp6_stop();
 udp6_fail:
 	tcp4_stop();
 tcp4_fail:
@@ -70,6 +70,6 @@ void manager_stop(void)
 {
 	udp4_stop();
 	tcp4_stop();
-	inet6_stop();
+	udp6_stop();
 	tcp6_stop();
 }
