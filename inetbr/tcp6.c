@@ -62,7 +62,7 @@ static bool read_cb(struct l_io *io, void *user_data)
 	len = write(sock_dst, buffer, len);
 	if (len < 0) {
 		err = errno;
-		hal_log_info("write(): %s(%d)", strerror(err), err);
+		hal_log_info("TCPv6 write(): %s(%d)", strerror(err), err);
 	}
 
 	return true;
@@ -73,22 +73,31 @@ static void disconnect_cb(struct l_io *io, void *user_data)
 	struct l_io *io_peer = user_data;
 	l_io_destroy(io_peer);
 
-	hal_log_info("disconnect_cb(%p): %p", io, io_peer);
+	hal_log_info("TCPv6 disconnect_cb(%p): %p", io, io_peer);
 }
 
 static bool accept_tcp6_cb(struct l_io *io, void *user_data)
 {
+	struct sockaddr_in6 addr6;
 	struct l_io *io_unix;
 	struct l_io *io_cli;
+	char ipv6_str[INET6_ADDRSTRLEN];
+	socklen_t addrlen;
 	int sock_unix;
 	int sock_cli;
 	int sock;
 
 	sock = l_io_get_fd(io);
 
-	sock_cli = accept(sock, NULL, NULL);
+	addrlen = sizeof(addr6);
+	memset(&addr6, 0, sizeof(addr6));
+
+	sock_cli = accept(sock, (struct sockaddr *) &addr6, &addrlen);
 	if (sock_cli == -1)
 		return true;
+
+	inet_ntop(AF_INET6, &(addr6.sin6_addr), ipv6_str, INET6_ADDRSTRLEN);
+	hal_log_info("TCP6 accept(): %s", ipv6_str);
 
 	sock_unix = unix_connect();
 	if (sock_unix < 0) {
@@ -107,8 +116,6 @@ static bool accept_tcp6_cb(struct l_io *io, void *user_data)
 
 	l_io_set_read_handler(io_unix, read_cb, io_cli, NULL);
 	l_io_set_disconnect_handler(io_unix, disconnect_cb, io_cli, NULL);
-
-	hal_log_info("accept_cb io_cli:%p io_unix:%p", io_cli, io_unix);
 
 	return true;
 }
