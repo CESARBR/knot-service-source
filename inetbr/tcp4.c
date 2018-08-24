@@ -43,6 +43,25 @@
 
 static struct l_io *io4;
 
+static void destroy_io(void *user_data)
+{
+	struct l_io *io = user_data;
+	l_io_destroy(io);
+
+	hal_log_info("TCPv4 destroying io: %p", io);
+}
+
+static void destroy_cb(void *user_data)
+{
+	struct l_io *io_dst = user_data;
+
+	/*
+	 * Oneshot avoids invalid memory access at same
+	 * mainloop iteration if l_io_destroy gets called
+	 */
+	l_idle_oneshot(destroy_io, io_dst, NULL);
+}
+
 static bool read_cb(struct l_io *io, void *user_data)
 {
 	struct l_io *io_dst = user_data;
@@ -55,8 +74,8 @@ static bool read_cb(struct l_io *io, void *user_data)
 	sock_src = l_io_get_fd(io);
 
 	len = read(sock_src, buffer, sizeof(buffer));
-	if (len < 0)
-		return true;
+	if (len <= 0)
+		return false;
 
 	sock_dst = l_io_get_fd(io_dst);
 	len = write(sock_dst, buffer, len);
@@ -66,14 +85,6 @@ static bool read_cb(struct l_io *io, void *user_data)
 	}
 
 	return true;
-}
-
-static void disconnect_cb(struct l_io *io, void *user_data)
-{
-	struct l_io *io_peer = user_data;
-	l_io_destroy(io_peer);
-
-	hal_log_info("TCPv4 disconnect_cb(%p): %p", io, io_peer);
 }
 
 static bool accept_tcp4_cb(struct l_io *io, void *user_data)
@@ -111,11 +122,10 @@ static bool accept_tcp4_cb(struct l_io *io, void *user_data)
 	io_unix = l_io_new(sock_unix);
 	l_io_set_close_on_destroy(io_unix, true);
 
-	l_io_set_read_handler(io_cli, read_cb, io_unix, NULL);
-	l_io_set_disconnect_handler(io_cli, disconnect_cb, io_unix, NULL);
-
-	l_io_set_read_handler(io_unix, read_cb, io_cli, NULL);
-	l_io_set_disconnect_handler(io_unix, disconnect_cb, io_cli, NULL);
+	hal_log_info("TCPv4 accept() => incoming :%p outgoing:%p",
+		     io_cli, io_unix);
+	l_io_set_read_handler(io_cli, read_cb, io_unix, destroy_cb);
+	l_io_set_read_handler(io_unix, read_cb, io_cli, destroy_cb);
 
 	return true;
 }
