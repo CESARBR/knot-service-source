@@ -31,9 +31,9 @@ src_knotd_SOURCES = src/main.c \
 			src/parser.c src/parser.h \
 			$(modules_sources)
 
-src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ -lm
+src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
+src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@ @JSON_CFLAGS@
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
 			inetbr/settings.c inetbr/settings.h \
