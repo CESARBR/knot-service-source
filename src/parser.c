@@ -96,8 +96,7 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 		break;
 	case json_type_int:
 
-		kvalue->val_i.value = json_object_get_int(jobjkey);
-		kvalue->val_i.multiplier = 1;
+		kvalue->val_i = json_object_get_int(jobjkey);
 		olen = sizeof(kvalue->val_i);
 		break;
 	case json_type_string:

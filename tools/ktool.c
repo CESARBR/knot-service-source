@@ -333,8 +333,7 @@ static void read_json_entry(struct json_object *jobj,
 			break;
 		case json_type_int:
 			kint = (knot_value_type_int *) &(kvalue->val_i);
-			kint->value = json_object_get_int(jobj);
-			kint->multiplier = 1;
+			*kint = json_object_get_int(jobj);
 			msg->hdr.payload_len = sizeof(knot_value_type_int);
 			break;
 		case json_type_string:

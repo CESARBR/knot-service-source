@@ -264,7 +264,7 @@ static json_object *schema_create_list(struct l_queue *schema_list)
  */
 static int knot_value_as_int(const knot_value_type *data)
 {
-	return data->val_i.value;
+	return data->val_i;
 }
 
 /*
