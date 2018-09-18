@@ -328,7 +328,6 @@ static void read_json_entry(struct json_object *jobj,
 			kfloat = (knot_value_type_float *) &(kvalue->val_f);
 			kfloat->value_int = ipart;
 			kfloat->value_dec = fpart;
-			kfloat->multiplier = 1; /* TODO: */
 			msg->hdr.payload_len = sizeof(knot_value_type_float);
 			break;
 		case json_type_int:

@@ -283,8 +283,7 @@ static int knot_value_get_double_length(const knot_value_type *data)
 static double knot_value_as_double(const knot_value_type *data)
 {
 	int length = knot_value_get_double_length(data);
-	return data->val_f.multiplier *
-		(data->val_f.value_int +
+	return (data->val_f.value_int +
 		(data->val_f.value_dec / pow(10, length)));
 }
 
