@@ -303,7 +303,6 @@ static void read_json_entry(struct json_object *jobj,
 	knot_value_type_bool *kbool;
 	knot_value_type_float *kfloat;
 	knot_value_type_int *kint;
-	int32_t ipart, fpart;
 	enum json_type type;
 	const char *str;
 
@@ -319,15 +318,9 @@ static void read_json_entry(struct json_object *jobj,
 			msg->hdr.payload_len = sizeof(knot_value_type_bool);
 			break;
 		case json_type_double:
-			/* Trick to get integral and fractional parts */
-			str = json_object_get_string(jobj);
 			/* FIXME: how to handle overflow? */
-			if (sscanf(str, "%d.%d", &ipart, &fpart) != 2)
-				break;
-
 			kfloat = (knot_value_type_float *) &(kvalue->val_f);
-			kfloat->value_int = ipart;
-			kfloat->value_dec = fpart;
+			*kfloat = (float) json_object_get_double(jobj);
 			msg->hdr.payload_len = sizeof(knot_value_type_float);
 			break;
 		case json_type_int:
@@ -791,12 +784,10 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		printf("sensor_id: %d\n", recv.config.sensor_id);
 		printf("event_flags: %d\n", recv.config.values.event_flags);
 		printf("time_sec: %d\n", recv.config.values.time_sec);
-		printf("lower_limit: %d.%d\n",
-				recv.config.values.lower_limit.val_f.value_int,
-				recv.config.values.lower_limit.val_f.value_dec);
-		printf("upper_limit: %d.%d\n",
-				recv.config.values.upper_limit.val_f.value_int,
-				recv.config.values.upper_limit.val_f.value_dec);
+		printf("lower_limit: %f\n",
+				recv.config.values.lower_limit.val_f);
+		printf("upper_limit: %f\n",
+				recv.config.values.upper_limit.val_f);
 		resp.hdr.type = KNOT_MSG_CONFIG_RESP;
 		resp.hdr.payload_len = sizeof(resp.item.sensor_id);
 		resp.item.sensor_id = recv.config.sensor_id;
@@ -814,9 +805,8 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		break;
 	case KNOT_MSG_SET_DATA:
 		printf("sensor_id: %d\n", recv.data.sensor_id);
-		printf("value: %d.%d\n",
-				recv.data.payload.val_f.value_int,
-				recv.data.payload.val_f.value_dec);
+		printf("value: %f\n",
+				recv.data.payload.val_f);
 		resp.hdr.type = KNOT_MSG_DATA_RESP;
 		resp.hdr.payload_len = sizeof(knot_value_type) +
 						sizeof(resp.data.sensor_id);
