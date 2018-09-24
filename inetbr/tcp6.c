@@ -140,7 +140,7 @@ int tcp6_start(int port6)
 
 	hal_log_info("Starting TCP IPv6 at port %d...", port6);
 
-	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	sock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0) {
 		err = errno;
 		hal_log_error("socket IPv6(): %s(%d)", strerror(err), err);
@@ -155,7 +155,7 @@ int tcp6_start(int port6)
 	}
 
 	memset(&addr6, 0, sizeof(addr6));
-	addr6.sin6_family = AF_INET;
+	addr6.sin6_family = AF_INET6;
 	addr6.sin6_port = htons(port6);
 	addr6.sin6_addr = in6addr_any;
 
