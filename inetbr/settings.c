@@ -45,7 +45,7 @@ static void usage(void)
 	printf("\tinetbrd [options]\n");
 	printf("Options:\n"
 		"\t-p, --port4            localhost IPv4 port. Default 9994"
-		"\t-P, --port6            localhost IPv6 port. Default 9996"
+		"\t-P, --port6            localhost IPv6 port. Default 8886"
 		"\t-n, --nodetach         Disable running in background\n"
 		"\t-h  --help             Show help options\n");
 }
@@ -102,7 +102,7 @@ struct settings *settings_load(int argc, char *argv[])
 	settings = l_new(struct settings, 1);
 
 	settings->port4 = 9994;
-	settings->port6 = 9996;
+	settings->port6 = 8886;
 	settings->detach = detach;
 	settings->help = help;
 
