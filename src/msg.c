@@ -940,6 +940,7 @@ static ssize_t msg_process(struct session *session,
 	const knot_msg *kreq = ipdu;
 	knot_msg *krsp = opdu;
 	uint8_t rtype = 0;
+	size_t plen;
 	int8_t result = KNOT_INVALID_DATA;
 	bool eof;
 
@@ -961,8 +962,10 @@ static ssize_t msg_process(struct session *session,
 	}
 
 	/* Checking PDU length consistency */
-	if (ilen != (sizeof(kreq->hdr) + kreq->hdr.payload_len)) {
-		hal_log_error("[session %p] KNOT PDU: len mismatch", session);
+	plen = sizeof(kreq->hdr) + kreq->hdr.payload_len;
+	if (ilen != plen) {
+		hal_log_error("[session %p] KNOT PDU: len mismatch %ld/%ld",
+			      session, ilen, plen);
 		return -EINVAL;
 	}
 
@@ -1228,8 +1231,7 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 		/* Server didn't reply any error */
 		hal_log_error("[session %p] KNOT IoT proto error: %s(%zd)",
 			      session, strerror(-olen), -olen);
-		on_node_channel_data_error(channel);
-		return false;
+		return true;
 	}
 
 	/* If there are no octets to be sent */
