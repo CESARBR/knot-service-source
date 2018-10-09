@@ -79,7 +79,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "c:h:p:P:nbH",
+		opt = getopt_long(argc, argv, "c:h:p:P:nrbH",
 				  main_options, NULL);
 		if (opt < 0)
 			break;
