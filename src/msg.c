@@ -651,8 +651,15 @@ static int8_t msg_schema(struct session *session,
 {
 	int proto_sock;
 	int8_t result;
+	int err;
 
-	/* TODO: Verify schema consistency */
+	err = knot_schema_is_valid(schema->values.type_id,
+				   schema->values.value_type,
+				   schema->values.unit);
+	if (err) {
+		hal_log_error("Invalid schema!");
+		return err;
+	}
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] schema: not authorized!", session);
