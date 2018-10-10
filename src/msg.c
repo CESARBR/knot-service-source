@@ -186,6 +186,19 @@ static bool sensor_id_cmp(const void *a, const void *b)
 	return (*val1 == val2 ? true : false);
 }
 
+static bool schema_find_invalid(const void *entry_data, const void *user_data)
+{
+	const knot_msg_schema *schema = entry_data;
+	int err;
+
+	err = knot_schema_is_valid(schema->values.type_id,
+				   schema->values.value_type,
+				   schema->values.unit);
+
+	/* Return true for invalid schema */
+	return (err != KNOT_SUCCESS ? true : false);
+}
+
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
 {
 	const knot_msg_schema *schema = entry_data;
@@ -361,6 +374,12 @@ static bool property_changed(const char *name,
 		list = parser_schema_to_list(value);
 		if (list == NULL) {
 			hal_log_error("[session %p] schema: parse error!",
+				      session);
+			goto done;
+		}
+
+		if (l_queue_find(list, schema_find_invalid, NULL)) {
+			hal_log_error("[session %p] schema: consistency error!",
 				      session);
 			goto done;
 		}
