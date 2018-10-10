@@ -365,6 +365,7 @@ static bool property_changed(const char *name,
 			goto done;
 		}
 
+		/* TODO: Verify if schema received is valid */
 		l_queue_destroy(session->schema_list, l_free);
 		session->schema_list = list;
 		l_free(session->schema);
@@ -651,6 +652,8 @@ static int8_t msg_schema(struct session *session,
 	int proto_sock;
 	int8_t result;
 
+	/* TODO: Verify schema consistency */
+
 	if (!session->trusted) {
 		hal_log_info("[session %p] schema: not authorized!", session);
 		return KNOT_CREDENTIAL_UNAUTHORIZED;
@@ -712,7 +715,6 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	const char *json_str;
 	json_object *jobj;
 	int proto_sock;
-	int err;
 	int8_t result;
 	uint8_t sensor_id;
 	uint8_t *sensor_id_ptr;
@@ -733,15 +735,6 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	if (!schema) {
 		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
 			     session, sensor_id);
-		return KNOT_INVALID_DATA;
-	}
-
-	err = knot_schema_is_valid(schema->values.type_id,
-				   schema->values.value_type,
-				   schema->values.unit);
-	if (err) {
-		hal_log_info("[session %p] sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
-			     session, sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
@@ -814,7 +807,6 @@ static int8_t msg_setdata_resp(struct session *session,
 	json_object *jsokey;
 	json_object *jso;
 	int proto_sock;
-	int err;
 	uint8_t sensor_id;
 	int8_t result;
 	uint8_t kval_len;
@@ -840,15 +832,6 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (!schema) {
 		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
 			     session, sensor_id);
-		return KNOT_INVALID_DATA;
-	}
-
-	err = knot_schema_is_valid(schema->values.type_id,
-				   schema->values.value_type,
-				   schema->values.unit);
-	if (err) {
-		hal_log_info("[session %p] sensor_id(0x%d), type_id(0x%04x): unit mismatch!",
-			     session, sensor_id, schema->values.type_id);
 		return KNOT_INVALID_DATA;
 	}
 
