@@ -73,7 +73,7 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 	json_object *jobjkey;
 	const char *str;
 	uint8_t *u8val;
-	size_t olen;
+	size_t olen = 0;
 
 	jobjkey = jobj;
 	switch (json_object_get_type(jobjkey)) {
@@ -94,6 +94,9 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 	case json_type_string:
 		str = json_object_get_string(jobjkey);
 		u8val = l_base64_decode(str, strlen(str), &olen);
+		if (!u8val)
+			break;
+
 		if (olen > KNOT_DATA_RAW_SIZE)
 			olen = KNOT_DATA_RAW_SIZE; /* truncate */
 
@@ -565,7 +568,7 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 		return -EINVAL;
 
 	olen = parse_json2data(jobjkey, &msg->payload);
-	if (olen < 0)
+	if (olen <= 0)
 		return -EINVAL;
 
 	msg->sensor_id = sensor_id;
