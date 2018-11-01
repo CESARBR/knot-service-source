@@ -445,7 +445,7 @@ static int write_knot_data(struct json_object *jobj)
 		return -EINVAL;
 	}
 
-	msg.hdr.type = KNOT_MSG_DATA;
+	msg.hdr.type = KNOT_MSG_PUSH_DATA_REQ;
 	/* Payload len is set by read_json_entry() */
 
 	msg.hdr.payload_len += sizeof(msg.sensor_id);
@@ -807,7 +807,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		printf("sensor_id: %d\n", recv.data.sensor_id);
 		printf("value: %f\n",
 				recv.data.payload.val_f);
-		resp.hdr.type = KNOT_MSG_DATA_RESP;
+		resp.hdr.type = KNOT_MSG_PUSH_DATA_RSP;
 		resp.hdr.payload_len = sizeof(knot_value_type) +
 						sizeof(resp.data.sensor_id);
 		resp.data.sensor_id = recv.data.sensor_id;

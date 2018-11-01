@@ -999,9 +999,9 @@ static ssize_t msg_process(struct session *session,
 		result = msg_unregister(session);
 		rtype = KNOT_MSG_UNREGISTER_RESP;
 		break;
-	case KNOT_MSG_DATA:
+	case KNOT_MSG_PUSH_DATA_REQ:
 		result = msg_data(session, &kreq->data);
-		rtype = KNOT_MSG_DATA_RESP;
+		rtype = KNOT_MSG_PUSH_DATA_RSP;
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(session, &kreq->auth);
@@ -1027,7 +1027,7 @@ static ssize_t msg_process(struct session *session,
 		result = msg_config_resp(session, &kreq->item);
 		/* No octets to be transmitted */
 		return 0;
-	case KNOT_MSG_DATA_RESP:
+	case KNOT_MSG_PUSH_DATA_RSP:
 		result = msg_setdata_resp(session, &kreq->data);
 		return 0;
 	case KNOT_MSG_UNREGISTER_RESP:
