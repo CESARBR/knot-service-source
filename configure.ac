@@ -63,7 +63,6 @@ AC_SUBST(WEBSOCKETS_CFLAGS)
 AC_SUBST(WEBSOCKETS_LIBS)
 
 AM_CONDITIONAL(WEBSOCKETS, (test "${websockets}" != "no"))
-AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
 
 AC_ARG_WITH([dbusconfdir], AC_HELP_STRING([--with-dbusconfdir=DIR],
 				[path to D-Bus configuration directory]),
