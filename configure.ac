@@ -32,12 +32,6 @@ PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
 AC_SUBST(GLIB_CFLAGS)
 AC_SUBST(GLIB_LIBS)
 
-PKG_CHECK_MODULES(CURL, libcurl,
-  [AC_DEFINE([HAVE_CURL],[1],[Use CURL])],
-  [AC_MSG_ERROR("Curl missing")])
-AC_SUBST(CURL_CFLAGS)
-AC_SUBST(CURL_LIBS)
-
 PKG_CHECK_MODULES(JSON, json-c,
   [AC_DEFINE([HAVE_JSON],[1],[Use JSON])],
   [AC_MSG_ERROR("json-c missing")])
@@ -63,8 +57,8 @@ AC_SUBST(KNOTHAL_CFLAGS)
 AC_SUBST(KNOTHAL_LIBS)
 
 PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets >= 2.4.2],
-  [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
-  [websockets="no"])
+  [AC_DEFINE([HAVE_WEBSOCKETS],[1],[Use WEBSOCKETS])],
+  [AC_MSG_ERROR("libwebsockets missing")])
 AC_SUBST(WEBSOCKETS_CFLAGS)
 AC_SUBST(WEBSOCKETS_LIBS)
 

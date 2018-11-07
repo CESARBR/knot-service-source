@@ -4,11 +4,6 @@ modules_sources += src/node-unix.c
 modules_sources += src/node-tcp.c
 modules_sources += src/node-tcp6.c
 
-# IoT protocol: Meshblu HTTP/REST
-modules_sources += src/proto-http.c
-modules_cflags += @CURL_CFLAGS@ @JSON_CFLAGS@
-modules_ldadd += @CURL_LIBS@ @JSON_LIBS@
-
 if WEBSOCKETS
 # IoT protocol: Meshblu Websockets
 modules_sources += src/proto-ws.c src/proto-socketio.c

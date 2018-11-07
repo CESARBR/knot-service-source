@@ -43,18 +43,12 @@
 #include "parser.h"
 #include "proto.h"
 
-extern struct proto_ops proto_http;
-#ifdef HAVE_WEBSOCKETS
 extern struct proto_ops proto_ws;
 extern struct proto_ops proto_socketio;
-#endif
 
 static struct proto_ops *proto_ops[] = {
-	&proto_http,
-#ifdef HAVE_WEBSOCKETS
 	&proto_ws,
 	&proto_socketio,
-#endif
 	NULL
 };
 
@@ -377,9 +371,9 @@ static struct proto_ops *get_proto_ops(const char *protocol_name)
 int proto_start(const struct settings *settings)
 {
 	/*
-	 * Selecting meshblu IoT protocols & services: HTTP/REST,
-	 * Websockets, Socket IO, MQTT, COAP. 'proto_ops' drivers
-	 * implements an abstraction similar to WEB client operations.
+	 * Selecting meshblu IoT protocols & services: Websockets or
+	 * SocketIO 'proto_ops' drivers implements an abstraction
+	 * similar to WEB client operations.
 	 * TODO: later support dynamic protocol selection.
 	 */
 

@@ -39,11 +39,7 @@
 #define DEFAULT_CONFIG_PATH		"/etc/knot/knotd.conf"
 #define DEFAULT_HOST			"localhost"
 #define DEFAULT_PORT			3000
-#ifdef HAVE_WEBSOCKETS
 #define DEFAULT_PROTO			"ws"
-#else
-#define DEFAULT_PROTO                   "http"
-#endif
 
 static bool detach = true;
 static bool help = false;
@@ -57,7 +53,7 @@ static void usage(void)
 		"\t-c, --config            Configuration file path\n"
 		"\t-h, --host              Cloud server host name\n"
 		"\t-p, --port              Remote port\n"
-		"\t-P, --proto             Protocol used to communicate with cloud server: http, socketio, ws\n"
+		"\t-P, --proto             Protocol used to communicate with cloud server: socketio, ws\n"
 		"\t-n, --nodetach          Disable running in background\n"
 		"\t-r, --user-root	   Run as root(default is knot)\n"
 		"\t-H, --help              Show help options\n");
