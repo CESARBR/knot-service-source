@@ -1023,7 +1023,7 @@ static ssize_t msg_process(struct session *session,
 		if (eof)
 			rtype = KNOT_MSG_SCHEMA_END_RESP;
 		break;
-	case KNOT_MSG_CONFIG_RESP:
+	case KNOT_MSG_PUSH_CONFIG_RSP:
 		result = msg_config_resp(session, &kreq->item);
 		/* No octets to be transmitted */
 		return 0;

@@ -780,7 +780,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 
 	printf("message: %i", recv.hdr.type);
 	switch (recv.hdr.type) {
-	case KNOT_MSG_SET_CONFIG:
+	case KNOT_MSG_PUSH_CONFIG_REQ:
 		printf("sensor_id: %d\n", recv.config.sensor_id);
 		printf("event_flags: %d\n", recv.config.values.event_flags);
 		printf("time_sec: %d\n", recv.config.values.time_sec);
@@ -788,7 +788,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 				recv.config.values.lower_limit.val_f);
 		printf("upper_limit: %f\n",
 				recv.config.values.upper_limit.val_f);
-		resp.hdr.type = KNOT_MSG_CONFIG_RESP;
+		resp.hdr.type = KNOT_MSG_PUSH_CONFIG_RSP;
 		resp.hdr.payload_len = sizeof(resp.item.sensor_id);
 		resp.item.sensor_id = recv.config.sensor_id;
 		nbytes = write(sock, &resp, sizeof(knot_msg_item));
