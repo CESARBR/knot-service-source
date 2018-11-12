@@ -415,7 +415,7 @@ static int authenticate(const char *uuid, const char *token)
 		return -err;
 	}
 
-	if (resp.result != KNOT_SUCCESS) {
+	if (resp.result != 0) {
 		printf("error(0x%02x)\n", resp.result);
 		return -EPROTO;
 	}
@@ -463,7 +463,7 @@ static int write_knot_data(struct json_object *jobj)
 		return -err;
 	}
 
-	if (resp.result != KNOT_SUCCESS) {
+	if (resp.result != 0) {
 		printf("error(0x%02x)\n", resp.result);
 		return -EPROTO;
 	}
@@ -480,7 +480,7 @@ static int send_schema(GSList *list)
 	int err;
 
 	memset(&msg, 0, sizeof(msg));
-	msg.hdr.type = KNOT_MSG_SCHEMA;
+	msg.hdr.type = KNOT_MSG_SCHM_FRAG_REQ;
 
 	for (l = list; l;) {
 		entry = l->data;
@@ -494,7 +494,7 @@ static int send_schema(GSList *list)
 
 		l = g_slist_next(l);
 		if (!l)
-			msg.hdr.type = KNOT_MSG_SCHEMA_END;
+			msg.hdr.type = KNOT_MSG_SCHM_END_REQ;
 
 		nbytes = write(sock, &msg, sizeof(msg.hdr) +
 						msg.hdr.payload_len);
@@ -518,7 +518,7 @@ static int cmd_register(void)
 	int err;
 
 	memset(&msg, 0, sizeof(msg));
-	msg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	msg.hdr.type = KNOT_MSG_REG_REQ;
 	msg.hdr.payload_len = len + sizeof(msg.id);
 	msg.id = opt_device_id ? opt_device_id : 0x123456789abcdef;
 	memcpy(msg.devName, devname, len);
@@ -538,7 +538,7 @@ static int cmd_register(void)
 		return -err;
 	}
 
-	if (crdntl.result != KNOT_SUCCESS) {
+	if (crdntl.result != 0) {
 		printf("KNOT Register: error(0x%02x)\n", crdntl.result);
 		return -EPROTO;
 	}
@@ -568,7 +568,7 @@ static int cmd_unregister(void)
 	}
 
 	memset(&msg, 0, sizeof(msg));
-	msg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+	msg.hdr.type = KNOT_MSG_UNREG_REQ;
 	msg.hdr.payload_len = 0;
 
 	nbytes = write(sock, &msg, sizeof(msg));
@@ -586,7 +586,7 @@ static int cmd_unregister(void)
 		return -err;
 	}
 
-	if (rslt.result != KNOT_SUCCESS) {
+	if (rslt.result != 0) {
 		printf("KNOT Unregister: error(0x%02x)\n", rslt.result);
 		return -EPROTO;
 	}
@@ -803,7 +803,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		 */
 		g_timeout_add_seconds(10, send_config,NULL);
 		break;
-	case KNOT_MSG_SET_DATA:
+	case KNOT_MSG_PUSH_DATA_REQ:
 		printf("sensor_id: %d\n", recv.data.sensor_id);
 		printf("value: %f\n",
 				recv.data.payload.val_f);
@@ -820,7 +820,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 			return TRUE;
 		}
 		break;
-	case KNOT_MSG_GET_DATA:
+	case KNOT_MSG_POLL_DATA_REQ:
 		/*
 		 * Based on the sensor_id, sends the correct data json. The
 		 * test folders only contains schema and data for the sensor_ids
@@ -851,8 +851,8 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		json_object_put(jobj);
 
 		break;
-	case KNOT_MSG_UNREGISTER_REQ:
-		resp.hdr.type = KNOT_MSG_UNREGISTER_RESP;
+	case KNOT_MSG_UNREG_REQ:
+		resp.hdr.type = KNOT_MSG_UNREG_RSP;
 		nbytes = write(sock, &resp, sizeof(knot_msg_header) + resp.hdr.payload_len);
 		if (nbytes < 0) {
 			err = errno;

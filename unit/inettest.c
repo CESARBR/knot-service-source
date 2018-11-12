@@ -154,8 +154,8 @@ static void authenticate_test(gconstpointer user_data)
 	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_AUTH_RESP);
-	g_assert(kresp.action.result == KNOT_SUCCESS);
+	g_assert(kresp.hdr.type == KNOT_MSG_AUTH_RSP);
+	g_assert(kresp.action.result == 0);
 }
 
 static void register_missing_devname_test(gconstpointer user_data)
@@ -164,7 +164,7 @@ static void register_missing_devname_test(gconstpointer user_data)
 	ssize_t size, plen;
 
 	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_REG_REQ;
 
 	/* Sending register message with missing parameters. */
 
@@ -183,8 +183,8 @@ static void register_missing_devname_test(gconstpointer user_data)
 	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
+	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	g_assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
 static void register_empty_devname_test(gconstpointer user_data)
@@ -193,7 +193,7 @@ static void register_empty_devname_test(gconstpointer user_data)
 	ssize_t size, plen;
 
 	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_REG_REQ;
 
 	kmsg.hdr.payload_len = sizeof(kmsg.reg.id) + 1;
 	kmsg.reg.id = ++reg_id;
@@ -210,8 +210,8 @@ static void register_empty_devname_test(gconstpointer user_data)
 	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_REGISTER_INVALID_DEVICENAME);
+	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	g_assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
 static void register_valid_devname_test(gconstpointer user_data)
@@ -221,7 +221,7 @@ static void register_valid_devname_test(gconstpointer user_data)
 
 	memset(&kresp, 0, sizeof(kresp));
 	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_REG_REQ;
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
@@ -239,8 +239,8 @@ static void register_valid_devname_test(gconstpointer user_data)
 	g_assert(size == sizeof(kresp.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_SUCCESS);
+	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	g_assert(kresp.action.result == 0);
 
 	g_message("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
@@ -255,7 +255,7 @@ static void register_repeated_attempt_test(gconstpointer user_data)
 
 	memset(&kresp2, 0, sizeof(kresp2));
 	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_REG_REQ;
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
@@ -275,8 +275,8 @@ static void register_repeated_attempt_test(gconstpointer user_data)
 	g_assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp2.action.result == KNOT_SUCCESS);
+	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	g_assert(kresp2.action.result == 0);
 	g_assert_cmpmem(&kresp, size, &kresp2, size);
 
 	g_message("UUID: %.36s token:%.40s\n",
@@ -297,7 +297,7 @@ static void register_new_id(gconstpointer user_data)
 	 */
 	memset(&kresp2, 0, sizeof(kresp2));
 	memset(&kmsg, 0, sizeof(kmsg));
-	kmsg.hdr.type = KNOT_MSG_REGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_REG_REQ;
 
 	/* Copying name to registration message */
 	kmsg.hdr.payload_len = strlen(KTEST_DEVICE_NAME);
@@ -315,8 +315,8 @@ static void register_new_id(gconstpointer user_data)
 	g_assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REGISTER_RESP);
-	g_assert(kresp2.action.result == KNOT_SUCCESS);
+	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	g_assert(kresp2.action.result == 0);
 
 	/* Compare with the first received response */
 	ret = memcmp(&kresp, &kresp2, size);
@@ -332,7 +332,7 @@ static void unregister_valid_device_test(gconstpointer user_data)
 
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
-	kmsg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+	kmsg.hdr.type = KNOT_MSG_UNREG_REQ;
 
 	kmsg.hdr.payload_len = 0;
 
@@ -344,8 +344,8 @@ static void unregister_valid_device_test(gconstpointer user_data)
 						 sizeof(kresp.action));
 
 	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-	g_assert(kresp.hdr.type == KNOT_MSG_UNREGISTER_RESP);
-	g_assert(kresp.action.result == KNOT_SUCCESS);
+	g_assert(kresp.hdr.type == KNOT_MSG_UNREG_RSP);
+	g_assert(kresp.action.result == 0);
 }
 
 /* Register and run all tests */

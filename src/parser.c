@@ -366,7 +366,7 @@ int8_t parser_config_is_valid(struct l_queue *config_list)
 			 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 			 * KNOT_INVALID_CONFIG in new protocol
 			 */
-			return KNOT_ERROR_UNKNOWN;
+			return KNOT_ERR_INVALID;
 
 		/* Check consistency of time_sec */
 		if (config->values.event_flags & KNOT_EVT_FLAG_TIME) {
@@ -375,14 +375,14 @@ int8_t parser_config_is_valid(struct l_queue *config_list)
 				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 				 * KNOT_INVALID_CONFIG in new protocol
 				 */
-				return KNOT_ERROR_UNKNOWN;
+				return KNOT_ERR_INVALID;
 		} else {
 			if (config->values.time_sec > 0)
 				/*
 				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 				 * KNOT_INVALID_CONFIG in new protocol
 				 */
-				return KNOT_ERROR_UNKNOWN;
+				return KNOT_ERR_INVALID;
 		}
 
 		/* Check consistency of limits */
@@ -398,11 +398,11 @@ int8_t parser_config_is_valid(struct l_queue *config_list)
 				 * TODO: DEFINE KNOT_CONFIG ERRORS IN PROTOCOL
 				 * KNOT_INVALID_CONFIG in new protocol
 				 */
-				return KNOT_ERROR_UNKNOWN;
+				return KNOT_ERR_INVALID;
 		}
 		entry = entry->next;
 	}
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 struct l_queue *parser_mydevices_to_list(const char *json_str)
@@ -572,7 +572,7 @@ int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
 		return -EINVAL;
 
 	msg->sensor_id = sensor_id;
-	msg->hdr.type = KNOT_MSG_SET_DATA;
+	msg->hdr.type = KNOT_MSG_PUSH_DATA_REQ;
 	msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
 
 	return 0;

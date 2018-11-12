@@ -425,7 +425,7 @@ int proto_mknode(int proto_socket, const char *owner_uuid,
 	device = device_json_create(owner_uuid, device_name, device_id);
 	if (!device) {
 		hal_log_error("JSON: no memory");
-		result = KNOT_ERROR_UNKNOWN;
+		result = KNOT_ERR_INVALID;
 		goto fail;
 	}
 
@@ -435,25 +435,25 @@ int proto_mknode(int proto_socket, const char *owner_uuid,
 
 	if (err < 0) {
 		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 		goto fail;
 	}
 
 	if (response.size == 0 ||
 	    (parser_device(response.data, uuid, token) < 0)) {
 		hal_log_error("Unexpected response!");
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 		goto fail;
 	}
 
 	/* Parse function never returns NULL for 'uuid' or 'token' fields */
 	if (!is_uuid_valid(uuid) || !is_token_valid(token)) {
 		hal_log_error("Invalid UUID or token!");
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 		goto fail;
 	}
 
-	result = KNOT_SUCCESS;
+	result = 0;
 fail:
 	l_free(response.data);
 	return result;
@@ -471,11 +471,11 @@ int proto_signin(int proto_socket, const char *uuid, const char *token,
 			    &response, prop_cb, user_data);
 	if (err < 0) {
 		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
-		result = KNOT_CREDENTIAL_UNAUTHORIZED;
+		result = KNOT_ERR_PERM;
 		goto fail;
 	}
 
-	result = KNOT_SUCCESS;
+	result = 0;
 
 fail:
 	l_free(response.data);
@@ -500,9 +500,9 @@ int proto_schema(int proto_socket, const char *uuid,
 
 	if (err < 0) {
 		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 	} else
-		result = KNOT_SUCCESS;
+		result = 0;
 
 	return result;
 }
@@ -517,7 +517,7 @@ int proto_data(int proto_socket, const char *uuid, const char *token,
 
 	data = data_create_object(sensor_id, value_type, value, kval_len);
 	if (!data) {
-		result = KNOT_INVALID_DATA;
+		result = KNOT_ERR_INVALID;
 		goto done;
 	}
 
@@ -529,9 +529,9 @@ int proto_data(int proto_socket, const char *uuid, const char *token,
 
 	if (err < 0) {
 		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 	} else
-		result = KNOT_SUCCESS;
+		result = 0;
 
 done:
 	return result;
@@ -544,12 +544,12 @@ int proto_rmnode(int proto_socket, const char *uuid, const char *token)
 
 	err = proto->rmnode(proto_socket, uuid, token, &response);
 	if (err < 0) {
-		result = KNOT_CLOUD_FAILURE;
+		result = KNOT_ERR_CLOUD_FAILURE;
 		hal_log_error("rmnode() failed %s (%d)", strerror(-err), -err);
 		goto done;
 	}
 
-	result = KNOT_SUCCESS;
+	result = 0;
 
 done:
 	if (response.data)

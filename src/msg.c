@@ -196,7 +196,7 @@ static bool schema_find_invalid(const void *entry_data, const void *user_data)
 				   schema->values.unit);
 
 	/* Return true for invalid schema */
-	return (err != KNOT_SUCCESS ? true : false);
+	return (err != 0 ? true : false);
 }
 
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
@@ -231,13 +231,13 @@ static int8_t msg_unregister(struct session *session)
 	if (!session->trusted) {
 		hal_log_info("[session %p] unregister: Permission denied!",
 			     session);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		return KNOT_ERR_PERM;
 	}
 
 	hal_log_info("[session %p] rmnode: %.36s", session, session->uuid);
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_rmnode(proto_sock, session->uuid, session->token);
-	if (result != KNOT_SUCCESS)
+	if (result != 0)
 		return result;
 
 	l_timeout_remove(session->downstream_to);
@@ -250,7 +250,7 @@ static int8_t msg_unregister(struct session *session)
 	session->trusted = false;
 	session->id = INT32_MAX;
 
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 static bool session_node_fd_cmp(const void *entry_data, const void *user_data)
@@ -325,7 +325,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	if (!sensor_id)
 		goto disable_timer;
 
-	item.hdr.type = KNOT_MSG_GET_DATA;
+	item.hdr.type = KNOT_MSG_POLL_DATA_REQ;
 	item.hdr.payload_len = sizeof(*sensor_id);
 	item.sensor_id = *sensor_id;
 	olen = sizeof(item);
@@ -411,7 +411,7 @@ static bool property_changed(const char *name,
 			goto done;
 		}
 
-		if (parser_config_is_valid(list) != KNOT_SUCCESS) {
+		if (parser_config_is_valid(list) != 0) {
 			hal_log_error("[session %p] config: invalid format!",
 				      session);
 			l_queue_destroy(list, l_free);
@@ -528,7 +528,7 @@ static int8_t msg_register(struct session *session,
 	if (!msg_register_has_valid_length(kreq, ilen)
 		|| !msg_register_has_valid_device_name(kreq)) {
 		hal_log_error("[session %p] Missing device name!", session);
-		return KNOT_REGISTER_INVALID_DEVICENAME;
+		return KNOT_ERR_INVALID;
 	}
 
 	/*
@@ -542,7 +542,7 @@ static int8_t msg_register(struct session *session,
 	if (session->trusted && kreq->id == session->id) {
 		hal_log_info("[session %p] Register: trusted device", session);
 		msg_credential_create(krsp, session->uuid, session->token);
-		return KNOT_SUCCESS;
+		return 0;
 	}
 
 	msg_register_get_device_name(kreq, device_name);
@@ -552,7 +552,7 @@ static int8_t msg_register(struct session *session,
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_mknode(proto_sock, owner_uuid,
 			      device_name, id, uuid, token);
-	if (result != KNOT_SUCCESS)
+	if (result != 0)
 		return result;
 
 	hal_log_info("[session %p] Registered UUID: %s, TOKEN: %s",
@@ -561,7 +561,7 @@ static int8_t msg_register(struct session *session,
 	result = proto_signin(proto_sock, uuid, token, property_changed,
 			      L_INT_TO_PTR(session->node_fd));
 
-	if (result != KNOT_SUCCESS)
+	if (result != 0)
 		return result;
 
 	/* Set online as soon as the device connects to the fog */
@@ -576,7 +576,7 @@ static int8_t msg_register(struct session *session,
 	session->token = l_strdup(token);
 	session->rollback = 1; /* Initial counter value */
 
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 static bool msg_unregister_req(void *user_data)
@@ -595,7 +595,7 @@ static bool msg_unregister_req(void *user_data)
 
 	node_ops = session->node_ops;
 
-	kmunreg.hdr.type = KNOT_MSG_UNREGISTER_REQ;
+	kmunreg.hdr.type = KNOT_MSG_UNREG_REQ;
 	kmunreg.hdr.payload_len = 0;
 	olen = sizeof(knot_msg_unregister) + kmunreg.hdr.payload_len;
 	opdu = &kmunreg;
@@ -623,7 +623,7 @@ static int8_t msg_auth(struct session *session,
 
 	if (session->trusted) {
 		hal_log_info("[session %p] Authenticated already", session);
-		return KNOT_SUCCESS;
+		return 0;
 	}
 
 	/*
@@ -652,7 +652,7 @@ static int8_t msg_auth(struct session *session,
 
 	session->rollback = 0; /* Rollback disabled */
 
-	if (result != KNOT_SUCCESS) {
+	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);
 		session->uuid = NULL;
@@ -662,7 +662,7 @@ static int8_t msg_auth(struct session *session,
 
 	session->trusted = true;
 
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 static int8_t msg_schema(struct session *session,
@@ -682,7 +682,7 @@ static int8_t msg_schema(struct session *session,
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] schema: not authorized!", session);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		return KNOT_ERR_PERM;
 	}
 
 	/*
@@ -706,14 +706,14 @@ static int8_t msg_schema(struct session *session,
 				  l_memdup(schema, sizeof(*schema)));
 
 	if (!eof) {
-		result = KNOT_SUCCESS;
+		result = 0;
 		goto done;
 	}
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_schema(proto_sock, session->uuid,
 			      session->token, session->schema_list_tmp);
-	if (result != KNOT_SUCCESS) {
+	if (result != 0) {
 		l_queue_destroy(session->schema_list_tmp, l_free);
 		session->schema_list_tmp = NULL;
 		goto done;
@@ -753,7 +753,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] data: Permission denied!", session);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		return KNOT_ERR_PERM;
 	}
 
 	sensor_id = kmdata->sensor_id;
@@ -761,7 +761,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	if (!schema) {
 		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
 			     session, sensor_id);
-		return KNOT_INVALID_DATA;
+		return KNOT_ERR_INVALID;
 	}
 
 	hal_log_info("[session %p] sensor:%d, unit:%d, value_type:%d", session,
@@ -800,7 +800,7 @@ static int8_t msg_config_resp(struct session *session,
 	if (!session->trusted) {
 		hal_log_info("[session %p] config resp: Permission denied!",
 			     session);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		return KNOT_ERR_PERM;
 	}
 
 	sensor_id = response->sensor_id;
@@ -810,14 +810,14 @@ static int8_t msg_config_resp(struct session *session,
 				   config_sensor_id_cmp,
 				   L_UINT_TO_PTR(sensor_id));
 	if (!config)
-		return KNOT_INVALID_DATA;
+		return KNOT_ERR_INVALID;
 
 	l_free(config);
 
 	hal_log_info("[session %p] THING %s received config for sensor %d",
 		     session, session->uuid, sensor_id);
 
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 /*
@@ -850,7 +850,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (!session->trusted) {
 		hal_log_info("[session %p] setdata: Permission denied!",
 			     session);
-		return KNOT_CREDENTIAL_UNAUTHORIZED;
+		return KNOT_ERR_PERM;
 	}
 
 	sensor_id = kmdata->sensor_id;
@@ -858,7 +858,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	if (!schema) {
 		hal_log_info("[session %p] sensor_id(0x%02x): data type mismatch!",
 			     session, sensor_id);
-		return KNOT_INVALID_DATA;
+		return KNOT_ERR_INVALID;
 	}
 
 	hal_log_info("[session %p] sensor:%d, unit:%d, value_type:%d",
@@ -870,7 +870,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	result = proto_data(proto_sock, session->uuid, session->token,
 			    sensor_id, schema->values.value_type,
 			    kvalue, kval_len);
-	if (result != KNOT_SUCCESS)
+	if (result != 0)
 		return result;
 
 	hal_log_info("[session %p] THING %s updated data for sensor %d",
@@ -907,7 +907,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	proto_setdata(proto_sock, session->uuid, session->token, json_str);
 	json_object_put(jso);
 
-	return KNOT_SUCCESS;
+	return 0;
 
 done:
 	return result;
@@ -939,7 +939,7 @@ static int8_t msg_unregister_resp(struct session *session)
 
 	device_forget_destroy(mydevice);
 
-	return KNOT_SUCCESS;
+	return 0;
 }
 
 static ssize_t msg_process(struct session *session,
@@ -950,7 +950,7 @@ static ssize_t msg_process(struct session *session,
 	knot_msg *krsp = opdu;
 	uint8_t rtype = 0;
 	size_t plen;
-	int8_t result = KNOT_INVALID_DATA;
+	int8_t result = KNOT_ERR_INVALID;
 	bool eof;
 
 	/* Verify if output PDU has a min length */
@@ -982,11 +982,11 @@ static ssize_t msg_process(struct session *session,
 		     session, kreq->hdr.type, kreq->hdr.payload_len);
 
 	switch (kreq->hdr.type) {
-	case KNOT_MSG_REGISTER_REQ:
+	case KNOT_MSG_REG_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
-		rtype = KNOT_MSG_REGISTER_RESP;
-		if (result != KNOT_SUCCESS)
+		rtype = KNOT_MSG_REG_RSP;
+		if (result != 0)
 			break;
 
 		/* Enable downstream after registration & authentication */
@@ -995,9 +995,9 @@ static ssize_t msg_process(struct session *session,
 					    downstream_callback,
 					    session, NULL);
 		break;
-	case KNOT_MSG_UNREGISTER_REQ:
+	case KNOT_MSG_UNREG_REQ:
 		result = msg_unregister(session);
-		rtype = KNOT_MSG_UNREGISTER_RESP;
+		rtype = KNOT_MSG_UNREG_RSP;
 		break;
 	case KNOT_MSG_PUSH_DATA_REQ:
 		result = msg_data(session, &kreq->data);
@@ -1005,8 +1005,8 @@ static ssize_t msg_process(struct session *session,
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(session, &kreq->auth);
-		rtype = KNOT_MSG_AUTH_RESP;
-		if (result != KNOT_SUCCESS)
+		rtype = KNOT_MSG_AUTH_RSP;
+		if (result != 0)
 			break;
 
 		/* Enable downstream after authentication */
@@ -1015,13 +1015,14 @@ static ssize_t msg_process(struct session *session,
 					    downstream_callback,
 					    session, NULL);
 		break;
-	case KNOT_MSG_SCHEMA:
-	case KNOT_MSG_SCHEMA_END:
-		eof = kreq->hdr.type == KNOT_MSG_SCHEMA_END ? true : false;
+	case KNOT_MSG_SCHM_FRAG_REQ:
+	case KNOT_MSG_SCHM_END_REQ:
+		eof = kreq->hdr.type == KNOT_MSG_SCHM_END_REQ ? true : false;
 		result = msg_schema(session, &kreq->schema, eof);
-		rtype = KNOT_MSG_SCHEMA_RESP;
 		if (eof)
-			rtype = KNOT_MSG_SCHEMA_END_RESP;
+			rtype = KNOT_MSG_SCHM_END_RSP;
+		else
+			rtype = KNOT_MSG_SCHM_FRAG_RSP;
 		break;
 	case KNOT_MSG_PUSH_CONFIG_RSP:
 		result = msg_config_resp(session, &kreq->item);
@@ -1030,7 +1031,7 @@ static ssize_t msg_process(struct session *session,
 	case KNOT_MSG_PUSH_DATA_RSP:
 		result = msg_setdata_resp(session, &kreq->data);
 		return 0;
-	case KNOT_MSG_UNREGISTER_RESP:
+	case KNOT_MSG_UNREG_RSP:
 		result = msg_unregister_resp(session);
 		return 0;
 	default:
@@ -1435,7 +1436,7 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 
 	/* 'settings' may be changed by D-Bus interface */
 	if (proto_signin(sock, settings->uuid, settings->token,
-			 NULL, NULL) != KNOT_SUCCESS)
+			 NULL, NULL) != 0)
 		goto signin_fail;
 
 	/* Keep a reference to a valid credential */
