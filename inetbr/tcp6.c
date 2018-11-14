@@ -35,6 +35,8 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 
+#include <netinet/tcp.h>
+
 #include <ell/ell.h>
 #include <hal/linux_log.h>
 
@@ -136,6 +138,10 @@ int tcp6_start(int port6)
 	struct sockaddr_in6 addr6;
 	int sock;
 	int on = 1;
+	int keepalive = 1; /* Enable keep alive probing */
+	int keepidle = 5; /* Start probing after 3 sec idle  */
+	int keepintvl = 1; /* Interval between probes */
+	int keepcnt = 3; /* Amount of probes lost before dropping connection */
 	int err;
 
 	hal_log_info("Starting TCP IPv6 at port %d...", port6);
@@ -150,9 +156,42 @@ int tcp6_start(int port6)
 	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
 					(char *) &on, sizeof(on)) < 0) {
 		err = errno;
-		hal_log_error("setsockopt IPv6(): %s(%d)", strerror(err), err);
+		hal_log_error("setsockopt SO_REUSEADDR IPv6(): %s(%d)",
+			      strerror(err), err);
 		goto fail;
 	}
+
+        if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE,
+		       (char *) &keepalive, sizeof(keepalive)) < 0) {
+                err = errno;
+                hal_log_error("setsockopt SO_KEEPALIVE IPv6(): %s(%d)",
+			      strerror(err), err);
+                goto fail;
+        }
+
+        if (setsockopt(sock, SOL_TCP, TCP_KEEPIDLE,
+		       (char *) &keepidle, sizeof(keepidle)) < 0) {
+                err = errno;
+                hal_log_error("setsockopt TCP_KEEPIDLE IPv6(): %s(%d)",
+			      strerror(err), err);
+                goto fail;
+        }
+
+        if (setsockopt(sock, SOL_TCP, TCP_KEEPINTVL,
+		       (char *) &keepintvl, sizeof(keepintvl)) < 0) {
+                err = errno;
+                hal_log_error("setsockopt TCP_KEEPINTVL IPv6(): %s(%d)",
+			      strerror(err), err);
+                goto fail;
+        }
+
+        if (setsockopt(sock, SOL_TCP, TCP_KEEPCNT,
+		       (char *) &keepcnt, sizeof(keepcnt)) < 0) {
+                err = errno;
+                hal_log_error("setsockopt TCP_KEEPCNT IPv6(): %s(%d)",
+			      strerror(err), err);
+                goto fail;
+        }
 
 	memset(&addr6, 0, sizeof(addr6));
 	addr6.sin6_family = AF_INET6;
