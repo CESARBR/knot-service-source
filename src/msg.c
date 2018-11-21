@@ -1276,6 +1276,10 @@ static struct session *session_create(struct node_ops *node_ops,
 	session = session_new(node_ops);
 
 	session->node_channel = create_node_channel(client_socket, session);
+	if (session->node_channel == NULL) {
+		session_unref(session);
+		return NULL;
+	}
 	session->node_fd = client_socket; /* Required to manage disconnections */
 
 	hal_log_info("[session %p] Session created", session);
