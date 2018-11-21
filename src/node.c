@@ -104,47 +104,39 @@ static bool on_accept(struct l_io *channel, void *user_data)
 	return try_accept(node_ops, server_socket, on_accepted_cb);
 }
 
-/*
- * TODO: consider moving this to node-*.c
- */
-static int set_nonblocking(int fd)
-{
-	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
-		return -errno;
-
-	return 0;
-}
-
-static void create_channel(int server_socket,
+static struct l_io  *create_channel(int server_socket,
 			   struct node_ops *node_ops,
 			   on_accepted on_accepted_cb)
 {
-	struct on_accept_data *on_accept_data;
 	struct l_io *channel;
 	int err;
 
 	channel = l_io_new(server_socket);
-	err = set_nonblocking(server_socket);
-	if (err < 0)
+	if (channel == NULL) {
+		hal_log_error("Failed to create ELL channel for socket %d",
+			      server_socket);
+		return NULL;
+	}
+
+	if (fcntl(server_socket, F_SETFL, O_NONBLOCK) == -1) {
+		err = errno;
 		hal_log_error("Failed to change socket (%d) to non-blocking: %s(%d)",
-			      server_socket, strerror(-err), -err);
+			      server_socket, strerror(err), err);
+		return NULL;
+	}
 
 	l_io_set_close_on_destroy(channel, true);
 
-	on_accept_data = l_new(struct on_accept_data, 1);
-	on_accept_data->node_ops = node_ops;
-	on_accept_data->on_accepted_cb = on_accepted_cb;
-
-	l_io_set_read_handler(channel, on_accept, on_accept_data, l_free);
-
-	l_queue_push_tail(channel_list, channel);
-
 	hal_log_info("node_ops(%p): (%s) created accept channel",
 		     node_ops, node_ops->name);
+
+	return channel;
 }
 
 int node_start(on_accepted on_accepted_cb)
 {
+	struct on_accept_data *on_accept_data;
+	struct l_io *channel;
 	int server_socket;
 	int i;
 
@@ -162,7 +154,22 @@ int node_start(on_accepted on_accepted_cb)
 		if (server_socket < 0)
 			continue;
 
-		create_channel(server_socket, node_ops[i], on_accepted_cb);
+		channel = create_channel(server_socket, node_ops[i],
+					 on_accepted_cb);
+		if (channel == NULL) {
+			close(server_socket);
+			node_ops[i]->remove();
+			continue;
+		}
+
+		on_accept_data = l_new(struct on_accept_data, 1);
+		on_accept_data->node_ops = node_ops[i];
+		on_accept_data->on_accepted_cb = on_accepted_cb;
+
+		l_io_set_read_handler(channel, on_accept,
+				      on_accept_data, l_free);
+
+		l_queue_push_tail(channel_list, channel);
 	}
 
 	return 0;
