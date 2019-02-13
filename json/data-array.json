@@ -1,0 +1,15 @@
+{
+	"data": [{
+		"sensor_id": 253,
+		"value": false,
+		"interval": 10
+	},{
+		"sensor_id": 252,
+		"value": 44,
+		"interval": 2
+	},{
+		"sensor_id": 251,
+		"value": 44.7,
+		"interval": 3
+	}]
+}
