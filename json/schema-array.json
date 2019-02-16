@@ -1,10 +1,10 @@
 {
 "schema": [
-	{ "sensor_id": 251, "value_type": 02,
-		"unit": 01, "type_id": 0013, "name": "Tank Volume" },
-	{ "sensor_id": 252, "value_type":01,
-		"unit":01 ,"type_id": 0005, "name": "Outdoor Temperature" },
-	{ "sensor_id": 253, "value_type":03,
-		"unit":00, "type_id": 65521, "name": "Lamp Status" }
+	{ "sensor_id": 251, "value_type": 2,
+		"unit": 1, "type_id": 13, "name": "Tank Volume" },
+	{ "sensor_id": 252, "value_type":1,
+		"unit":1 ,"type_id": 5, "name": "Outdoor Temperature" },
+	{ "sensor_id": 253, "value_type":3,
+		"unit":0, "type_id": 65521, "name": "Lamp Status" }
 ]
 }
