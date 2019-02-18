@@ -18,35 +18,39 @@
 #   License along with this library; if not, write to the Free Software
 #   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from optparse import OptionParser, make_option
+import argparse
 import sys
 import dbus
 
 bus = dbus.SystemBus()
 
-if (len(sys.argv) < 1):
-        print("Usage: %s <command>" % (sys.argv[0]))
-        print("")
-        print("  info")
-        print("  uuid [Uuid]")
-        print("  port [Port]")
-        sys.exit(1)
+parser = argparse.ArgumentParser(description='Script to test Dbus settings interface')
+parser.add_argument('command', metavar='COMMAND', type=str, nargs='?',
+                    choices=['uuid', 'token', 'host', 'port', 'info'],
+                    help='Commands: [info, uuid, token, host, port]')
+parser.add_argument('value', metavar='VALUE', nargs='?',
+										help='value')
+options = parser.parse_args()
 
 props = dbus.Interface(bus.get_object("br.org.cesar.knot", "/"), "org.freedesktop.DBus.Properties")
 
-cmd = sys.argv[1]
+cmd = options.command
+cmd_value = options.value
+
 print ("Command: %s" % cmd)
 
 if (cmd == "info"):
 	print (props.GetAll("br.org.cesar.knot.Settings1"))
 	sys.exit(0)
 
+if not cmd_value:
+	raise Exception('Missing value')
+
 if (cmd == "uuid"):
 	print ("Uuid ...")
 	uuid = props.Get("br.org.cesar.knot.Settings1", "Uuid")
 	print ("Current Uuid: %s" % uuid)
-	value = dbus.String(sys.argv[2])
-	props.Set("br.org.cesar.knot.Settings1", "Uuid", value)
+	props.Set("br.org.cesar.knot.Settings1", "Uuid", cmd_value)
 	uuid = props.Get("br.org.cesar.knot.Settings1", "Uuid")
 	print ("New Uuid: %s" % uuid)
 
@@ -56,21 +60,19 @@ if (cmd == "host"):
 	print ("Host ...")
 	host = props.Get("br.org.cesar.knot.Settings1", "Host")
 	print ("Current Host: %s" % host)
-	value = dbus.String(sys.argv[2])
-	props.Set("br.org.cesar.knot.Settings1", "Host", value)
+	props.Set("br.org.cesar.knot.Settings1", "Host", cmd_value)
 	host = props.Get("br.org.cesar.knot.Settings1", "Host")
 	print ("New Host: %s" % host)
 
 	sys.exit(0)
 
 if (cmd == "port"):
-	print ("Uuid ...")
+	print ("Port ...")
 	port = props.Get("br.org.cesar.knot.Settings1", "Port")
 	print ("Current port: %u" % port)
-	value = dbus.UInt16(sys.argv[2])
-	props.Set("br.org.cesar.knot.Settings1", "Port", value)
+	props.Set("br.org.cesar.knot.Settings1", "Port", dbus.UInt16(cmd_value))
 	port = props.Get("br.org.cesar.knot.Settings1", "Port")
-	print ("New Uuid: %u" % port)
+	print ("New Port: %u" % port)
 
 	sys.exit(0)
 
@@ -78,8 +80,7 @@ if (cmd == "token"):
 	print ("Token ...")
 	token = props.Get("br.org.cesar.knot.Settings1", "Token")
 	print ("Current Token: %s" % token)
-	value = dbus.String(sys.argv[2])
-	props.Set("br.org.cesar.knot.Settings1", "Token", value)
+	props.Set("br.org.cesar.knot.Settings1", "Token", cmd_value)
 	token = props.Get("br.org.cesar.knot.Settings1", "Token")
 	print ("New Token: %s" % token)
 
