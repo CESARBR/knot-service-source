@@ -22,6 +22,7 @@ struct mydevice {
        char *id;
        char *uuid;
        char *name;
+       bool online;
        struct l_timeout *unreg_timeout;
 };
 

@@ -1330,7 +1330,8 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 }
 
 static void proxy_added(const char *device_id, const char *uuid,
-			const char *name, void *user_data)
+			const char *name, bool online,
+			void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
 	struct mydevice *mydevice = l_new(struct mydevice, 1);
@@ -1340,17 +1341,19 @@ static void proxy_added(const char *device_id, const char *uuid,
 
 	if (!device) {
 		/* Ownership belongs to device.c */
-		device = device_create(device_id, name, true, true);
+		device = device_create(device_id, name, true, true, online);
 		if (!device)
 			return;
 	}
 
 	device_set_uuid(device, uuid);
 	device_set_registered(device, true);
+	device_set_online(device, online);
 
 	mydevice->uuid = l_strdup(uuid);
 	mydevice->id = l_strdup(device_id);
 	mydevice->name = l_strdup(name);
+	mydevice->online = online;
 	mydevice->unreg_timeout = NULL;
 
 	l_queue_push_head(device_id_list, mydevice);

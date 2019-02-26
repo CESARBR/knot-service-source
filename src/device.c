@@ -362,7 +362,7 @@ void device_stop(void)
 }
 
 struct knot_device *device_create(const char *id, const char *name,
-				  bool paired, bool registered)
+				  bool paired, bool registered, bool online)
 {
 	struct knot_device *device;
 
@@ -372,7 +372,7 @@ struct knot_device *device_create(const char *id, const char *name,
 	device->name = l_strdup(name);
 	device->uuid = NULL; /* FIXME */
 	device->paired = paired;
-	device->online = false;
+	device->online = online;
 	device->registered = registered;
 	device->msg = NULL;
 	device->msg_id = 0;

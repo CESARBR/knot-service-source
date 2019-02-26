@@ -413,6 +413,7 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 	const char *uuid;
 	const char *name;
 	const char *id;
+	bool online;
 	int len;
 	int i;
 
@@ -456,10 +457,17 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 
 		uuid = json_object_get_string(jobjkey);
 
+		/* Getting 'Online' */
+		if (!json_object_object_get_ex(jobjentry, "online", &jobjkey))
+			continue;
+
+		online = json_object_get_boolean(jobjkey);
+
 		mydevice = l_new(struct mydevice, 1);
 		mydevice->id   = l_strdup(id);
 		mydevice->name = l_strdup(name);
 		mydevice->uuid = l_strdup(uuid);
+		mydevice->online = online;
 		l_queue_push_tail(list, mydevice);
 	}
 

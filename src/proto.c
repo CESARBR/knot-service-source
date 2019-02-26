@@ -160,8 +160,8 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	/* Informing added devices */
 	for (mydevice1 = l_queue_pop_head(added_list);
 	     mydevice1; mydevice1 = l_queue_pop_head(added_list)) {
-		proxy->added_cb(mydevice1->id, mydevice1->uuid,
-				mydevice1->name, proxy->user_data);
+		proxy->added_cb(mydevice1->id, mydevice1->uuid, mydevice1->name,
+				mydevice1->online, proxy->user_data);
 	}
 
 	l_queue_destroy(added_list, (l_queue_destroy_func_t) mydevice_free);

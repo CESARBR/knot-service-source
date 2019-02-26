@@ -135,7 +135,7 @@ static void added(struct l_dbus_proxy *ellproxy, void *user_data)
 	device = device_get(id);
 	if (!device) {
 		/* Ownership belongs to device.c */
-		device = device_create(id, name, paired, false);
+		device = device_create(id, name, paired, false, false);
 		if (!device) {
 			hal_log_error("Can't create device: %s", id);
 			return;

@@ -20,7 +20,8 @@
  */
 
 typedef void (*proto_proxy_added_func_t) (const char *device_id, const char *uuid,
-					  const char *name, void *user_data);
+					  const char *name, bool online,
+					  void *user_data);
 typedef void (*proto_proxy_removed_func_t) (const char *device_id,
 					    void *user_data);
 
