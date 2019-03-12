@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include <ell/ell.h>
 
@@ -58,8 +59,7 @@ static bool l_main_loop_init()
 	return l_main_init();
 }
 
-static void l_signal_handler(struct l_signal *signal, uint32_t signo,
-							void *user_data)
+static void signal_handler(uint32_t signo, void *user_data)
 {
 	switch (signo) {
 	case SIGINT:
@@ -71,18 +71,8 @@ static void l_signal_handler(struct l_signal *signal, uint32_t signo,
 
 static void l_main_loop_run()
 {
-	struct l_signal *sig;
-	sigset_t mask;
+	l_main_run_with_signal(signal_handler, NULL);
 
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGINT);
-	sigaddset(&mask, SIGTERM);
-
-	sig = l_signal_create(&mask, l_signal_handler, NULL, NULL);
-
-	l_main_run();
-
-	l_signal_remove(sig);
 	l_main_exit();
 }
 

@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include <ell/ell.h>
 #include <hal/linux_log.h>
@@ -52,8 +53,7 @@ static void l_terminate(void)
 	l_timeout_create(1, main_loop_quit, NULL, NULL);
 }
 
-static void l_signal_handler(struct l_signal *signal, uint32_t signo,
-							void *user_data)
+static void l_signal_handler(uint32_t signo, void *user_data)
 {
 	switch (signo) {
 	case SIGINT:
@@ -66,8 +66,6 @@ static void l_signal_handler(struct l_signal *signal, uint32_t signo,
 int main(int argc, char *argv[])
 {
 	struct settings *settings;
-	struct l_signal *sig;
-	sigset_t mask;
 	int err = EXIT_FAILURE;
 
 	settings = settings_load(argc, argv);
@@ -98,17 +96,10 @@ int main(int argc, char *argv[])
 		goto manager_fail;
 	}
 
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGINT);
-	sigaddset(&mask, SIGTERM);
-
-	sig = l_signal_create(&mask, l_signal_handler, NULL, NULL);
-
-	l_main_run();
+	l_main_run_with_signal(l_signal_handler, NULL);
 
 	manager_stop();
 
-	l_signal_remove(sig);
 	err = EXIT_SUCCESS;
 
 manager_fail:
