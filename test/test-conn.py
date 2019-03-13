@@ -42,6 +42,12 @@ parser.add_argument('-s', '--schema', dest="schema_file",
 parser.add_argument('-d', '--data', dest="data_file",
                     help="data file", default='',
                     type=str, metavar="DATA_FILE")
+parser.add_argument('-H', '--host', dest="host",
+                    help="host to connect", default='localhost',
+                    type=str, metavar="HOST")
+parser.add_argument('-p', '--port', dest="port",
+                    help="port to connect", default='8884',
+                    type=int, choices=range(0x10000),metavar="PORT")
 parser.add_argument('--debug', action="store_true",
                     help="show debug messages")
 options = parser.parse_args()
@@ -53,8 +59,8 @@ else:
 
 THING_ID = options.id
 THING_NAME = options.name
-HOST = 'localhost'
-PORT = 8884
+HOST = options.host
+PORT = options.port
 if options.schema_file:
     with open(options.schema_file) as fd:
         schemas = json.load(fd)['schema']
