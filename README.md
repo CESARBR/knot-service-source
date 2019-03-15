@@ -58,3 +58,17 @@ $ valgrind --leak-check=full --track-fds=yes ./src/knotd \
 ### How to run 'knotd' specifying host & port:
 
 `$src/knotd --config=./src/knotd.conf --proto=ws --host=localhost --port=3000`
+
+
+## How to test a device connection:
+
+The command bellow will register a device which sends a lamp status, and the
+credentials in the path `./thing_credentials.json`:
+
+`$ test/test-conn.py -f ./thing_credentials.json`
+
+Note: If you run the same command again it will authenticate with knotd.
+
+It's possible use options to change what the device can send as with the bellow command:
+
+`$ test/test-conn.py -d json/data-array.json -s json/schema-array.json`
