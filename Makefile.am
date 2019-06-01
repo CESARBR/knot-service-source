@@ -48,9 +48,9 @@ inetbr_inetbrd_LDFLAGS = $(AM_LDFLAGS)
 inetbr_inetbrd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@  @KNOTHAL_CFLAGS@
 
 tools_ktool_SOURCES = tools/ktool.c
-tools_ktool_LDADD = @GLIB_LIBS@ @JSON_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@
+tools_ktool_LDADD = @ELL_LIBS@ @JSON_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@
 tools_ktool_LDFLAGS = $(AM_LDFLAGS)
-tools_ktool_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@ @GLIB_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
+tools_ktool_CFLAGS = $(AM_CFLAGS) @ELL_CFLAGS@ @JSON_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@
 
 unit_ktest_SOURCES = unit/ktest.c
 
