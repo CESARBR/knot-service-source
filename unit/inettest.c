@@ -26,8 +26,10 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <assert.h>
+#include <signal.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 
 #include <knot/knot_protocol.h>
 #include <knot/knot_types.h>
@@ -133,9 +135,9 @@ static ssize_t do_request6(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	return recvlen;
 }
 
-static void authenticate_test(gconstpointer user_data)
+static void authenticate_test(const void* user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size;
 
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -152,17 +154,17 @@ static void authenticate_test(gconstpointer user_data)
 		size = do_request4(&kmsg, sizeof(kmsg.auth), &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_AUTH_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.type == KNOT_MSG_AUTH_RSP);
+	assert(kresp.action.result == 0);
 }
 
-static void register_missing_devname_test(gconstpointer user_data)
+static void register_missing_devname_test(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size, plen;
 
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -181,17 +183,17 @@ static void register_missing_devname_test(gconstpointer user_data)
 		size = do_request4(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == KNOT_ERR_INVALID);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
-static void register_empty_devname_test(gconstpointer user_data)
+static void register_empty_devname_test(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size, plen;
 
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -208,17 +210,17 @@ static void register_empty_devname_test(gconstpointer user_data)
 		size = do_request4(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == KNOT_ERR_INVALID);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
-static void register_valid_devname_test(gconstpointer user_data)
+static void register_valid_devname_test(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size, plen;
 
 	memset(&kresp, 0, sizeof(kresp));
@@ -238,20 +240,20 @@ static void register_valid_devname_test(gconstpointer user_data)
 		size = do_request4(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.cred));
+	assert(size == sizeof(kresp.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == 0);
 
-	g_message("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
+	printf("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 	memcpy(token, kresp.cred.token, sizeof(kresp.cred.token));
 }
 
-static void register_repeated_attempt_test(gconstpointer user_data)
+static void register_repeated_attempt_test(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size, plen;
 	knot_msg kresp2;
 
@@ -274,20 +276,20 @@ static void register_repeated_attempt_test(gconstpointer user_data)
 		size = do_request4(&kmsg, plen, &kresp2);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp2.cred));
+	assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp2.action.result == 0);
-	g_assert_cmpmem(&kresp, size, &kresp2, size);
+	assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp2.action.result == 0);
+	assert(memcmp(&kresp, &kresp2, size) == 0);
 
-	g_message("UUID: %.36s token:%.40s\n",
+	printf("UUID: %.36s token:%.40s\n",
 				kresp2.cred.uuid, kresp2.cred.token);
 }
 
-static void register_new_id(gconstpointer user_data)
+static void register_new_id(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 	ssize_t size, plen;
 	knot_msg kresp2;
 	int ret;
@@ -314,23 +316,23 @@ static void register_new_id(gconstpointer user_data)
 		size = do_request4(&kmsg, plen, &kresp2);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp2.cred));
+	assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp2.action.result == 0);
+	assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp2.action.result == 0);
 
 	/* Compare with the first received response */
 	ret = memcmp(&kresp, &kresp2, size);
-	g_assert(ret != 0);
+	assert(ret != 0);
 
-	g_message("UUID: %.36s token:%.40s\n",
+	printf("UUID: %.36s token:%.40s\n",
 				kresp2.cred.uuid, kresp2.cred.token);
 }
 
-static void unregister_valid_device_test(gconstpointer user_data)
+static void unregister_valid_device_test(const void *user_data)
 {
-	int ipv6 = GPOINTER_TO_INT(user_data);
+	int ipv6 = L_PTR_TO_INT(user_data);
 
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
@@ -339,15 +341,15 @@ static void unregister_valid_device_test(gconstpointer user_data)
 	kmsg.hdr.payload_len = 0;
 
 	if (ipv6)
-		g_assert(do_request6(&kmsg, sizeof(kmsg.unreg), &kresp) ==
+		assert(do_request6(&kmsg, sizeof(kmsg.unreg), &kresp) ==
 						 sizeof(kresp.action));
 	else
-		g_assert(do_request4(&kmsg, sizeof(kmsg.unreg), &kresp) ==
+		assert(do_request4(&kmsg, sizeof(kmsg.unreg), &kresp) ==
 						 sizeof(kresp.action));
 
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-	g_assert(kresp.hdr.type == KNOT_MSG_UNREG_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(kresp.hdr.type == KNOT_MSG_UNREG_RSP);
+	assert(kresp.action.result == 0);
 }
 
 /* Register and run all tests */
@@ -356,67 +358,53 @@ int main(int argc, char *argv[])
 	int ipv6 = 0;
 	signal(SIGPIPE, SIG_IGN);
 
-	g_test_init (&argc, &argv, NULL);
+	l_test_init(&argc, &argv);
 
-	g_test_add_data_func_full("/1/register_missing_devname_ipv4",
-				  GINT_TO_POINTER(ipv6),
+	l_test_add("/1/register_missing_devname_ipv4",
 				  register_missing_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/2/register_empty_devname_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/2/register_empty_devname_ipv4",
 				  register_empty_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/3/register_valid_devname_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/3/register_valid_devname_ipv4",
 				  register_valid_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/4/register_repeated_attempt_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/4/register_repeated_attempt_ipv4",
 				  register_repeated_attempt_test,
-				  NULL);
-	g_test_add_data_func_full("/5/register_new_id_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/5/register_new_id_ipv4",
 				  register_new_id,
-				  NULL);
-	g_test_add_data_func_full("/6/authenticate_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/6/authenticate_ipv4",
 				  authenticate_test,
-				  NULL);
-	g_test_add_data_func_full("/7/unregister_valid_device_ipv4",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/7/unregister_valid_device_ipv4",
 				  unregister_valid_device_test,
-				  NULL);
+					L_INT_TO_PTR(ipv6));
 
 	ipv6 = 1;
 
-	g_test_add_data_func_full("/8/register_missing_devname_ipv6",
-				  GINT_TO_POINTER(ipv6),
+	l_test_add("/8/register_missing_devname_ipv6",
 				  register_missing_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/9/register_empty_devname_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/9/register_empty_devname_ipv6",
 				  register_empty_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/10/register_valid_devname_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/10/register_valid_devname_ipv6",
 				  register_valid_devname_test,
-				  NULL);
-	g_test_add_data_func_full("/11/register_repeated_attempt_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/11/register_repeated_attempt_ipv6",
 				  register_repeated_attempt_test,
-				  NULL);
-	g_test_add_data_func_full("/12/register_new_id_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/12/register_new_id_ipv6",
 				  register_new_id,
-				  NULL);
-	g_test_add_data_func_full("/13/authenticate_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/13/authenticate_ipv6",
 				  authenticate_test,
-				  NULL);
-	g_test_add_data_func_full("/14/unregister_valid_device_ipv6",
-				  GINT_TO_POINTER(ipv6),
+					L_INT_TO_PTR(ipv6));
+	l_test_add("/14/unregister_valid_device_ipv6",
 				  unregister_valid_device_test,
-				  NULL);
+					L_INT_TO_PTR(ipv6));
 
-	return g_test_run();
+	return l_test_run();
 }
