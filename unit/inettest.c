@@ -34,6 +34,8 @@
 
 /* device name for the register */
 #define	KTEST_DEVICE_NAME	"ktest_unit_test"
+#define INETBRD_PORT_IPV4 8884
+#define INETBRD_PORT_IPV6 8886
 
 static uint64_t reg_id = 0x0123456789abcdef;
 static char uuid128[KNOT_PROTOCOL_UUID_LEN];
@@ -59,7 +61,7 @@ static ssize_t do_request4(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(9994);
+	addr.sin_port = htons(INETBRD_PORT_IPV4);
 
 	sentlen = sendto(sockfd, kmsg, len, 0, (struct sockaddr *) &addr,
 							sizeof(addr));
@@ -104,7 +106,7 @@ static ssize_t do_request6(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	memset(&addr,0,sizeof(addr));
 	addr.sin6_family = AF_INET;
 	addr.sin6_addr = in6addr_any;
-	addr.sin6_port = htons(9996);
+	addr.sin6_port = htons(INETBRD_PORT_IPV6);
 
 	sentlen = sendto(sockfd, kmsg, len, 0, (struct sockaddr *) &addr,
 							sizeof(addr));
