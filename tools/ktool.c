@@ -25,12 +25,14 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <math.h>
+#include <getopt.h>
+#include <signal.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <glib.h>
+#include <ell/ell.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <json-c/json.h>
@@ -38,8 +40,10 @@
 #include <knot/knot_protocol.h>
 #include <knot/knot_types.h>
 
+#define TIMEOUT_MAINLOOP_QUIT 1
+
 struct schema {
-	GSList *list;
+	struct l_queue *list;
 	int err;
 };
 
@@ -48,22 +52,53 @@ typedef void (*json_object_func_t) (struct json_object *jobj,
 
 static int sock;
 static char *opt_unix = "knot";
-static gboolean opt_add = FALSE;
-static gboolean opt_rm = FALSE;
-static gboolean opt_schema = FALSE;
-static gboolean opt_data = FALSE;
+static bool opt_add = false;
+static bool opt_rm = false;
+static bool opt_schema = false;
+static bool opt_data = false;
 static char *opt_uuid = NULL;
 static char *opt_token = NULL;
 static char *opt_json = NULL;
 static char *opt_tty = NULL;
 static uint64_t opt_device_id = 0;
-static gboolean opt_cfg = FALSE;
-static gboolean opt_id = FALSE;
-static gboolean opt_subs = FALSE;
-static gboolean opt_unsubs = FALSE;
-static gboolean opt_con = FALSE;
+static bool opt_cfg = false;
+static bool opt_id = false;
+static bool opt_subs = false;
+static bool opt_unsubs = false;
+static bool opt_con = false;
 
-static GMainLoop *main_loop;
+struct l_io *knotd_io;
+
+static void main_loop_quit(struct l_timeout *timeout, void *user_data)
+{
+	l_main_quit();
+	l_timeout_remove(timeout);
+}
+
+static void l_terminate(void)
+{
+	static bool terminating = false;
+
+	if (terminating)
+		return;
+
+	terminating = true;
+
+	if (knotd_io)
+		l_io_destroy(knotd_io);
+
+	l_timeout_create(TIMEOUT_MAINLOOP_QUIT, main_loop_quit, NULL, NULL);
+}
+
+static void l_signal_handler(uint32_t signo, void *user_data)
+{
+	switch (signo) {
+	case SIGINT:
+	case SIGTERM:
+		l_terminate();
+		break;
+	}
+}
 
 static ssize_t receive(int sockfd, void *buffer, size_t len)
 {
@@ -74,7 +109,7 @@ static ssize_t receive(int sockfd, void *buffer, size_t len)
 	nbytes = read(sockfd, buffer, len);
 	if (nbytes < 0) {
 		err = -errno;
-		printf("read() error\n");
+		fprintf(stderr, "read() error\n");
 		return err;
 	}
 	msg_size = hdr->payload_len + 2;
@@ -203,7 +238,6 @@ static void load_schema(struct json_object *jobj,
 {
 	struct schema *schema = user_data;
 	knot_msg_schema *entry;
-	GSList *ltmp;
 	enum json_type type;
 	const char *data_name = NULL;
 	int intval, err = EINVAL;
@@ -229,44 +263,41 @@ static void load_schema(struct json_object *jobj,
 		intval = json_object_get_int(jobj);
 
 		if (strcmp("sensor_id", key) == 0) {
-			entry = g_new0(knot_msg_schema, 1);
+			entry = l_new(knot_msg_schema, 1);
 			entry->sensor_id = intval;
-			schema->list = g_slist_append(schema->list, entry);
+			l_queue_push_head(schema->list, entry);
 			err = 0;
 		} else if (strcmp("value_type", key) == 0) {
-			ltmp = g_slist_last(schema->list);
-			if (!ltmp)
+			entry = l_queue_peek_head(schema->list);
+			if (!entry)
 				goto done;
 
 			/*
 			*FIXME: if value_type appers before sensor_id? or other
 			*wrong order
 			*/
-			entry = ltmp->data;
 			entry->values.value_type = intval;
 			err = 0;
 		} else if (strcmp("unit", key) == 0) {
-			ltmp = g_slist_last(schema->list);
-			if (!ltmp)
+			entry = l_queue_peek_head(schema->list);
+			if (!entry)
 				goto done;
 
 			/*
 			*FIXME: if unit appers before sensor_id? or other
 			*wrong order
 			*/
-			entry = ltmp->data;
 			entry->values.unit = intval;
 			err = 0;
 		} else if (strcmp("type_id", key) == 0) {
-			ltmp = g_slist_last(schema->list);
-			if (!ltmp)
+			entry = l_queue_peek_head(schema->list);
+			if (!entry)
 				goto done;
 
 			/*
 			*FIXME: if type_id appers before sensor_id? or other
 			*wrong order
 			*/
-			entry = ltmp->data;
 			entry->values.type_id = intval;
 			err = 0;
 		}
@@ -278,14 +309,13 @@ static void load_schema(struct json_object *jobj,
 		if (strcmp("name", key) != 0 || data_name == NULL)
 			goto done;
 
-		ltmp = g_slist_last(schema->list);
-		if (!ltmp)
+		entry = l_queue_peek_head(schema->list);
+		if (!entry)
 			goto done;
 		/*
 		*FIXME: if name comes before sensor_id,value_type,unit, type_id
 		*or other wrong order
 		*/
-		entry = ltmp->data;
 		strcpy(entry->values.name, data_name);
 		err = 0;
 		break;
@@ -346,7 +376,7 @@ static void read_json_entry(struct json_object *jobj,
 			break;
 		}
 	} else {
-		printf("Unexpected JSON entry!\n");
+		fprintf(stderr, "Unexpected JSON entry!\n");
 	}
 }
 
@@ -404,19 +434,19 @@ static int authenticate(const char *uuid, const char *token)
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
 		err = errno;
-		printf("write(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "write(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	nbytes = receive(sock, &resp, sizeof(resp));
 	if (nbytes < 0) {
 		err = errno;
-		printf("read(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "read(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if (resp.result != 0) {
-		printf("error(0x%02x)\n", resp.result);
+		fprintf(stderr, "error(0x%02x)\n", resp.result);
 		return -EPROTO;
 	}
 
@@ -441,7 +471,7 @@ static int write_knot_data(struct json_object *jobj)
 	json_object_foreach(jobj, read_json_entry, &msg);
 
 	if (msg.hdr.payload_len == 0) {
-		printf("JSON parsing error: data not found!\n");
+		fprintf(stderr, "JSON parsing error: data not found!\n");
 		return -EINVAL;
 	}
 
@@ -452,57 +482,56 @@ static int write_knot_data(struct json_object *jobj)
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
 		err = errno;
-		printf("write(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "write(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	nbytes = receive(sock, &resp, sizeof(resp));
 	if (nbytes < 0) {
 		err = errno;
-		printf("read(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "read(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if (resp.result != 0) {
-		printf("error(0x%02x)\n", resp.result);
+		fprintf(stderr, "error(0x%02x)\n", resp.result);
 		return -EPROTO;
 	}
 
 	return 0;
 }
 
-static int send_schema(GSList *list)
+static int send_schema(struct l_queue *list)
 {
 	knot_msg_schema msg;
 	knot_msg_schema *entry;
-	GSList *l;
 	ssize_t nbytes;
 	int err;
 
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_SCHM_FRAG_REQ;
 
-	for (l = list; l;) {
-		entry = l->data;
+	while (!l_queue_isempty(list)) {
+		entry = l_queue_pop_head(list);
 
 		msg.hdr.payload_len = sizeof(entry->values) +
-						sizeof(entry->sensor_id);
+							sizeof(entry->sensor_id);
 
 		memcpy(&msg.values, &entry->values, sizeof(entry->values));
 		msg.sensor_id = entry->sensor_id;
 
-
-		l = g_slist_next(l);
-		if (!l)
+		if (l_queue_length(list) == 0)
 			msg.hdr.type = KNOT_MSG_SCHM_END_REQ;
 
 		nbytes = write(sock, &msg, sizeof(msg.hdr) +
-						msg.hdr.payload_len);
+					msg.hdr.payload_len);
+
 		if (nbytes < 0) {
 			err = errno;
-			printf("write(): %s(%d)\n", strerror(err), err);
+			fprintf(stderr, "write(): %s(%d)\n", strerror(err), err);
 			return -err;
 		}
+		l_free(entry);
 	}
 
 	return 0;
@@ -526,7 +555,7 @@ static int cmd_register(void)
 	nbytes = write(sock, &msg, sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (nbytes < 0) {
 		err = errno;
-		printf("writev(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "writev(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
@@ -534,12 +563,12 @@ static int cmd_register(void)
 	nbytes = receive(sock, &crdntl, sizeof(crdntl));
 	if (nbytes < 0) {
 		err = errno;
-		printf("KNOT Register read(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "KNOT Register read(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if (crdntl.result != 0) {
-		printf("KNOT Register: error(0x%02x)\n", crdntl.result);
+		fprintf(stderr, "KNOT Register: error(0x%02x)\n", crdntl.result);
 		return -EPROTO;
 	}
 
@@ -574,7 +603,7 @@ static int cmd_unregister(void)
 	nbytes = write(sock, &msg, sizeof(msg));
 	if (nbytes < 0) {
 		err = errno;
-		printf("KNOT Unregister: %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "KNOT Unregister: %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
@@ -582,12 +611,12 @@ static int cmd_unregister(void)
 	nbytes = receive(sock, &rslt, sizeof(rslt));
 	if (nbytes < 0) {
 		err = errno;
-		printf("KNOT Unregister read(): %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "KNOT Unregister read(): %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if (rslt.result != 0) {
-		printf("KNOT Unregister: error(0x%02x)\n", rslt.result);
+		fprintf(stderr, "KNOT Unregister: error(0x%02x)\n", rslt.result);
 		return -EPROTO;
 	}
 
@@ -596,7 +625,7 @@ static int cmd_unregister(void)
 	return 0;
 }
 
-static int cmd_schema(gboolean auth)
+static int cmd_schema(bool auth)
 {
 	struct json_object *jobj;
 	struct schema schema;
@@ -611,7 +640,7 @@ static int cmd_schema(gboolean auth)
 		goto done;
 
 	if (!opt_uuid) {
-		printf("Device's UUID missing!\n");
+		fprintf(stderr, "Device's UUID missing!\n");
 		return -EINVAL;
 	}
 
@@ -637,33 +666,36 @@ done:
 	 */
 
 	if (!opt_json) {
-		printf("Device's SCHEMA missing!\n");
+		fprintf(stderr, "Device's SCHEMA missing!\n");
 		return -EINVAL;
 	}
 
 	if (stat(opt_json, &sb) == -1) {
 		err = errno;
-		printf("json file: %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "json file: %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if ((sb.st_mode & S_IFMT) != S_IFREG) {
-		printf("json file: invalid argument!\n");
+		fprintf(stderr, "json file: invalid argument!\n");
 		return -EINVAL;
 	}
 
 	jobj = json_object_from_file(opt_json);
 	if (!jobj) {
-		printf("json file(%s): failed to read from file!\n", opt_json);
+		fprintf(stderr, "json file(%s): failed to read from file!\n", opt_json);
 		return -EINVAL;
 	}
 
 	memset(&schema, 0, sizeof(schema));
+	schema.list = l_queue_new();
 	json_object_foreach(jobj, load_schema, &schema);
 	if (!schema.err)
 		err = send_schema(schema.list);
+	else
+		err = -schema.err;
 
-	g_slist_free_full(schema.list, g_free);
+	l_queue_destroy(schema.list, l_free);
 	json_object_put(jobj);
 
 	return err;
@@ -676,7 +708,7 @@ static int cmd_data(void)
 	int err;
 
 	if (!opt_uuid) {
-		printf("Device's UUID missing!\n");
+		fprintf(stderr, "Device's UUID missing!\n");
 		return -EINVAL;
 	}
 
@@ -699,24 +731,24 @@ static int cmd_data(void)
 	 */
 
 	if (!opt_json) {
-		printf("Device's data missing!\n");
+		fprintf(stderr, "Device's data missing!\n");
 		return -EINVAL;
 	}
 
 	if (stat(opt_json, &sb) == -1) {
 		err = errno;
-		printf("json file: %s(%d)\n", strerror(err), err);
+		fprintf(stderr, "json file: %s(%d)\n", strerror(err), err);
 		return -err;
 	}
 
 	if ((sb.st_mode & S_IFMT) != S_IFREG) {
-		printf("json file: invalid argument!\n");
+		fprintf(stderr, "json file: invalid argument!\n");
 		return -EINVAL;
 	}
 
 	jobj = json_object_from_file(opt_json);
 	if (!jobj) {
-		printf("json file(%s): failed to read from file!\n", opt_json);
+		fprintf(stderr, "json file(%s): failed to read from file!\n", opt_json);
 		return -EINVAL;
 	}
 
@@ -737,26 +769,32 @@ static int cmd_unsubscribe(void)
 	return -ENOSYS;
 }
 
-static gboolean send_config(gpointer user_data)
+static void send_config(struct l_timeout *timeout, void *user_data)
 {
 	struct json_object *jobj;
 
-	printf ("Sending config \n");
+	l_info ("Sending config \n");
 
 	jobj = json_object_from_file("json/data-temperature.json");
 	if (!jobj) {
-		printf("json file(%s): failed to read from file!\n", opt_json);
-		return FALSE;
+		fprintf(stderr, "json file(%s): failed to read from file!\n", opt_json);
+		return;
 	}
 	json_object_foreach(jobj, print_json_value, NULL);
 	write_knot_data(jobj);
 	json_object_put(jobj);
-
-	return TRUE;
 }
 
-static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
+static void on_disconnect(struct l_io *io, void *user_data)
+{
+	printf("disconnected from knotd\n");
+}
+
+static void destroy_io(void *user_data) {
+	l_terminate();
+}
+
+static bool proto_receive(struct l_io *io, void *user_data)
 {
 	knot_msg recv;
 	knot_msg resp;
@@ -764,21 +802,15 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 	int err, sock;
 	struct json_object *jobj;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
-		g_main_loop_quit(main_loop);
-		return FALSE;
-	}
-
-	sock = g_io_channel_unix_get_fd(io);
+	sock = l_io_get_fd(io);
 
 	nbytes = read(sock, &recv, sizeof(recv));
 	if (nbytes < 0) {
 		err = errno;
-		printf("read(): %s(%d)\n", strerror(err), err);
-		return TRUE;
+		fprintf(stderr, "read(): %s(%d)\n", strerror(err), err);
+		return true;
 	}
 
-	printf("message: %i", recv.hdr.type);
 	switch (recv.hdr.type) {
 	case KNOT_MSG_PUSH_CONFIG_REQ:
 		printf("sensor_id: %d\n", recv.config.sensor_id);
@@ -794,14 +826,14 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		nbytes = write(sock, &resp, sizeof(knot_msg_item));
 		if (nbytes < 0) {
 			err = errno;
-			printf("node_ops: %s(%d)\n", strerror(err), err);
-			return TRUE;
+			fprintf(stderr, "node_ops: %s(%d)\n", strerror(err), err);
+			return true;
 		}
 		/*
 		 * For testing purposes, assuming the config is to send data
 		 * each 10 seconds.
 		 */
-		g_timeout_add_seconds(10, send_config,NULL);
+		l_timeout_create(10, send_config, NULL, NULL);
 		break;
 	case KNOT_MSG_PUSH_DATA_REQ:
 		printf("sensor_id: %d\n", recv.data.sensor_id);
@@ -816,8 +848,8 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		nbytes = write(sock, &resp, sizeof(knot_msg_data));
 		if (nbytes < 0) {
 			err = errno;
-			printf("node_ops: %s(%d)\n", strerror(err), err);
-			return TRUE;
+			fprintf(stderr, "node_ops: %s(%d)\n", strerror(err), err);
+			return true;
 		}
 		break;
 	case KNOT_MSG_POLL_DATA_REQ:
@@ -841,7 +873,7 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		}
 
 		if (!jobj) {
-			printf("json file(%s): failed to read from file!\n",
+			fprintf(stderr, "json file(%s): failed to read from file!\n",
 								opt_json);
 			return -EINVAL;
 		}
@@ -856,14 +888,14 @@ static gboolean proto_receive(GIOChannel *io, GIOCondition cond,
 		nbytes = write(sock, &resp, sizeof(knot_msg_header) + resp.hdr.payload_len);
 		if (nbytes < 0) {
 			err = errno;
-			printf("node_ops: %s(%d)\n", strerror(err), err);
-			return TRUE;
+			fprintf(stderr, "node_ops: %s(%d)\n", strerror(err), err);
+			return true;
 		}
 
 		break;
 	}
 
-	return TRUE;
+	return true;
 }
 
 static int cmd_config(void)
@@ -871,12 +903,12 @@ static int cmd_config(void)
 	int err;
 
 	if (!opt_uuid) {
-		printf("Device's UUID missing!\n");
+		fprintf(stderr, "Device's UUID missing!\n");
 		return -EINVAL;
 	}
 
 	if (!opt_token) {
-		printf("Device's TOKEN missing!\n");
+		fprintf(stderr, "Device's TOKEN missing!\n");
 		return -EINVAL;
 	}
 
@@ -889,7 +921,7 @@ static int cmd_config(void)
 	err = authenticate(opt_uuid, opt_token);
 
 	if (err) {
-		printf("Authentication failed!\n");
+		fprintf(stderr, "Authentication failed!\n");
 		return -EINVAL;
 	}
 
@@ -904,18 +936,22 @@ static int cmd_connect(void)
 	if (opt_uuid && opt_token) {
 		err = authenticate(opt_uuid, opt_token);
 		if (err) {
-			printf("Error authenticating\n");
+			fprintf(stderr, "Error authenticating\n");
 			return -EINVAL;
 		}
 	} else {
 		err = cmd_register();
 		if (err) {
-			printf("Error registering\n");
+			fprintf(stderr, "Error registering\n");
 			return -EINVAL;
 		}
 	}
 
-	cmd_schema(FALSE);
+	err = cmd_schema(false);
+	if (err < 0) {
+		fprintf(stderr, "Error sending schema: %s (%d)\n", strerror(err), -err);
+		return err;
+	}
 
 	/*
 	 * The listener is started when the ktool starts.
@@ -934,79 +970,145 @@ static int cmd_connect(void)
  * devices. Commands are based on KNOT protocol, and they should be mapped
  * to any specific backend.
  */
-static GOptionEntry options[] = {
-	{ "device-id", 'I', 0, G_OPTION_ARG_INT64, &opt_device_id,
-						"Device's ID", "ID" },
-	{ "uuid", 'u', 0, G_OPTION_ARG_STRING, &opt_uuid,
-						"Device's UUID", "UUID" },
-	{ "token", 't', 0, G_OPTION_ARG_STRING, &opt_token,
-						"Device's token", "TOKEN" },
-	{ "json", 'j', 0, G_OPTION_ARG_FILENAME, &opt_json,
-						"Path to JSON file",
-						"json/data-temperature" },
-	{ "unix", 'U', 0, G_OPTION_ARG_STRING, &opt_unix,
-			"Specify unix socket to connect. Default: knot",
-			"[ knot | :thing:nrfd]" },
-	{ "tty", 'T', 0, G_OPTION_ARG_STRING, &opt_tty,
-			"Specify TTY to connect.", "/dev/ttyUSB0" },
-	{ NULL },
-};
 
-static GOptionEntry commands[] = {
-
-	{ "add", 0, 0, G_OPTION_ARG_NONE, &opt_add,
-	"Register a device to Meshblu. Eg: ./ktool --add [-U=value | T=value| I=value]",
-				NULL },
-	{ "remove", 0, 0, G_OPTION_ARG_NONE, &opt_rm,
-		"Unregister a device from Meshblu. " \
-		"Eg: ./ktool --remove -u=value -t=value [-U=value | T=value]",
-				NULL },
-	{ "schema", 0, 0, G_OPTION_ARG_NONE, &opt_schema,
-	"Get/Put JSON representing device's schema. " \
-	"Eg: ./ktool --schema -u=value -t=value -j=value [-U=value | T=value]",
-				NULL },
-	{ "data", 0, 0, G_OPTION_ARG_NONE, &opt_data,
-	"Sends data of a given device. " \
-	"Eg: ./ktool --data -u=value -t=value -j=value [-U=value | -T=value]",
-				NULL},
-	{ "id", 0, 0, G_OPTION_ARG_NONE, &opt_id,
-		"Identify (Authenticate) a Meshblu device",
-				NULL },
-	{ "subscribe", 0, 0, G_OPTION_ARG_NONE, &opt_subs,
-		"Subscribe for messages of a given device",
-				NULL },
-	{ "unsubscribe", 0, 0, G_OPTION_ARG_NONE, &opt_unsubs,
-		"Unsubscribe for messages",
-				NULL },
-	{ "config", 0, 0, G_OPTION_ARG_NONE, &opt_cfg,
-	"Listen for config file. " \
-	"Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]",
-				NULL },
-	{ "connect", 0, 0, G_OPTION_ARG_NONE, &opt_con,
-	"Comprehensive of add, schema and config. "\
-	"If uuid and token are given, authenticates it. " \
-	"Otherwise, register a new device. " \
-	"Eg: ./ktool --connect -j=value [-u=value | -t=value |-U=value | " \
-	"-T=value]",
-				NULL },
-	{ NULL },
-};
-
-static void sig_term(int sig)
+static void usage(void)
 {
-	g_main_loop_quit(main_loop);
+	printf("ktool - KNoT tools\n"
+		"Usage:\n");
+	printf("\tktool [options]\n");
+	printf("Application Options:\n"
+		"\t-a, --add				Register a device to Meshblu. "
+		"Eg: ./ktool --add [-U=value | T=value| I=value]\n"
+
+		"\t-s, --schema				Get/Put JSON representing device's schema."
+		" Eg: ./ktool --schema -u=value -t=value -j=value [-U=value | T=value]\n"
+
+		"\t-C, --config				Listen for config file."
+		" Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]\n"
+
+		"\t-c, --connect				Comprehensive of add, schema and config."
+		" If uuid and token are given, authenticates it."
+		" Otherwise, register a new device."
+		" Eg: ./ktool --connect -j=value [-u=value | -t=value |-U=value | -T=value]\n"
+
+		"\t-r, --remove				Unregister a device from Meshblu. "
+		"Eg: ./ktool --remove -u=value -t=value [-U=value | T=value]\n"
+
+		"\t-d, --data				Sends data of a given device. "
+		"Eg: ./ktool --data -u=value -t=value -j=value [-U=value | -T=value]\n"
+
+		"\t-i, --id				Identify (Authenticate) a Meshblu device.\n"
+		"\t-S, --subscribe				Subscribe for messages of a given device.\n"
+		"\t-n, --unsubscribe			Unsubscribe for messages.\n"
+		"\nOptions usage:\n"
+		"\t-I, --device-id				Device's ID.\n"
+		"\t-u, --uuid				Device's UUID.\n"
+		"\t-t, --token				Device's token.\n"
+		"\t-j, --json				Path to JSON file.\n"
+		"\t-U, --unix				Specify unix socket to connect. Default: knot.\n"
+		"\t-T, --tty				Specify TTY to connect.\n"
+		"\t-h  --help				Show help options\n");
+}
+
+static const struct option main_options[] = {
+
+	{ "add", no_argument, NULL, 'a' },
+	{ "schema", no_argument, NULL, 's' },
+	{ "config", no_argument, NULL, 'C' },
+	{ "connect", no_argument, NULL, 'c' },
+	{ "remove", no_argument, NULL, 'r' },
+	{ "data", no_argument, NULL, 'd'},
+	{ "id", no_argument, NULL, 'i' },
+	{ "subscribe", no_argument, NULL, 'S' },
+	{ "unsubscribe", no_argument, NULL, 'n' },
+	{ "help", no_argument, NULL, 'h' },
+	{ "device-id", required_argument, NULL, 'I' },
+	{ "uuid", required_argument, NULL, 'u' },
+	{ "token", required_argument, NULL, 't' },
+	{ "json", required_argument, NULL, 'j' },
+	{ "unix", required_argument, NULL, 'U' },
+	{ "tty", required_argument, NULL, 'T' },
+	{ },
+};
+
+
+static int parse_args(int argc, char *argv[])
+{
+	int opt;
+
+	for (;;) {
+		opt = getopt_long(argc, argv, "asCcrdiSnhI:u:t:j:U:T:",
+				  main_options, NULL);
+		if (opt < 0)
+			break;
+
+		switch (opt) {
+		case 'a':
+			opt_add = true;
+			break;
+		case 's':
+			opt_schema = true;
+			break;
+		case 'C':
+			opt_cfg = true;
+			break;
+		case 'c':
+			opt_con = true;
+			break;
+		case 'r':
+			opt_rm = true;
+			break;
+		case 'd':
+			opt_data = true;
+			break;
+		case 'i':
+			opt_id = true;
+			break;
+		case 'S':
+			opt_subs = true;
+			break;
+		case 'n':
+			opt_unsubs = true;
+			break;
+		case 'I':
+			opt_device_id = atoi(optarg);
+			break;
+		case 'u':
+			opt_uuid = l_strdup(optarg);
+			break;
+		case 't':
+			opt_token = l_strdup(optarg);
+			break;
+		case 'j':
+			opt_json = l_strdup(optarg);
+			break;
+		case 'U':
+			opt_unix = l_strdup(optarg);
+			break;
+		case 'T':
+			opt_uuid = l_strdup(optarg);
+			break;
+		case 'h':
+			usage();
+			l_main_exit();
+			return 0;
+		default:
+			return -EINVAL;
+		}
+	}
+
+
+	if (argc - optind > 0) {
+		fprintf(stderr, "Invalid command line parameters\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	GOptionContext *context;
-	GOptionGroup *opt_group;
-	GError *gerr = NULL;
 	int err = 0;
-
-	guint receive_watch_id;
-	GIOChannel *knotd_io;
-	GIOCondition watch_cond;
 
 	opt_uuid = NULL;
 	opt_token = NULL;
@@ -1015,8 +1117,6 @@ int main(int argc, char *argv[])
 
 	printf("KNOT Tool\n");
 
-	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, commands, NULL);
 
 	/* Define options for setting or reading JSON schema of a given
 	 * device(UUID):
@@ -1025,23 +1125,14 @@ int main(int argc, char *argv[])
 	 *  write:
 	 *	ktool --schema --uuid=value --token=value --json=filename
 	 */
-	opt_group = g_option_group_new("options", "Options usage",
-					"Show all schema options", NULL, NULL);
-	g_option_context_add_group(context, opt_group);
-	g_option_group_add_entries(opt_group, options);
-
-	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		printf("Invalid arguments: %s\n", gerr->message);
-		g_error_free(gerr);
-		g_option_context_free(context);
-		exit(EXIT_FAILURE);
+	err = parse_args(argc, argv);
+	if (err < 0) {
+		fprintf(stderr, "parse_args(): %s (%d)\n", strerror(-err), -err);
+		goto main_exit;
 	}
 
-	g_option_context_free(context);
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-	main_loop = g_main_loop_new(NULL, FALSE);
+	if (!l_main_init())
+		goto main_exit;
 
 	if (opt_tty)
 		sock = serial_connect(opt_tty);
@@ -1050,19 +1141,18 @@ int main(int argc, char *argv[])
 
 	if (sock == -1) {
 		err = -errno;
-		printf("connect(): %s (%d)\n", strerror(-err), -err);
+		fprintf(stderr, "connect(): %s (%d)\n", strerror(-err), -err);
 		return err;
 	}
 
 	/*
 	 * Starts watch to receive data from cloud
 	 */
-	knotd_io = g_io_channel_unix_new(sock);
-	watch_cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
-	receive_watch_id = g_io_add_watch(knotd_io, watch_cond, proto_receive,
-									NULL);
-	g_io_channel_unref(knotd_io);
-	printf("watch: %d\n", receive_watch_id);
+	knotd_io = l_io_new(sock);
+	l_io_set_close_on_destroy(knotd_io, true);
+	l_io_set_read_handler(knotd_io, proto_receive, NULL, NULL);
+	l_io_set_disconnect_handler(knotd_io, on_disconnect, NULL, destroy_io);
+	printf("watch: %p\n", knotd_io);
 
 	if (opt_add) {
 		printf("Registering node ...\n");
@@ -1071,7 +1161,7 @@ int main(int argc, char *argv[])
 
 	if (opt_schema) {
 		printf("Registering JSON schema for a device ...\n");
-		err = cmd_schema(TRUE);
+		err = cmd_schema(true);
 	} else if (opt_data) {
 		printf("Setting data for a device ...\n");
 		err = cmd_data();
@@ -1095,13 +1185,11 @@ int main(int argc, char *argv[])
 		err = cmd_connect();
 	}
 
-	if (err < 0) {
-		close(sock);
-		return err;
-	}
+	if (err >= 0)
+		l_main_run_with_signal(l_signal_handler, NULL);
 
-	g_main_loop_run(main_loop);
-	g_main_loop_unref(main_loop);
+main_exit:
+	l_main_exit();
 
 	printf("Exiting\n");
 

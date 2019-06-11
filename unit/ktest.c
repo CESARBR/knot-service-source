@@ -26,8 +26,10 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <assert.h>
+#include <signal.h>
 
-#include <glib.h>
+#include <ell/ell.h>
 
 
 #include <knot/knot_protocol.h>
@@ -130,15 +132,15 @@ static int unix_connect(void)
 	return sock;
 }
 
-static void unix_connect_test(void)
+static void unix_connect_test(const void *test_data)
 {
 	sockfd = unix_connect();
-	g_assert(sockfd > 0);
+	assert(sockfd > 0);
 }
 
-static void unix_close_test(void)
+static void unix_close_test(const void *test_data)
 {
-	g_assert(close(sockfd) == 0);
+	assert(close(sockfd) == 0);
 	sockfd = -1;
 }
 
@@ -164,7 +166,7 @@ static ssize_t do_request(const knot_msg *kmsg, size_t len, knot_msg *kresp)
 	return nbytes;
 }
 
-static void authenticate_test(void)
+static void authenticate_test(const void *test_data)
 {
 	ssize_t size;
 
@@ -178,15 +180,15 @@ static void authenticate_test(void)
 	size = do_request(&kmsg, sizeof(kmsg.auth), &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_AUTH_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.type == KNOT_MSG_AUTH_RSP);
+	assert(kresp.action.result == 0);
 }
 
-static void register_missing_devname_test(void)
+static void register_missing_devname_test(const void *test_data)
 {
 	ssize_t size, plen;
 
@@ -202,15 +204,15 @@ static void register_missing_devname_test(void)
 	size = do_request(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == KNOT_ERR_INVALID);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
-static void register_empty_devname_test(void)
+static void register_empty_devname_test(const void *test_data)
 {
 	ssize_t size, plen;
 
@@ -224,15 +226,15 @@ static void register_empty_devname_test(void)
 	size = do_request(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(size == sizeof(kresp.action));
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == KNOT_ERR_INVALID);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == KNOT_ERR_INVALID);
 }
 
-static void register_valid_devname_test(void)
+static void register_valid_devname_test(const void *test_data)
 {
 	ssize_t size, plen;
 
@@ -249,21 +251,22 @@ static void register_valid_devname_test(void)
 	size = do_request(&kmsg, plen, &kresp);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp.cred));
+	assert(size == sizeof(kresp.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp.action.result == 0);
 
-	g_message("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
+	printf("UUID: %.36s token:%.40s\n", kresp.cred.uuid, kresp.cred.token);
 	memcpy(uuid128, kresp.cred.uuid, sizeof(kresp.cred.uuid));
 	memcpy(token, kresp.cred.token, sizeof(kresp.cred.token));
 }
 
-static void register_repeated_attempt_test(void)
+static void register_repeated_attempt_test(const void *test_data)
 {
 	ssize_t size, plen;
 	knot_msg kresp2;
+	int ret;
 
 	memset(&kresp2, 0, sizeof(kresp2));
 	memset(&kmsg, 0, sizeof(kmsg));
@@ -280,17 +283,18 @@ static void register_repeated_attempt_test(void)
 	size = do_request(&kmsg, plen, &kresp2);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp2.cred));
+	assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp2.action.result == 0);
-	g_assert_cmpmem(&kresp, size, &kresp2, size);
+	assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp2.action.result == 0);
+	ret = memcmp(&kresp, &kresp2, size);
+	assert(ret == 0);
 
-	g_message("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
+	printf("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
 }
 
-static void register_new_id(void)
+static void register_new_id_test(const void *test_data)
 {
 	ssize_t size, plen;
 	knot_msg kresp2;
@@ -314,48 +318,48 @@ static void register_new_id(void)
 	size = do_request(&kmsg, plen, &kresp2);
 
 	/* Response consistency */
-	g_assert(size == sizeof(kresp2.cred));
+	assert(size == sizeof(kresp2.cred));
 
 	/* Response opcode & result */
-	g_assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
-	g_assert(kresp2.action.result == 0);
+	assert(kresp2.hdr.type == KNOT_MSG_REG_RSP);
+	assert(kresp2.action.result == 0);
 
 	/* Compare with the first received response */
 	ret = memcmp(&kresp, &kresp2, size);
-	g_assert(ret != 0);
+	assert(ret != 0);
 
-	g_message("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
+	printf("UUID: %.36s token:%.40s\n", kresp2.cred.uuid, kresp2.cred.token);
 }
 
-static void unregister_valid_device_test(void)
+static void unregister_valid_device_test(const void *test_data)
 {
 	memset(&kmsg, 0, sizeof(kmsg));
 	memset(&kresp, 0, sizeof(kresp));
 	kmsg.hdr.type = KNOT_MSG_UNREG_REQ;
 
 	kmsg.hdr.payload_len = 0;
-	g_assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
+	assert(do_request(&kmsg, sizeof(kmsg.unreg), &kresp) ==
 							sizeof(kresp.action));
-	g_assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
-	g_assert(kresp.hdr.type == KNOT_MSG_UNREG_RSP);
-	g_assert(kresp.action.result == 0);
+	assert(kresp.hdr.payload_len == sizeof(kresp.action.result));
+	assert(kresp.hdr.type == KNOT_MSG_UNREG_RSP);
+	assert(kresp.action.result == 0);
 }
 
-static void tcp_connect_test(void)
+static void tcp_connect_test(const void *test_data)
 {
 	sockfd = tcp_connect();
-	g_assert(sockfd > 0);
+	assert(sockfd > 0);
 }
 
-static void tcp6_connect_test(void)
+static void tcp6_connect_test(const void *test_data)
 {
 	sockfd = tcp6_connect();
-	g_assert(sockfd > 0);
+	assert(sockfd > 0);
 }
 
-static void tcp_close_test(void)
+static void tcp_close_test(const void *test_data)
 {
-	g_assert(close(sockfd) == 0);
+	assert(close(sockfd) == 0);
 	sockfd = -1;
 }
 
@@ -365,76 +369,76 @@ int main(int argc, char *argv[])
 
 	signal(SIGPIPE, SIG_IGN);
 
-	g_test_init (&argc, &argv, NULL);
+	l_test_init(&argc, &argv);
 
-	g_test_add_func("/1/unix_connect", unix_connect_test);
-	g_test_add_func("/1/register_missing_devname",
-				register_missing_devname_test);
-	g_test_add_func("/1/unix_close", unix_close_test);
+	l_test_add("/1/unix_connect", unix_connect_test, NULL);
+	l_test_add("/1/register_missing_devname",
+				register_missing_devname_test, NULL);
+	l_test_add("/1/unix_close", unix_close_test, NULL);
 
-	g_test_add_func("/2/tcp_connect", tcp_connect_test);
-	g_test_add_func("/2/register_missing_devname",
-				register_missing_devname_test);
-	g_test_add_func("/2/tcp_close", tcp_close_test);
-	g_test_add_func("/2/tcp_connect6", tcp6_connect_test);
-	g_test_add_func("/2/register_missing_devname6",
-				register_missing_devname_test);
-	g_test_add_func("/2/tcp_close6", tcp_close_test);
+	l_test_add("/2/tcp_connect", tcp_connect_test, NULL);
+	l_test_add("/2/register_missing_devname",
+				register_missing_devname_test, NULL);
+	l_test_add("/2/tcp_close", tcp_close_test, NULL);
+	l_test_add("/2/tcp_connect6", tcp6_connect_test, NULL);
+	l_test_add("/2/register_missing_devname6",
+				register_missing_devname_test, NULL);
+	l_test_add("/2/tcp_close6", tcp_close_test, NULL);
 
-	g_test_add_func("/3/unix_connect", unix_connect_test);
-	g_test_add_func("/3/register_empty_devname",
-				register_empty_devname_test);
-	g_test_add_func("/3/unix_close", unix_close_test);
+	l_test_add("/3/unix_connect", unix_connect_test, NULL);
+	l_test_add("/3/register_empty_devname",
+				register_empty_devname_test, NULL);
+	l_test_add("/3/unix_close", unix_close_test, NULL);
 
-	g_test_add_func("/4/tcp_connect", tcp_connect_test);
-	g_test_add_func("/4/tcp_register_empty_devname",
-				register_empty_devname_test);
-	g_test_add_func("/4/tcp_close", tcp_close_test);
-	g_test_add_func("/4/tcp_connect6", tcp6_connect_test);
-	g_test_add_func("/4/tcp_register_empty_devname6",
-				register_empty_devname_test);
-	g_test_add_func("/4/tcp_close6", tcp_close_test);
+	l_test_add("/4/tcp_connect", tcp_connect_test, NULL);
+	l_test_add("/4/tcp_register_empty_devname",
+				register_empty_devname_test, NULL);
+	l_test_add("/4/tcp_close", tcp_close_test, NULL);
+	l_test_add("/4/tcp_connect6", tcp6_connect_test, NULL);
+	l_test_add("/4/tcp_register_empty_devname6",
+				register_empty_devname_test, NULL);
+	l_test_add("/4/tcp_close6", tcp_close_test, NULL);
 
-	g_test_add_func("/5/tcp_connect", tcp_connect_test);
-	g_test_add_func("/5/tcp_register_empty_devname",
-				register_empty_devname_test);
-	g_test_add_func("/5/tcp_close", tcp_close_test);
-	g_test_add_func("/5/tcp_connect6", tcp6_connect_test);
-	g_test_add_func("/5/tcp_register_empty_devname6",
-				register_empty_devname_test);
-	g_test_add_func("/5/tcp_close6", tcp_close_test);
+	l_test_add("/5/tcp_connect", tcp_connect_test, NULL);
+	l_test_add("/5/tcp_register_empty_devname",
+				register_empty_devname_test, NULL);
+	l_test_add("/5/tcp_close", tcp_close_test, NULL);
+	l_test_add("/5/tcp_connect6", tcp6_connect_test, NULL);
+	l_test_add("/5/tcp_register_empty_devname6",
+				register_empty_devname_test, NULL);
+	l_test_add("/5/tcp_close6", tcp_close_test, NULL);
 
-	g_test_add_func("/6/unix_connect", unix_connect_test);
-	g_test_add_func("/6/register_valid_devname",
-				register_valid_devname_test);
-	g_test_add_func("/6/register_repeated_attempt",
-				register_repeated_attempt_test);
-	g_test_add_func("/6/register_new_id",
-				register_new_id);
-	g_test_add_func("/6/unix_close", unix_close_test);
+	l_test_add("/6/unix_connect", unix_connect_test, NULL);
+	l_test_add("/6/register_valid_devname",
+				register_valid_devname_test, NULL);
+	l_test_add("/6/register_repeated_attempt",
+				register_repeated_attempt_test, NULL);
+	l_test_add("/6/register_new_id",
+				register_new_id_test, NULL);
+	l_test_add("/6/unix_close", unix_close_test, NULL);
 
-	g_test_add_func("/7/tcp_connect", unix_connect_test);
-	g_test_add_func("/7/register_valid_devname",
-				register_valid_devname_test);
-	g_test_add_func("/7/register_repeated_attempt",
-				register_repeated_attempt_test);
-	g_test_add_func("/7/register_new_id",
-				register_new_id);
-	g_test_add_func("/7/tcp_close", unix_close_test);
+	l_test_add("/7/tcp_connect", unix_connect_test, NULL);
+	l_test_add("/7/register_valid_devname",
+				register_valid_devname_test, NULL);
+	l_test_add("/7/register_repeated_attempt",
+				register_repeated_attempt_test, NULL);
+	l_test_add("/7/register_new_id",
+				register_new_id_test, NULL);
+	l_test_add("/7/tcp_close", unix_close_test, NULL);
 
-	g_test_add_func("/8/unix_connect", unix_connect_test);
-	g_test_add_func("/8/authenticate",
-				authenticate_test);
-	g_test_add_func("/8/unregister_valid_device",
-				unregister_valid_device_test);
-	g_test_add_func("/8/unix_close", unix_close_test);
+	l_test_add("/8/unix_connect", unix_connect_test, NULL);
+	l_test_add("/8/authenticate",
+				authenticate_test, NULL);
+	l_test_add("/8/unregister_valid_device",
+				unregister_valid_device_test, NULL);
+	l_test_add("/8/unix_close", unix_close_test, NULL);
 
-	g_test_add_func("/9/tcp_connect", unix_connect_test);
-	g_test_add_func("/9/register_valid_devname",
-				register_valid_devname_test);
-	g_test_add_func("/9/unregister_valid_device",
-				unregister_valid_device_test);
-	g_test_add_func("/9/tcp_close", unix_close_test);
+	l_test_add("/9/tcp_connect", unix_connect_test, NULL);
+	l_test_add("/9/register_valid_devname",
+				register_valid_devname_test, NULL);
+	l_test_add("/9/unregister_valid_device",
+				unregister_valid_device_test, NULL);
+	l_test_add("/9/tcp_close", unix_close_test, NULL);
 
-	return g_test_run();
+	return l_test_run();
 }
