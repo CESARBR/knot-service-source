@@ -48,6 +48,7 @@
 #include "device.h"
 #include "proxy.h"
 #include "proto.h"
+#include "amqp.h"
 #include "parser.h"
 #include "msg.h"
 
@@ -1486,11 +1487,19 @@ int msg_start(struct settings *settings)
 		goto proto_fail;
 	}
 
+	err = amqp_start(settings);
+	if (err < 0) {
+		hal_log_error("amqp_start(): %s", strerror(-err));
+		goto amqp_fail;
+	}
+
 	device_id_list = l_queue_new();
 	start_to =  l_timeout_create_ms(1, start_timeout, settings, NULL);
 
 	return (start_to ? 0 : -ENOMEM);
 
+amqp_fail:
+	proto_stop();
 proto_fail:
 	device_stop();
 
@@ -1505,6 +1514,7 @@ void msg_stop(void)
 	node_stop();
 	if (proxy_enabled)
 		proxy_stop();
+	amqp_stop();
 	proto_stop();
 	device_stop();
 
