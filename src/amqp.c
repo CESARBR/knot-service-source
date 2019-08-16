@@ -95,7 +95,12 @@ int amqp_start(struct settings *settings)
 	int status;
 
 	hal_log_dbg("Trying to connect with rabbitmq");
-	amqp_default_connection_info(&cinfo);
+	status = amqp_parse_url((char*) settings->rabbitmq_url, &cinfo);
+	if (status) {
+		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
+		return -1;
+	}
+
 	conn = amqp_new_connection();
 	socket = amqp_tcp_socket_new(conn);
 	if (!socket) {

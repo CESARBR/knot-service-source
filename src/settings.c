@@ -40,6 +40,7 @@
 #define DEFAULT_HOST			"localhost"
 #define DEFAULT_PORT			3000
 #define DEFAULT_PROTO			"ws"
+#define DEFAULT_AMQP_URL		"amqp://guest:guest@localhost:5672"
 
 static bool detach = true;
 static bool help = false;
@@ -55,7 +56,9 @@ static void usage(void)
 		"\t-p, --port              Remote port\n"
 		"\t-P, --proto             Protocol used to communicate with cloud server: socketio, ws\n"
 		"\t-n, --nodetach          Disable running in background\n"
-		"\t-r, --user-root	   Run as root(default is knot)\n"
+		"\t-r, --user-root         Run as root(default is knot)\n"
+		"\t-R, --rabbitmq-url      Connect with a different url "
+		"amqp://[$USERNAME[:$PASSWORD]\\@]$HOST[:$PORT]/[$VHOST]\n"
 		"\t-H, --help              Show help options\n");
 }
 
@@ -64,6 +67,7 @@ static const struct option main_options[] = {
 	{ "host",		required_argument,	NULL, 'h' },
 	{ "port",		required_argument,	NULL, 'p' },
 	{ "proto",		required_argument,	NULL, 'P' },
+	{ "rabbitmq-url",	required_argument,	NULL, 'R' },
 	{ "nodetach",		no_argument,		NULL, 'n' },
 	{ "user-root",		no_argument,		NULL, 'r' },
 	{ "help",		no_argument,		NULL, 'H' },
@@ -75,7 +79,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "c:h:p:P:nrbH",
+		opt = getopt_long(argc, argv, "c:h:p:P:R:nrbH",
 				  main_options, NULL);
 		if (opt < 0)
 			break;
@@ -92,6 +96,9 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 			break;
 		case 'P':
 			settings->proto = optarg;
+			break;
+		case 'R':
+			settings->rabbitmq_url = optarg;
 			break;
 		case 'n':
 			settings->detach = false;
@@ -137,6 +144,7 @@ struct settings *settings_load(int argc, char *argv[])
 	settings->help = help;
 	settings->uuid = NULL;
 	settings->token = NULL;
+	settings->rabbitmq_url = l_strdup(DEFAULT_AMQP_URL);
 
 	if (parse_args(argc, argv, settings) < 0)
 		goto failure;
@@ -207,5 +215,6 @@ void settings_free(struct settings *settings)
 	l_free(settings->host);
 	l_free(settings->uuid);
 	l_free(settings->token);
+	l_free(settings->rabbitmq_url);
 	l_free(settings);
 }

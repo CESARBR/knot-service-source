@@ -28,6 +28,7 @@ struct settings {
 	const char *proto;
 	char *uuid;
 	char *token;
+	char *rabbitmq_url;
 
 	bool help;
 	bool detach;
