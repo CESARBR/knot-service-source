@@ -21,3 +21,7 @@
 
 int cloud_start(struct settings *settings);
 void cloud_stop(void);
+int cloud_publish_data(const char *id, uint8_t sensor_id,
+		       uint8_t value_type,
+		       const knot_value_type *value,
+		       uint8_t kval_len);
