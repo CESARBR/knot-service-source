@@ -254,89 +254,6 @@ static json_object *schema_create_list(struct l_queue *schema_list)
 }
 
 /*
- * TODO: consider moving this to knot-protocol
- */
-static int knot_value_as_int(const knot_value_type *data)
-{
-	return data->val_i;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static double knot_value_as_double(const knot_value_type *data)
-{
-	return (double) data->val_f;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static bool knot_value_as_boolean(const knot_value_type *data)
-{
-	return data->val_b;
-}
-
-static char *knot_value_as_raw(const knot_value_type *data,
-			       uint8_t kval_len, size_t *encoded_len)
-{
-	char *encoded;
-	size_t olen;
-
-	encoded = l_base64_encode(data->raw, kval_len, 0, &olen);
-	if (!encoded)
-		return NULL;
-
-	*encoded_len = olen;
-
-	return encoded;
-}
-
-static json_object *data_create_object(uint8_t sensor_id, uint8_t value_type,
-				       const knot_value_type *value,
-				       uint8_t kval_len)
-{
-	json_object *data;
-	char *encoded;
-	size_t encoded_len;
-
-	data = json_object_new_object();
-	json_object_object_add(data, "sensor_id",
-			       json_object_new_int(sensor_id));
-
-	switch (value_type) {
-	case KNOT_VALUE_TYPE_INT:
-		json_object_object_add(data, "value",
-				json_object_new_int(knot_value_as_int(value)));
-		break;
-	case KNOT_VALUE_TYPE_FLOAT:
-		json_object_object_add(data, "value",
-			json_object_new_double(knot_value_as_double(value)));
-		break;
-	case KNOT_VALUE_TYPE_BOOL:
-		json_object_object_add(data, "value",
-			json_object_new_boolean(knot_value_as_boolean(value)));
-		break;
-	case KNOT_VALUE_TYPE_RAW:
-		/* Encode as base64 */
-		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded) {
-			json_object_put(data);
-			return NULL;
-		}
-
-		json_object_object_add(data, "value",
-			json_object_new_string_len(encoded, encoded_len));
-		break;
-	default:
-		json_object_put(data);
-		return NULL;
-	}
-
-	return data;
-}
-
-/*
  * Updates the 'devices' db, removing the sensor_id that just sent the data
  */
 int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
@@ -515,7 +432,8 @@ int proto_data(int proto_socket, const char *uuid, const char *token,
 	const char *data_as_string;
 	int result, err;
 
-	data = data_create_object(sensor_id, value_type, value, kval_len);
+	data = parser_data_create_object(sensor_id, value_type, value,
+					 kval_len);
 	if (!data) {
 		result = KNOT_ERR_INVALID;
 		goto done;
