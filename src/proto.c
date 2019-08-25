@@ -424,37 +424,6 @@ int proto_schema(int proto_socket, const char *uuid,
 	return result;
 }
 
-int proto_data(int proto_socket, const char *uuid, const char *token,
-	       uint8_t sensor_id, uint8_t value_type,
-	       const knot_value_type *value, uint8_t kval_len)
-{
-	struct json_object *data;
-	const char *data_as_string;
-	int result, err;
-
-	data = parser_data_create_object(uuid, sensor_id, value_type, value,
-					 kval_len);
-	if (!data) {
-		result = KNOT_ERR_INVALID;
-		goto done;
-	}
-
-	data_as_string = json_object_to_json_string(data);
-
-	err = proto->data(proto_socket, uuid, token, data_as_string);
-
-	json_object_put(data);
-
-	if (err < 0) {
-		hal_log_error("manager data(): %s(%d)", strerror(-err), -err);
-		result = KNOT_ERR_CLOUD_FAILURE;
-	} else
-		result = 0;
-
-done:
-	return result;
-}
-
 int proto_rmnode(int proto_socket, const char *uuid, const char *token)
 {
 	json_raw_t response = { NULL, 0 };

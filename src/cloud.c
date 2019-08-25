@@ -28,10 +28,20 @@
 #endif
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <knot/knot_protocol.h>
 
 #include "settings.h"
 #include "amqp.h"
 #include "cloud.h"
+
+int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
+		       const knot_value_type *value,
+		       uint8_t kval_len)
+{
+	// TODO: publish a msg data
+	return 0;
+}
 
 int cloud_start(struct settings *settings)
 {

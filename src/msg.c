@@ -740,6 +740,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
 	const char *json_str;
+	char id[KNOT_ID_LEN + 1];
 	json_object *jobj;
 	int proto_sock;
 	int8_t result;
@@ -757,6 +758,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 		return KNOT_ERR_PERM;
 	}
 
+	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, session->id);
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
@@ -770,9 +772,10 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
-	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type,
-			    kvalue, kval_len);
+	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
+				    kvalue, kval_len);
+	if (result < 0)
+		goto done;
 
 	/* Remove pending get data request & update cloud */
 	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
@@ -830,6 +833,7 @@ static int8_t msg_setdata_resp(struct session *session,
 {
 	const knot_msg_schema *schema;
 	const char *json_str;
+	char id[KNOT_ID_LEN + 1];
 	json_object *jsoarray;
 	json_object *jsokey;
 	json_object *jso;
@@ -854,6 +858,7 @@ static int8_t msg_setdata_resp(struct session *session,
 		return KNOT_ERR_PERM;
 	}
 
+	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, session->id);
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
@@ -868,9 +873,8 @@ static int8_t msg_setdata_resp(struct session *session,
 
 	proto_sock = l_io_get_fd(session->proto_channel);
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
-	result = proto_data(proto_sock, session->uuid, session->token,
-			    sensor_id, schema->values.value_type,
-			    kvalue, kval_len);
+	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
+				    kvalue, kval_len);
 	if (result != 0)
 		return result;
 
