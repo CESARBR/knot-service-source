@@ -34,6 +34,7 @@
 #include <ell/ell.h>
 #include <hal/linux_log.h>
 #include <amqp.h>
+#include <amqp_framing.h>
 #include <amqp_tcp_socket.h>
 
 #include "settings.h"
@@ -85,11 +86,44 @@ static const char *amqp_rpc_reply_string(amqp_rpc_reply_t reply)
 		return "";
 	}
 }
+
 int8_t amqp_publish_persistent_message(const char *exchange,
-		const char *routing_keys, const char *body)
+				       const char *routing_keys,
+				       const char *body)
 {
-	// TODO
-	return 0;
+	amqp_basic_properties_t props;
+	amqp_rpc_reply_t resp;
+	int8_t rc; // Return Code
+
+	/* Declare the exchange as durable */
+	amqp_exchange_declare(conn, 1,
+			amqp_cstring_bytes(exchange),
+			amqp_cstring_bytes("topic"),
+			0 /* passive*/,
+			1 /* durable */,
+			0 /* auto_delete*/,
+			0 /* internal */,
+			amqp_empty_table);
+	resp = amqp_get_rpc_reply(conn);
+	if (resp.reply_type != AMQP_RESPONSE_NORMAL) {
+		hal_log_error("amqp_exchange_declare(): %s",
+				amqp_rpc_reply_string(resp));
+		return -1;
+	}
+
+	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG |
+			AMQP_BASIC_DELIVERY_MODE_FLAG;
+	props.content_type = amqp_cstring_bytes("text/plain");
+	props.delivery_mode = AMQP_DELIVERY_PERSISTENT;
+	rc = amqp_basic_publish(conn, 1, amqp_cstring_bytes(exchange),
+			amqp_cstring_bytes(routing_keys),
+			0 /* mandatory */,
+			0 /* immediate */,
+			&props, amqp_cstring_bytes(body));
+	if (rc < 0)
+		hal_log_error("amqp_basic_publish(): %s",
+				amqp_error_string2(rc));
+	return rc;
 }
 
 int amqp_start(struct settings *settings)
