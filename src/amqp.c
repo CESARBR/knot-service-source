@@ -85,6 +85,12 @@ static const char *amqp_rpc_reply_string(amqp_rpc_reply_t reply)
 		return "";
 	}
 }
+int8_t amqp_publish_persistent_message(const char *exchange,
+		const char *routing_keys, const char *body)
+{
+	// TODO
+	return 0;
+}
 
 int amqp_start(struct settings *settings)
 {

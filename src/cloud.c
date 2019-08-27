@@ -29,18 +29,38 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <ell/ell.h>
+#include <json-c/json.h>
+
 #include <knot/knot_protocol.h>
 
 #include "settings.h"
 #include "amqp.h"
+#include "parser.h"
 #include "cloud.h"
+
+#define AMQP_CLOUD_EXCHANGE "cloud"
+#define AMQP_CMD_DATA_PUBLISH "data.publish"
 
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 		       const knot_value_type *value,
 		       uint8_t kval_len)
 {
-	// TODO: publish a msg data
-	return 0;
+	json_object *jobj_data;
+	const char *json_str;
+	int result;
+
+	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
+				       kval_len);
+	json_str = json_object_to_json_string(jobj_data);
+	result = amqp_publish_persistent_message(AMQP_CLOUD_EXCHANGE,
+						 AMQP_CMD_DATA_PUBLISH,
+						 json_str);
+	if (result < 0)
+		result = KNOT_ERR_CLOUD_FAILURE;
+
+	json_object_put(jobj_data);
+	return result;
 }
 
 int cloud_start(struct settings *settings)
