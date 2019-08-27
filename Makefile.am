@@ -30,6 +30,7 @@ src_knotd_SOURCES = src/main.c \
 			src/proxy.c src/proxy.h \
 			src/parser.c src/parser.h \
 			src/amqp.c src/amqp.h \
+			src/cloud.c src/cloud.h \
 			$(modules_sources)
 
 src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @RABBITMQ_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ -lm
