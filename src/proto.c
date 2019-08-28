@@ -432,7 +432,7 @@ int proto_data(int proto_socket, const char *uuid, const char *token,
 	const char *data_as_string;
 	int result, err;
 
-	data = parser_data_create_object(sensor_id, value_type, value,
+	data = parser_data_create_object(uuid, sensor_id, value_type, value,
 					 kval_len);
 	if (!data) {
 		result = KNOT_ERR_INVALID;
