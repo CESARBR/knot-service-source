@@ -628,14 +628,22 @@ static char *knot_value_as_raw(const knot_value_type *data,
 	return encoded;
 }
 
-json_object *parser_data_create_object(uint8_t sensor_id, uint8_t value_type,
+json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
+				       uint8_t value_type,
 				       const knot_value_type *value,
 				       uint8_t kval_len)
 {
+	json_object *json_msg;
 	json_object *data;
+	json_object *json_array;
 	char *encoded;
 	size_t encoded_len;
 
+	json_msg = json_object_new_object();
+	json_array = json_object_new_array();
+
+	json_object_object_add(json_msg, "id",
+			       json_object_new_string(device_id));
 	data = json_object_new_object();
 	json_object_object_add(data, "sensor_id",
 			       json_object_new_int(sensor_id));
@@ -656,18 +664,34 @@ json_object *parser_data_create_object(uint8_t sensor_id, uint8_t value_type,
 	case KNOT_VALUE_TYPE_RAW:
 		/* Encode as base64 */
 		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded) {
-			json_object_put(data);
-			return NULL;
-		}
+		if (!encoded)
+			goto fail;
 
 		json_object_object_add(data, "value",
 			json_object_new_string_len(encoded, encoded_len));
 		break;
 	default:
-		json_object_put(data);
-		return NULL;
+		goto fail;
 	}
 
-	return data;
+	json_object_array_add(json_array, data);
+	json_object_object_add(json_msg, "data", json_array);
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "data": [{
+	 *     "sensor_id": 1,
+	 *     "value": false,
+	 *   }]
+	 * }
+	 */
+
+	return json_msg;
+fail:
+	json_object_put(data);
+	json_object_put(json_array);
+	json_object_put(json_msg);
+	return NULL;
 }
