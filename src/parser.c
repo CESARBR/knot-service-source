@@ -119,7 +119,8 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 	json_object *jobjarray, *jobjentry, *jobjkey;
 	struct l_queue *list;
 	knot_msg_schema *entry;
-	int sensor_id, value_type, unit, type_id, i;
+	int sensor_id, value_type, unit, type_id;
+	uint64_t i;
 	const char *name;
 
 	jobjarray = json_tokener_parse(json_str);
@@ -226,7 +227,8 @@ struct l_queue *parser_config_to_list(const char *json_str)
 	json_object *jobjarray, *jobjentry, *jobjkey;
 	struct l_queue *list;
 	knot_msg_config *config;
-	int sensor_id, event_flags, time_sec, i;
+	int sensor_id, event_flags, time_sec;
+	uint64_t i;
 	knot_value_type lower_data;
 	knot_value_type upper_data;
 	json_type jtype;
@@ -482,7 +484,7 @@ struct l_queue *parser_sensorid_to_list(const char *json_str)
 	json_object *jobjentry;
 	json_object *jobjkey;
 	int sensor_id;
-	int i;
+	uint64_t i;
 
 	jobjarray = json_tokener_parse(json_str);
 	if (!jobjarray)
