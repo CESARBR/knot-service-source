@@ -1513,13 +1513,19 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	cloud_set_cbs(on_update_cb, on_request_cb, NULL);
+	err = cloud_set_cbs(on_update_cb, on_request_cb, NULL);
+	if (err < 0) {
+		hal_log_error("cloud_set_cbs(): %s", strerror(-err));
+		goto cloud_set_cbs_fail;
+	}
 
 	device_id_list = l_queue_new();
 	start_to =  l_timeout_create_ms(1, start_timeout, settings, NULL);
 
 	return (start_to ? 0 : -ENOMEM);
 
+cloud_set_cbs_fail:
+	cloud_stop();
 cloud_fail:
 	proto_stop();
 proto_fail:

@@ -184,6 +184,79 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 	return rc;
 }
 
+amqp_bytes_t amqp_declare_new_queue(const char *name)
+{
+	amqp_bytes_t queue;
+	amqp_queue_declare_ok_t *r;
+
+	r = amqp_queue_declare(conn, 1,
+			amqp_cstring_bytes(name),
+			0, /* passive */
+			1, /* durable */
+			0, /* exclusive */
+			0, /* auto-delete */
+			amqp_empty_table);
+
+	if (amqp_get_rpc_reply(conn).reply_type !=
+			       AMQP_RESPONSE_NORMAL) {
+		hal_log_error("Error declaring queue name");
+		queue.bytes = NULL;
+	}
+
+	queue = amqp_bytes_malloc_dup(r->queue);
+	if (queue.bytes == NULL)
+		hal_log_error("Out of memory while copying queue buffer");
+
+	return queue;
+}
+
+int amqp_set_queue_to_consume(amqp_bytes_t queue,
+			      const char *exchange,
+			      const char *routing_key)
+{
+	if (exchange == NULL || routing_key == NULL)
+		return -1;
+
+	/* Declare the exchange as durable */
+	amqp_exchange_declare(conn, 1,
+			amqp_cstring_bytes(exchange),
+			amqp_cstring_bytes("topic"),
+			0 /* passive*/,
+			1 /* durable */,
+			0 /* auto_delete*/,
+			0 /* internal */,
+			amqp_empty_table);
+
+	/* Set up to bind a queue to an exchange */
+	amqp_queue_bind(conn, 1, queue,
+			amqp_cstring_bytes(exchange),
+			amqp_cstring_bytes(routing_key),
+			amqp_empty_table);
+
+	if (amqp_get_rpc_reply(conn).reply_type !=
+			       AMQP_RESPONSE_NORMAL) {
+		hal_log_error("Error while binding queue");
+		return -1;
+	}
+
+	/* Start a queue consumer */
+	amqp_basic_consume(conn, 1,
+			queue,
+			amqp_empty_bytes,
+			0, /* no_local */
+			1, /* no_ack */
+			0, /* exclusive */
+			amqp_empty_table);
+
+	if (amqp_get_rpc_reply(conn).reply_type !=
+			       AMQP_RESPONSE_NORMAL) {
+		hal_log_error("Error while starting consumer");
+		return -1;
+	}
+
+	return 0;
+}
+
 int amqp_start(struct settings *settings)
 {
 	int err;
