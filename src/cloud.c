@@ -64,7 +64,22 @@ static bool cloud_receive_message(const char *exchange,
 				  const char *routing_key,
 				  const char *body, void *user_data)
 {
-	/* TODO: Call correct msg callback function */
+	if (strcmp(AMQP_EXCHANGE_FOG, exchange) != 0)
+		return true;
+
+	/* TODO: Parser body message */
+
+	if (cloud_cbs.update_cb != NULL &&
+	    strcmp(AMQP_EVENT_DATA_UPDATE, routing_key) == 0) {
+		return true;
+		/* Call cloud_cbs.update_cb */
+	}
+
+	if (cloud_cbs.request_cb != NULL &&
+	    strcmp(AMQP_EVENT_DATA_REQUEST, routing_key) == 0) {
+		return true;
+		/* Call cloud_cbs.request_cb */
+	}
 	return true;
 }
 
