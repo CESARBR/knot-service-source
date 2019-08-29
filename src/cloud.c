@@ -42,6 +42,13 @@
 #define AMQP_CLOUD_EXCHANGE "cloud"
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
 
+struct cloud_callbacks {
+	cloud_downstream_cb_t update_cb;
+	cloud_downstream_cb_t request_cb;
+};
+
+static struct cloud_callbacks cloud_cbs;
+
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 		       const knot_value_type *value,
 		       uint8_t kval_len)
@@ -61,6 +68,16 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 
 	json_object_put(jobj_data);
 	return result;
+}
+
+int cloud_set_cbs(cloud_downstream_cb_t on_update,
+		  cloud_downstream_cb_t on_request,
+		  void *user_data)
+{
+	cloud_cbs.update_cb = on_update;
+	cloud_cbs.request_cb = on_request;
+
+	return 0;
 }
 
 int cloud_start(struct settings *settings)

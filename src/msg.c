@@ -1475,6 +1475,20 @@ connect_fail:
 	l_timeout_modify(timeout, 5);
 }
 
+static bool on_update_cb(const char *id, struct l_queue *data,
+			 void *user_data)
+{
+	/* TODO: new set_data */
+	return true;
+}
+
+static bool on_request_cb(const char *id, struct l_queue *data,
+			  void *user_data)
+{
+	/* TODO: new get_data */
+	return true;
+}
+
 int msg_start(struct settings *settings)
 {
 	int err;
@@ -1498,6 +1512,8 @@ int msg_start(struct settings *settings)
 		hal_log_error("cloud_start(): %s", strerror(-err));
 		goto cloud_fail;
 	}
+
+	cloud_set_cbs(on_update_cb, on_request_cb, NULL);
 
 	device_id_list = l_queue_new();
 	start_to =  l_timeout_create_ms(1, start_timeout, settings, NULL);
