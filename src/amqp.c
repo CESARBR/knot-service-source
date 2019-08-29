@@ -87,6 +87,64 @@ static const char *amqp_rpc_reply_string(amqp_rpc_reply_t reply)
 	}
 }
 
+static int start_connection(struct settings *settings)
+{
+	amqp_socket_t *socket;
+	struct amqp_connection_info cinfo;
+	amqp_rpc_reply_t r;
+	struct timeval timeout = { .tv_usec = AMQP_CONNECTION_TIMEOUT_US };
+	int status;
+
+	hal_log_dbg("Trying to connect to rabbitmq");
+	status = amqp_parse_url((char *) settings->rabbitmq_url, &cinfo);
+	if (status) {
+		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
+		return -1;
+	}
+
+	conn = amqp_new_connection();
+
+	socket = amqp_tcp_socket_new(conn);
+	if (!socket) {
+		amqp_destroy_connection(conn);
+		hal_log_error("error creating tcp socket\n");
+		return -1;
+	}
+
+	status = amqp_socket_open_noblock(socket, cinfo.host, cinfo.port,
+					  &timeout);
+	if (status) {
+		amqp_destroy_connection(conn);
+		hal_log_error("error opening socket\n");
+		return -1;
+	}
+
+	r = amqp_login(conn, cinfo.vhost,
+			AMQP_DEFAULT_MAX_CHANNELS, AMQP_DEFAULT_FRAME_SIZE,
+			AMQP_DEFAULT_HEARTBEAT, AMQP_SASL_METHOD_PLAIN,
+			cinfo.user, cinfo.password);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
+		amqp_destroy_connection(conn);
+		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
+		return -1;
+	}
+
+	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s\n", cinfo.user,
+		     cinfo.password, cinfo.host, cinfo.port, cinfo.vhost);
+
+	amqp_channel_open(conn, 1);
+	r = amqp_get_rpc_reply(conn);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
+		amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
+		amqp_destroy_connection(conn);
+		hal_log_error("amqp_channel_open(): %s",
+				amqp_rpc_reply_string(r));
+		return -1;
+	}
+
+	return 0;
+}
+
 int8_t amqp_publish_persistent_message(const char *exchange,
 				       const char *routing_keys,
 				       const char *body)
@@ -128,51 +186,15 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 
 int amqp_start(struct settings *settings)
 {
-	amqp_socket_t *socket;
-	struct amqp_connection_info cinfo;
-	amqp_rpc_reply_t r;
-	struct timeval timeout = { .tv_usec=AMQP_CONNECTION_TIMEOUT_US };
-	int status;
+	int err;
 
-	hal_log_dbg("Trying to connect with rabbitmq");
-	status = amqp_parse_url((char*) settings->rabbitmq_url, &cinfo);
-	if (status) {
-		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
+	err = start_connection(settings);
+	if (err) {
+		hal_log_error("Error on start connection\n");
 		return -1;
 	}
 
-	conn = amqp_new_connection();
-	socket = amqp_tcp_socket_new(conn);
-	if (!socket) {
-		hal_log_error("error creating tcp socket\n");
-		return -1;
-	}
-
-	status = amqp_socket_open_noblock(socket, cinfo.host, cinfo.port,
-					  &timeout);
-	if (status) {
-		hal_log_error("error opening socket\n");
-		return -1;
-	}
-
-	r = amqp_login(conn, cinfo.vhost, AMQP_DEFAULT_MAX_CHANNELS,
-			AMQP_DEFAULT_FRAME_SIZE, AMQP_DEFAULT_HEARTBEAT,
-			AMQP_SASL_METHOD_PLAIN, cinfo.user, cinfo.password);
-	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
-		return -1;
-	}
-	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s", cinfo.user,
-					cinfo.password, cinfo.host, cinfo.port, cinfo.vhost);
-	amqp_channel_open(conn, 1);
-	r = amqp_get_rpc_reply(conn);
-	if (r.reply_type == AMQP_RESPONSE_NORMAL)
-		return 0;
-
-	hal_log_error("amqp_channel_open(): %s",
-				amqp_rpc_reply_string(r));
-
-	return -1;
+	return 0;
 }
 
 void amqp_stop(void)
