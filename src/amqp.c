@@ -42,8 +42,13 @@
 
 #define AMQP_CONNECTION_TIMEOUT_US 10000
 
-static amqp_connection_state_t conn;
-static amqp_read_cb_t read_cb;
+struct amqp_context {
+	amqp_connection_state_t conn;
+	struct l_io *amqp_io;
+	amqp_read_cb_t read_cb;
+};
+
+static struct amqp_context amqp_ctx;
 
 static const char *amqp_server_exception_string(amqp_rpc_reply_t reply)
 {
@@ -88,6 +93,64 @@ static const char *amqp_rpc_reply_string(amqp_rpc_reply_t reply)
 	}
 }
 
+static char *amqp_bytes_to_new_string(amqp_bytes_t data)
+{
+	char *str = l_new(char, data.len + 1);
+
+	memcpy(str, data.bytes, data.len);
+	str[data.len] = '\0';
+	return str;
+}
+
+static bool on_receive(struct l_io *io, void *user_data)
+{
+	amqp_rpc_reply_t res;
+	amqp_envelope_t envelope;
+	char *exchange, *routing_key, *body;
+	struct timeval time_out = { .tv_usec = AMQP_CONNECTION_TIMEOUT_US };
+	bool err = true;
+
+	if (amqp_release_buffers_ok(amqp_ctx.conn))
+		amqp_release_buffers(amqp_ctx.conn);
+
+	res = amqp_consume_message(amqp_ctx.conn, &envelope, &time_out, 0);
+
+	if (AMQP_RESPONSE_NORMAL != res.reply_type)
+		return true;
+
+	hal_log_dbg("Receive %u, exchange %.*s routingkey %.*s\n",
+			(unsigned)envelope.delivery_tag,
+			(int)envelope.exchange.len,
+			(char *)envelope.exchange.bytes,
+			(int)envelope.routing_key.len,
+			(char *)envelope.routing_key.bytes);
+
+	hal_log_dbg("Body: %.*s\n",
+			(int)envelope.message.body.len,
+			(char *)envelope.message.body.bytes);
+
+	if (!amqp_ctx.read_cb) {
+		hal_log_dbg("AMQP read callback is not set");
+		amqp_destroy_envelope(&envelope);
+		return false;
+	}
+
+	exchange = amqp_bytes_to_new_string(envelope.exchange);
+	routing_key = amqp_bytes_to_new_string(envelope.routing_key);
+	body = amqp_bytes_to_new_string(envelope.message.body);
+
+	err = amqp_ctx.read_cb(exchange, routing_key, body, user_data);
+
+	/* FIXME: Put msg on the queue again */
+	hal_log_dbg("Destroy received envelope");
+	amqp_destroy_envelope(&envelope);
+	l_free(exchange);
+	l_free(routing_key);
+	l_free(body);
+
+	return err;
+}
+
 static int start_connection(struct settings *settings)
 {
 	amqp_socket_t *socket;
@@ -103,11 +166,11 @@ static int start_connection(struct settings *settings)
 		return -1;
 	}
 
-	conn = amqp_new_connection();
+	amqp_ctx.conn = amqp_new_connection();
 
-	socket = amqp_tcp_socket_new(conn);
+	socket = amqp_tcp_socket_new(amqp_ctx.conn);
 	if (!socket) {
-		amqp_destroy_connection(conn);
+		amqp_destroy_connection(amqp_ctx.conn);
 		hal_log_error("error creating tcp socket\n");
 		return -1;
 	}
@@ -115,17 +178,17 @@ static int start_connection(struct settings *settings)
 	status = amqp_socket_open_noblock(socket, cinfo.host, cinfo.port,
 					  &timeout);
 	if (status) {
-		amqp_destroy_connection(conn);
+		amqp_destroy_connection(amqp_ctx.conn);
 		hal_log_error("error opening socket\n");
 		return -1;
 	}
 
-	r = amqp_login(conn, cinfo.vhost,
+	r = amqp_login(amqp_ctx.conn, cinfo.vhost,
 			AMQP_DEFAULT_MAX_CHANNELS, AMQP_DEFAULT_FRAME_SIZE,
 			AMQP_DEFAULT_HEARTBEAT, AMQP_SASL_METHOD_PLAIN,
 			cinfo.user, cinfo.password);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		amqp_destroy_connection(conn);
+		amqp_destroy_connection(amqp_ctx.conn);
 		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
 		return -1;
 	}
@@ -133,11 +196,11 @@ static int start_connection(struct settings *settings)
 	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s\n", cinfo.user,
 		     cinfo.password, cinfo.host, cinfo.port, cinfo.vhost);
 
-	amqp_channel_open(conn, 1);
-	r = amqp_get_rpc_reply(conn);
+	amqp_channel_open(amqp_ctx.conn, 1);
+	r = amqp_get_rpc_reply(amqp_ctx.conn);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
-		amqp_destroy_connection(conn);
+		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
+		amqp_destroy_connection(amqp_ctx.conn);
 		hal_log_error("amqp_channel_open(): %s",
 				amqp_rpc_reply_string(r));
 		return -1;
@@ -155,7 +218,7 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 	int8_t rc; // Return Code
 
 	/* Declare the exchange as durable */
-	amqp_exchange_declare(conn, 1,
+	amqp_exchange_declare(amqp_ctx.conn, 1,
 			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes("topic"),
 			0 /* passive*/,
@@ -163,7 +226,7 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 			0 /* auto_delete*/,
 			0 /* internal */,
 			amqp_empty_table);
-	resp = amqp_get_rpc_reply(conn);
+	resp = amqp_get_rpc_reply(amqp_ctx.conn);
 	if (resp.reply_type != AMQP_RESPONSE_NORMAL) {
 		hal_log_error("amqp_exchange_declare(): %s",
 				amqp_rpc_reply_string(resp));
@@ -174,7 +237,8 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 			AMQP_BASIC_DELIVERY_MODE_FLAG;
 	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = AMQP_DELIVERY_PERSISTENT;
-	rc = amqp_basic_publish(conn, 1, amqp_cstring_bytes(exchange),
+	rc = amqp_basic_publish(amqp_ctx.conn, 1,
+			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes(routing_keys),
 			0 /* mandatory */,
 			0 /* immediate */,
@@ -190,7 +254,7 @@ amqp_bytes_t amqp_declare_new_queue(const char *name)
 	amqp_bytes_t queue;
 	amqp_queue_declare_ok_t *r;
 
-	r = amqp_queue_declare(conn, 1,
+	r = amqp_queue_declare(amqp_ctx.conn, 1,
 			amqp_cstring_bytes(name),
 			0, /* passive */
 			1, /* durable */
@@ -198,7 +262,7 @@ amqp_bytes_t amqp_declare_new_queue(const char *name)
 			0, /* auto-delete */
 			amqp_empty_table);
 
-	if (amqp_get_rpc_reply(conn).reply_type !=
+	if (amqp_get_rpc_reply(amqp_ctx.conn).reply_type !=
 			       AMQP_RESPONSE_NORMAL) {
 		hal_log_error("Error declaring queue name");
 		queue.bytes = NULL;
@@ -219,7 +283,7 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 		return -1;
 
 	/* Declare the exchange as durable */
-	amqp_exchange_declare(conn, 1,
+	amqp_exchange_declare(amqp_ctx.conn, 1,
 			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes("topic"),
 			0 /* passive*/,
@@ -229,19 +293,19 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 			amqp_empty_table);
 
 	/* Set up to bind a queue to an exchange */
-	amqp_queue_bind(conn, 1, queue,
+	amqp_queue_bind(amqp_ctx.conn, 1, queue,
 			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes(routing_key),
 			amqp_empty_table);
 
-	if (amqp_get_rpc_reply(conn).reply_type !=
+	if (amqp_get_rpc_reply(amqp_ctx.conn).reply_type !=
 			       AMQP_RESPONSE_NORMAL) {
 		hal_log_error("Error while binding queue");
 		return -1;
 	}
 
 	/* Start a queue consumer */
-	amqp_basic_consume(conn, 1,
+	amqp_basic_consume(amqp_ctx.conn, 1,
 			queue,
 			amqp_empty_bytes,
 			0, /* no_local */
@@ -249,7 +313,7 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 			0, /* exclusive */
 			amqp_empty_table);
 
-	if (amqp_get_rpc_reply(conn).reply_type !=
+	if (amqp_get_rpc_reply(amqp_ctx.conn).reply_type !=
 			       AMQP_RESPONSE_NORMAL) {
 		hal_log_error("Error while starting consumer");
 		return -1;
@@ -260,7 +324,19 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 
 int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 {
-	read_cb = on_read;
+	int err;
+
+	amqp_ctx.read_cb = on_read;
+
+	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
+
+	err = l_io_set_read_handler(amqp_ctx.amqp_io, on_receive,
+				    &amqp_ctx.conn, user_data);
+	if (!err) {
+		l_io_destroy(amqp_ctx.amqp_io);
+		hal_log_error("Error on set up read handler on AMQP io\n");
+		return -1;
+	}
 
 	return 0;
 }
@@ -282,20 +358,24 @@ void amqp_stop(void)
 {
 	amqp_rpc_reply_t r;
 	int err;
-	if (!conn)
+
+	if (amqp_ctx.amqp_io)
+		l_io_destroy(amqp_ctx.amqp_io);
+
+	if (!amqp_ctx.conn)
 		return;
 
-	r = amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS);
+	r = amqp_channel_close(amqp_ctx.conn, 1, AMQP_REPLY_SUCCESS);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL)
 		hal_log_error("amqp_channel_close: %s",
 				amqp_rpc_reply_string(r));
 
-	r = amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
+	r = amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL)
 		hal_log_error("amqp_connection_close: %s",
 				amqp_rpc_reply_string(r));
 
-	err = amqp_destroy_connection(conn);
+	err = amqp_destroy_connection(amqp_ctx.conn);
 	if (err < 0)
 		hal_log_error("amqp_destroy_connection: %s",
 				amqp_error_string2(err));
