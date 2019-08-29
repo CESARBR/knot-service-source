@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <ell/ell.h>
 #include <json-c/json.h>
+#include <amqp.h>
 
 #include <knot/knot_protocol.h>
 
@@ -39,7 +40,17 @@
 #include "parser.h"
 #include "cloud.h"
 
-#define AMQP_CLOUD_EXCHANGE "cloud"
+#define AMQP_QUEUE_FOG "fog-messages"
+
+/* Exchanges */
+#define AMQP_EXCHANGE_FOG "fog"
+#define AMQP_EXCHANGE_CLOUD "cloud"
+
+ /* Southbound traffic (commands) */
+#define AMQP_EVENT_DATA_UPDATE "data.update"
+#define AMQP_EVENT_DATA_REQUEST "data.request"
+
+ /* Northbound traffic (control, measurements) */
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
 
 struct cloud_callbacks {
@@ -60,7 +71,7 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
 				       kval_len);
 	json_str = json_object_to_json_string(jobj_data);
-	result = amqp_publish_persistent_message(AMQP_CLOUD_EXCHANGE,
+	result = amqp_publish_persistent_message(AMQP_EXCHANGE_CLOUD,
 						 AMQP_CMD_DATA_PUBLISH,
 						 json_str);
 	if (result < 0)
@@ -74,8 +85,33 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
 		  void *user_data)
 {
+	amqp_bytes_t queue_fog;
+	int err;
+
 	cloud_cbs.update_cb = on_update;
 	cloud_cbs.request_cb = on_request;
+
+	queue_fog = amqp_declare_new_queue(AMQP_QUEUE_FOG);
+	if (queue_fog.bytes == NULL) {
+		hal_log_error("Error on declare a new queue.\n");
+		return -1;
+	}
+
+	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
+					AMQP_EVENT_DATA_UPDATE);
+	if (err) {
+		hal_log_error("Error on set up queue to consume.\n");
+		return -1;
+	}
+
+	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
+					AMQP_EVENT_DATA_REQUEST);
+	if (err) {
+		hal_log_error("Error on set up queue to consume.\n");
+		return -1;
+	}
+
+	amqp_bytes_free(queue_fog);
 
 	return 0;
 }
