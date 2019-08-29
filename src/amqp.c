@@ -43,6 +43,7 @@
 #define AMQP_CONNECTION_TIMEOUT_US 10000
 
 static amqp_connection_state_t conn;
+static amqp_read_cb_t read_cb;
 
 static const char *amqp_server_exception_string(amqp_rpc_reply_t reply)
 {
@@ -253,6 +254,13 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 		hal_log_error("Error while starting consumer");
 		return -1;
 	}
+
+	return 0;
+}
+
+int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
+{
+	read_cb = on_read;
 
 	return 0;
 }
