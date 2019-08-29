@@ -60,6 +60,14 @@ struct cloud_callbacks {
 
 static struct cloud_callbacks cloud_cbs;
 
+static bool cloud_receive_message(const char *exchange,
+				  const char *routing_key,
+				  const char *body, void *user_data)
+{
+	/* TODO: Call correct msg callback function */
+	return true;
+}
+
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 		       const knot_value_type *value,
 		       uint8_t kval_len)
@@ -112,6 +120,12 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 	}
 
 	amqp_bytes_free(queue_fog);
+
+	err = amqp_set_read_cb(cloud_receive_message, user_data);
+	if (err) {
+		hal_log_error("Error on set up read callback\n");
+		return -1;
+	}
 
 	return 0;
 }
