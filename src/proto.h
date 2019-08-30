@@ -82,8 +82,6 @@ void proto_close(int proto_socket);
 int proto_mknode(int proto_socket, const char *owner_uuid,
 		 const char *device_name, const char *device_id,
 		 char *uuid, char *token);
-int proto_rmnode(int proto_socket, const char *uuid, const char *token);
-int proto_rmnode_by_uuid(const char *uuid);
 int proto_signin(int proto_socket, const char *uuid, const char *token,
 		 proto_property_changed_func_t prop_cb, void *user_data);
 int proto_schema(int proto_socket, const char *uuid,

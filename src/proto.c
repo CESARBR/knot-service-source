@@ -415,26 +415,6 @@ int proto_schema(int proto_socket, const char *uuid,
 	return result;
 }
 
-int proto_rmnode(int proto_socket, const char *uuid, const char *token)
-{
-	json_raw_t response = { NULL, 0 };
-	int result, err;
-
-	err = proto->rmnode(proto_socket, uuid, token, &response);
-	if (err < 0) {
-		result = KNOT_ERR_CLOUD_FAILURE;
-		hal_log_error("rmnode() failed %s (%d)", strerror(-err), -err);
-		goto done;
-	}
-
-	result = 0;
-
-done:
-	if (response.data)
-		l_free(response.data);
-	return result;
-}
-
 int proto_set_proxy_handlers(int sock,
 			     proto_proxy_added_func_t added,
 			     proto_proxy_removed_func_t removed,
@@ -455,9 +435,4 @@ int proto_set_proxy_handlers(int sock,
 				      proxy, proxy_destroy);
 
 	return 0;
-}
-
-int proto_rmnode_by_uuid(const char *uuid)
-{
-	return proto_rmnode(proxy->sock, uuid, NULL);
 }

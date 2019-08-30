@@ -225,8 +225,8 @@ static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
 
 static int8_t msg_unregister(struct session *session)
 {
-	int proto_sock;
 	int8_t result;
+	char id[KNOT_ID_LEN];
 
 	if (!session->trusted) {
 		hal_log_info("[session %p] unregister: Permission denied!",
@@ -234,9 +234,10 @@ static int8_t msg_unregister(struct session *session)
 		return KNOT_ERR_PERM;
 	}
 
-	hal_log_info("[session %p] rmnode: %.36s", session, session->uuid);
-	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_rmnode(proto_sock, session->uuid, session->token);
+	snprintf(id, sizeof(id), "%016"PRIX64, session->id);
+	hal_log_info("[session %p] rmnode: %s", session, id);
+
+	result = cloud_unregister_device(id);
 	if (result != 0)
 		return result;
 

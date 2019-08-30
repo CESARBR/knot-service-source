@@ -53,6 +53,7 @@
 
  /* Northbound traffic (control, measurements) */
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
+#define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
 
 struct cloud_callbacks {
 	cloud_downstream_cb_t update_cb;
@@ -121,6 +122,26 @@ static bool on_cloud_receive_message(const char *exchange,
 done:
 	json_object_put(jso);
 	return consumed;
+}
+
+int cloud_unregister_device(const char *id)
+{
+	json_object *jobj;
+	const char *json_str;
+	int result;
+
+	jobj = json_object_new_object();
+	json_object_object_add(jobj, "id", json_object_new_string(id));
+	json_str = json_object_to_json_string(jobj);
+
+	result = amqp_publish_persistent_message(
+		AMQP_EXCHANGE_CLOUD, AMQP_CMD_DEVICE_UNREGISTER, json_str);
+	if (result < 0)
+		return KNOT_ERR_CLOUD_FAILURE;
+
+	json_object_put(jobj);
+
+	return 0;
 }
 
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
