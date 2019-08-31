@@ -1330,7 +1330,7 @@ static void unregister_callback(struct l_timeout *timeout, void *user_data)
 	device_forget_destroy(mydevice);
 }
 
-static void proxy_removed(const char *device_id, void *user_data)
+static void on_device_removed(const char *device_id, void *user_data)
 {
 	struct knot_device *device = device_get(device_id);
 	struct mydevice *mydevice = l_queue_find(device_id_list,
@@ -1409,7 +1409,6 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 	/* Step1: Getting Cloud (device) proxies using owner credential */
 	proto_set_proxy_handlers(sock,
 				 proxy_added,
-				 proxy_removed,
 				 proxy_ready,
 				 settings);
 
@@ -1485,7 +1484,8 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	err = cloud_set_cbs(on_update_cb, on_request_cb, NULL);
+	err = cloud_set_cbs(on_update_cb, on_request_cb, on_device_removed,
+			    NULL);
 	if (err < 0) {
 		hal_log_error("cloud_set_cbs(): %s", strerror(-err));
 		goto cloud_set_cbs_fail;

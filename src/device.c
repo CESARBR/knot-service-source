@@ -197,7 +197,7 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 
 	if (device->uuid) {
 		/*
-		 *  At msg.c@proxy_removed() will manage additional
+		 *  At msg.c@on_device_removed() will manage additional
 		 *  KNoT operations sending unregister request if the
 		 *  peer (thing) is connected.
 		 */

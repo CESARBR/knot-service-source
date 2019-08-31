@@ -22,8 +22,6 @@
 typedef void (*proto_proxy_added_func_t) (const char *device_id, const char *uuid,
 					  const char *name, bool online,
 					  void *user_data);
-typedef void (*proto_proxy_removed_func_t) (const char *device_id,
-					    void *user_data);
 
 typedef void (*proto_proxy_ready_func_t) (void *user_data);
 typedef bool (*proto_property_changed_func_t) (const char *name,
@@ -91,6 +89,5 @@ int proto_getdata(int proto_sock, char *uuid, char *token,
 
 int proto_set_proxy_handlers(int sock,
 			     proto_proxy_added_func_t added,
-			     proto_proxy_removed_func_t removed,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data);

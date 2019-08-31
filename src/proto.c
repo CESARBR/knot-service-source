@@ -55,7 +55,6 @@ static struct proto_ops *proto_ops[] = {
 struct proto_proxy {
 	int sock;			/* Cloud connection */
 	proto_proxy_added_func_t added_cb;
-	proto_proxy_removed_func_t removed_cb;
 	proto_proxy_ready_func_t ready_cb; /* Call only once */
 	bool ready_once;
 	void *user_data;
@@ -107,7 +106,6 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	struct proto_proxy *proxy = user_data;
 	struct l_queue *list;
 	struct l_queue *added_list;
-	struct l_queue *removed_list;
 	struct l_queue *registered_list;
 	struct mydevice *mydevice1;
 	struct mydevice *mydevice2;
@@ -130,7 +128,7 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	registered_list = l_queue_new();
 
 	/*
-	 * Detecting added & removed devices. At the END of the loop:
+	 * Detecting added devices. At the END of the loop:
 	 * device_list: contains removed from cloud
 	 * registered_list: all devices read from cloud
 	 * added_list: new devices at cloud
@@ -153,9 +151,7 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 
 	/* list is empty: destroy */
 	l_queue_destroy(list, NULL);
-
-	/* Left in list: removed */
-	removed_list = proxy->device_list;
+	l_queue_destroy(proxy->device_list, NULL);
 
 	/* Informing added devices */
 	for (mydevice1 = l_queue_pop_head(added_list);
@@ -167,13 +163,6 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	l_queue_destroy(added_list, (l_queue_destroy_func_t) mydevice_free);
 	/* Overwrite: Keep a copy for the next iteration */
 	proxy->device_list = registered_list;
-
-	/* Informing removed devices */
-	for (mydevice1 = l_queue_pop_head(removed_list);
-	     mydevice1; mydevice1 = l_queue_pop_head(removed_list)) {
-		proxy->removed_cb(mydevice1->id, proxy->user_data);
-	}
-	l_queue_destroy(removed_list, (l_queue_destroy_func_t) mydevice_free);
 
 	if (proxy->ready_cb && !proxy->ready_once) {
 		proxy->ready_cb(proxy->user_data);
@@ -417,14 +406,12 @@ int proto_schema(int proto_socket, const char *uuid,
 
 int proto_set_proxy_handlers(int sock,
 			     proto_proxy_added_func_t added,
-			     proto_proxy_removed_func_t removed,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data)
 {
 	proxy = l_new(struct proto_proxy, 1);
 	proxy->sock = sock;
 	proxy->added_cb = added;
-	proxy->removed_cb = removed;
 	proxy->ready_cb = ready;
 	proxy->ready_once = false;
 	proxy->user_data = user_data;
