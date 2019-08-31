@@ -22,8 +22,12 @@
 typedef bool (*cloud_downstream_cb_t) (const char *id, struct l_queue *data,
 				       void *user_data);
 
+typedef void (*cloud_device_removed_cb_t) (const char *id,
+				      void *user_data);
+
 int cloud_set_cbs(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
+		  cloud_device_removed_cb_t on_removed,
 		  void *user_data);
 int cloud_start(struct settings *settings);
 void cloud_stop(void);

@@ -50,6 +50,7 @@
  /* Southbound traffic (commands) */
 #define AMQP_EVENT_DATA_UPDATE "data.update"
 #define AMQP_EVENT_DATA_REQUEST "data.request"
+#define AMQP_EVENT_DEVICE_UNREGISTERED "device.unregistered"
 
  /* Northbound traffic (control, measurements) */
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
@@ -58,6 +59,7 @@
 struct cloud_callbacks {
 	cloud_downstream_cb_t update_cb;
 	cloud_downstream_cb_t request_cb;
+	cloud_device_removed_cb_t removed_cb;
 };
 
 static struct cloud_callbacks cloud_cbs;
@@ -119,6 +121,11 @@ static bool on_cloud_receive_message(const char *exchange,
 		/* Call cloud_cbs.request_cb */
 	}
 
+	if (cloud_cbs.removed_cb != NULL &&
+	    strcmp(AMQP_EVENT_DEVICE_UNREGISTERED, routing_key) == 0) {
+		cloud_cbs.removed_cb(id, user_data);
+	}
+
 done:
 	json_object_put(jso);
 	return consumed;
@@ -167,6 +174,7 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 
 int cloud_set_cbs(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
+		  cloud_device_removed_cb_t on_removed,
 		  void *user_data)
 {
 	amqp_bytes_t queue_fog;
@@ -174,6 +182,7 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 
 	cloud_cbs.update_cb = on_update;
 	cloud_cbs.request_cb = on_request;
+	cloud_cbs.removed_cb = on_removed;
 
 	queue_fog = amqp_declare_new_queue(AMQP_QUEUE_FOG);
 	if (queue_fog.bytes == NULL) {
@@ -190,6 +199,13 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 
 	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
 					AMQP_EVENT_DATA_REQUEST);
+	if (err) {
+		hal_log_error("Error on set up queue to consume.\n");
+		return -1;
+	}
+
+	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
+					   AMQP_EVENT_DEVICE_UNREGISTERED);
 	if (err) {
 		hal_log_error("Error on set up queue to consume.\n");
 		return -1;
