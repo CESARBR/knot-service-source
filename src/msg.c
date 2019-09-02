@@ -53,7 +53,7 @@
 #include "msg.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define KNOT_ID_LEN 16
+#define KNOT_ID_LEN		17 /* 16 char + '\0' */
 #define ROLLBACK_TICKS		5 /* Equals to 5*1096ms */
 
 struct session {
@@ -359,7 +359,7 @@ static bool property_changed(const char *name,
 	struct session *session;
 	struct knot_device *device;
 	struct mydevice *mydevice;
-	char id[KNOT_ID_LEN + 1];
+	char id[KNOT_ID_LEN];
 
 	/* FIXME: manage link overload or not connected */
 	session = l_queue_find(session_list, session_node_fd_cmp, user_data);
@@ -391,7 +391,7 @@ static bool property_changed(const char *name,
 		l_free(session->schema);
 		session->schema = l_strdup(value);
 
-		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 
 		mydevice = l_queue_find(device_id_list, device_id_cmp, id);
 		if (!mydevice)
@@ -459,7 +459,7 @@ static bool property_changed(const char *name,
 		session->setdata_jso = jso;
 
 	} else if (strcmp("online", name) == 0) {
-		snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 		device = device_get(id);
 		if (device)
 			device_set_online(device, (strcmp("true", value) == 0));
@@ -522,7 +522,7 @@ static int8_t msg_register(struct session *session,
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	char id[KNOT_ID_LEN + 1];
+	char id[KNOT_ID_LEN];
 	int proto_sock;
 	int8_t result;
 
@@ -549,7 +549,7 @@ static int8_t msg_register(struct session *session,
 	msg_register_get_device_name(kreq, device_name);
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
-	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, kreq->id);
+	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
 	proto_sock = l_io_get_fd(session->proto_channel);
 	result = proto_mknode(proto_sock, owner_uuid,
 			      device_name, id, uuid, token);
@@ -740,7 +740,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
 	const char *json_str;
-	char id[KNOT_ID_LEN + 1];
+	char id[KNOT_ID_LEN];
 	json_object *jobj;
 	int proto_sock;
 	int8_t result;
@@ -758,7 +758,7 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 		return KNOT_ERR_PERM;
 	}
 
-	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, session->id);
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
@@ -833,7 +833,7 @@ static int8_t msg_setdata_resp(struct session *session,
 {
 	const knot_msg_schema *schema;
 	const char *json_str;
-	char id[KNOT_ID_LEN + 1];
+	char id[KNOT_ID_LEN];
 	json_object *jsoarray;
 	json_object *jsokey;
 	json_object *jso;
@@ -858,7 +858,7 @@ static int8_t msg_setdata_resp(struct session *session,
 		return KNOT_ERR_PERM;
 	}
 
-	snprintf(id, KNOT_ID_LEN + 1, "%016"PRIx64, session->id);
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	sensor_id = kmdata->sensor_id;
 	schema = schema_find(session->schema_list, sensor_id);
 	if (!schema) {
@@ -1057,8 +1057,9 @@ static void session_proto_disconnected_cb(struct l_io *channel,
 {
 	struct session *session = user_data;
 	struct knot_device *device;
-	char id[KNOT_ID_LEN + 1];
-	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	char id[KNOT_ID_LEN];
+
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	device = device_get(id);
 
 	/* Connection to cloud broken */
@@ -1084,8 +1085,9 @@ static struct l_io *create_proto_channel(int proto_sock,
 {
 	struct l_io *channel;
 	struct knot_device *device;
-	char id[KNOT_ID_LEN + 1];
-	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	char id[KNOT_ID_LEN];
+
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	device = device_get(id);
 
 	channel = l_io_new(proto_sock);
@@ -1152,7 +1154,7 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
 	struct knot_device *device;
-	char id[KNOT_ID_LEN + 1];
+	char id[KNOT_ID_LEN];
 
 	/* ELL returns -1 when calling l_io_get_fd() at disconnected callback */
 	session = l_queue_remove_if(session_list,
@@ -1167,7 +1169,7 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 			     session, session->uuid);
 	}
 
-	snprintf(id, KNOT_ID_LEN + 1,"%016"PRIx64, session->id);
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	device = device_get(id);
 	if (device)
 		device_set_online(device, false);
