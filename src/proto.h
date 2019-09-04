@@ -83,6 +83,5 @@ int proto_schema(int proto_socket, const char *uuid,
 		 const char *token, struct l_queue *schema_list);
 
 int proto_set_proxy_handlers(int sock,
-			     proto_proxy_added_func_t added,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data);

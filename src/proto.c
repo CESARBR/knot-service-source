@@ -54,7 +54,6 @@ static struct proto_ops *proto_ops[] = {
 
 struct proto_proxy {
 	int sock;			/* Cloud connection */
-	proto_proxy_added_func_t added_cb;
 	proto_proxy_ready_func_t ready_cb; /* Call only once */
 	bool ready_once;
 	void *user_data;
@@ -93,22 +92,11 @@ static inline bool is_token_valid(const char *token)
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
 }
 
-static bool device_id_cmp(const void *a, const void *b)
-{
-	const struct mydevice *mydevice1 = a;
-	const struct mydevice *mydevice2 = b;
-
-	return strcmp(mydevice1->id, mydevice2->id) == 0 ? true:false;
-}
-
+// TODO: substitute this timeout to use amqp cloud API
 static void timeout_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct proto_proxy *proxy = user_data;
 	struct l_queue *list;
-	struct l_queue *added_list;
-	struct l_queue *registered_list;
-	struct mydevice *mydevice1;
-	struct mydevice *mydevice2;
 	json_raw_t json;
 	int err;
 
@@ -124,45 +112,9 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 	/* List containing all devices returned from cloud */
 	list = parser_mydevices_to_list(json.data);
 
-	added_list = l_queue_new();
-	registered_list = l_queue_new();
+	l_queue_destroy(list, (l_queue_destroy_func_t) mydevice_free);
 
-	/*
-	 * Detecting added devices. At the END of the loop:
-	 * device_list: contains removed from cloud
-	 * registered_list: all devices read from cloud
-	 * added_list: new devices at cloud
-	 */
-	for (mydevice1 = l_queue_pop_head(list);
-	     mydevice1; mydevice1 = l_queue_pop_head(list)) {
-		mydevice2 = l_queue_remove_if(proxy->device_list,
-					 device_id_cmp, mydevice1);
-
-		if (mydevice2 == NULL) {
-			/* New device */
-			l_queue_push_tail(registered_list, mydevice1);
-			l_queue_push_tail(added_list,
-					  l_memdup(mydevice1, sizeof(*mydevice1)));
-		} else { /* Still registered */
-			l_queue_push_tail(registered_list, mydevice2);
-			mydevice_free(mydevice1);
-		}
-	}
-
-	/* list is empty: destroy */
-	l_queue_destroy(list, NULL);
-	l_queue_destroy(proxy->device_list, NULL);
-
-	/* Informing added devices */
-	for (mydevice1 = l_queue_pop_head(added_list);
-	     mydevice1; mydevice1 = l_queue_pop_head(added_list)) {
-		proxy->added_cb(mydevice1->id, mydevice1->uuid, mydevice1->name,
-				mydevice1->online, proxy->user_data);
-	}
-
-	l_queue_destroy(added_list, (l_queue_destroy_func_t) mydevice_free);
 	/* Overwrite: Keep a copy for the next iteration */
-	proxy->device_list = registered_list;
 
 	if (proxy->ready_cb && !proxy->ready_once) {
 		proxy->ready_cb(proxy->user_data);
@@ -328,13 +280,11 @@ int proto_schema(int proto_socket, const char *uuid,
 }
 
 int proto_set_proxy_handlers(int sock,
-			     proto_proxy_added_func_t added,
 			     proto_proxy_ready_func_t ready,
 			     void *user_data)
 {
 	proxy = l_new(struct proto_proxy, 1);
 	proxy->sock = sock;
-	proxy->added_cb = added;
 	proxy->ready_cb = ready;
 	proxy->ready_once = false;
 	proxy->user_data = user_data;
