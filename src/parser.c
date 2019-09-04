@@ -27,6 +27,7 @@
 #include <stdio.h>
 
 #include <ell/ell.h>
+#include <hal/linux_log.h>
 
 #include <knot/knot_types.h>
 #include <knot/knot_protocol.h>
@@ -551,43 +552,73 @@ json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
 	return setdatajobj;
 }
 
-int parser_jso_setdata_to_msg(json_object *jso, knot_msg_data *msg)
+struct l_queue *parser_update_to_list(json_object *jso)
 {
+	json_object *json_array;
+	json_object *json_data;
 	json_object *jobjkey;
-	int sensor_id;
+	knot_msg_data *msg;
+	struct l_queue *list;
+	uint64_t i;
 	int jtype;
 	int olen;
+	uint8_t sensor_id;
 
-	/* Getting 'sensor_id' */
-	if (!json_object_object_get_ex(jso, "sensor_id", &jobjkey))
-		return -EINVAL;
+	list = l_queue_new();
 
-	if (json_object_get_type(jobjkey) != json_type_int)
-		return -EINVAL;
+	if (!json_object_object_get_ex(jso, "data", &json_array))
+		goto fail;
 
-	sensor_id = json_object_get_int(jobjkey);
+	for (i = 0; i < json_object_array_length(json_array); i++) {
 
-	/* Getting 'value' */
-	if (!json_object_object_get_ex(jso, "value", &jobjkey))
-		return -EINVAL;
+		json_data = json_object_array_get_idx(json_array, i);
+		if (!json_data)
+			goto fail;
 
-	jtype = json_object_get_type(jobjkey);
-	if (jtype != json_type_int &&
-	    jtype != json_type_double && jtype != json_type_boolean &&
-		jtype != json_type_string)
-		return -EINVAL;
+		/* Getting 'sensor_id' */
+		if (!json_object_object_get_ex(json_data,
+							"sensor_id", &jobjkey))
+			goto fail;
 
-	olen = parse_json2data(jobjkey, &msg->payload);
-	if (olen <= 0)
-		return -EINVAL;
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto fail;
 
-	msg->sensor_id = sensor_id;
-	msg->hdr.type = KNOT_MSG_PUSH_DATA_REQ;
-	msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
+		sensor_id = json_object_get_int(jobjkey);
 
-	return 0;
+		/* Getting 'data' */
+		if (!json_object_object_get_ex(json_data, "data", &jobjkey))
+			goto fail;
+
+		jtype = json_object_get_type(jobjkey);
+		if (jtype != json_type_int &&
+		jtype != json_type_double && jtype != json_type_boolean &&
+			jtype != json_type_string)
+			goto fail;
+
+		msg = l_new(knot_msg_data, 1);
+
+		olen = parse_json2data(jobjkey, &msg->payload);
+		if (olen <= 0) {
+			l_free(msg);
+			goto fail;
+		}
+
+		msg->sensor_id = sensor_id;
+		msg->hdr.type = KNOT_MSG_PUSH_DATA_REQ;
+		msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
+
+		if (!l_queue_push_tail(list, msg)) {
+			l_free(msg);
+			goto fail;
+		}
+	}
+
+	return list;
+
+fail:
+	l_queue_destroy(list, l_free);
+	return NULL;
 }
-
 
 /*
  * TODO: consider moving this to knot-protocol
