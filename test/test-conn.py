@@ -253,8 +253,8 @@ def set_data(msg):
             value = struct.unpack(fmt, to_string(msg[3:]))[0]
 
         logging.info('set_data: sensor_id %s value %s', sensor_id, str(value))
-        send_knot_msg_push_data(s, sensor_id, value)
         s.send(struct.pack(HEADER_FMT + 'B', PROTO_PUSH_DATA_RSP, 1, sensor_id))
+        send_knot_msg_push_data(s, sensor_id, value)
     except StopIteration:
         logging.error('No schema found for sensor_id: %s', sensor_id)
 
