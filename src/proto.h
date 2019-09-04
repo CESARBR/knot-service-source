@@ -90,8 +90,6 @@ int proto_schema(int proto_socket, const char *uuid,
 		 const char *token, struct l_queue *schema_list);
 int proto_getdata(int proto_sock, char *uuid, char *token,
 		   const char *json_str);
-int proto_setdata(int proto_sock, char *uuid, char *token,
-		   const char *json_str);
 
 int proto_set_proxy_handlers(int sock,
 			     proto_proxy_added_func_t added,

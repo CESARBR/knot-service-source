@@ -75,8 +75,7 @@ struct session {
 	struct l_queue *getdata_list;	/* List of sensors requested */
 	char *getdata;			/* Current get_data */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
-	char *setdata;			/* Current get_data */
-	json_object *setdata_jso;	/* JSON object representing set_data */
+	struct l_queue *update_list;	/* List of update messages */
 };
 
 static struct l_queue *session_list;
@@ -111,7 +110,7 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
 	session->getdata_list = NULL;
-	session->setdata_jso = NULL;
+	session->update_list = l_queue_new();
 
 	return session_ref(session);
 }
@@ -130,11 +129,11 @@ static void session_destroy(struct session *session)
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->getdata_list, l_free);
+	l_queue_destroy(session->update_list, l_free);
 	l_timeout_remove(session->downstream_to);
 	l_free(session->schema);
 	l_free(session->config);
 	l_free(session->getdata);
-	l_free(session->setdata);
 
 	l_free(session);
 }
@@ -262,6 +261,17 @@ static bool session_node_fd_cmp(const void *entry_data, const void *user_data)
 	return session->node_fd == node_fd;
 }
 
+static bool session_id_cmp(const void *entry_data, const void *user_data)
+{
+	const struct session *session = entry_data;
+	char id[KNOT_ID_LEN];
+	const char *device_id = user_data;
+
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
+
+	return !strcmp(id, device_id);
+}
+
 static bool session_uuid_cmp(const void *entry_data, const void *user_data)
 {
 	const struct session *session = entry_data;
@@ -274,6 +284,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
+	knot_msg_data *msg = NULL;
 	knot_msg_config *config;
 	knot_msg_item item;
 	ssize_t olen, osent;
@@ -308,8 +319,11 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	}
 
 	/* Priority 2: Set Data */
-	if (session->setdata_jso) {
-		/* TODO: get new set data from cloud */
+	if (!l_queue_isempty(session->update_list)) {
+		msg = l_queue_pop_head(session->update_list);
+		opdu = msg;
+		olen = sizeof(msg->hdr) + msg->hdr.payload_len;
+		goto do_send;
 	}
 
 	/* Priority 3: Get Data */
@@ -327,6 +341,9 @@ do_send:
 	osent = node_ops->send(session->node_fd, opdu, olen);
 	hal_log_info("[session %p] Sending downstream data fd(%d)...",
 		     session, session->node_fd);
+	if (msg)
+		l_free(msg);
+
 	if (osent < 0) {
 		err = -osent;
 		hal_log_error("[session %p] Can't send downstream data: " \
@@ -345,7 +362,6 @@ disable_timer:
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
-	json_object *jso;
 	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
@@ -431,23 +447,6 @@ static bool property_changed(const char *name,
 		session->getdata_list = list;
 		l_free(session->getdata);
 		session->getdata = l_strdup(value);
-
-	} else if (strcmp("set_data", name) == 0) {
-		if (session->setdata && strcmp(session->setdata, value) == 0)
-			goto done;
-
-		jso = json_tokener_parse(value);
-		if (!jso)
-			goto done;
-
-		if (json_object_get_type(jso) != json_type_array) {
-			json_object_put(jso);
-			return NULL;
-		}
-
-		l_free(session->setdata);
-		session->setdata = l_strdup(value);
-		session->setdata_jso = jso;
 
 	} else if (strcmp("online", name) == 0) {
 		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
@@ -823,12 +822,7 @@ static int8_t msg_setdata_resp(struct session *session,
 			       const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const char *json_str;
 	char id[KNOT_ID_LEN];
-	json_object *jsoarray;
-	json_object *jsokey;
-	json_object *jso;
-	int proto_sock;
 	uint8_t sensor_id;
 	int8_t result;
 	uint8_t kval_len;
@@ -862,7 +856,6 @@ static int8_t msg_setdata_resp(struct session *session,
 		     session, sensor_id, schema->values.unit,
 		     schema->values.value_type);
 
-	proto_sock = l_io_get_fd(session->proto_channel);
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
 	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
 				    kvalue, kval_len);
@@ -872,41 +865,7 @@ static int8_t msg_setdata_resp(struct session *session,
 	hal_log_info("[session %p] THING %s updated data for sensor %d",
 		     session, session->uuid, sensor_id);
 
-	/* Access first entry */
-	jso = json_object_array_get_idx(session->setdata_jso, 0);
-	if (!jso)
-		goto done;
-
-	if(!json_object_object_get_ex(jso, "sensor_id", &jsokey))
-		goto done;
-
-	if (json_object_get_type(jsokey) != json_type_int)
-		goto done;
-
-	/* Protocol inconsistency */
-	if (sensor_id != json_object_get_int(jsokey))
-		goto done;
-
-	/* Releasing array entry: Removing first entry  */
-	if (json_object_array_del_idx(session->setdata_jso, 0, 1) != 0)
-		goto done;
-
-	l_free(session->setdata);
-	session->setdata =
-		l_strdup(json_object_to_json_string(session->setdata_jso));
-
-	/* Updating 'set_data' array at Cloud */
-	jso = json_object_new_object();
-	jsoarray = json_tokener_parse(session->setdata);
-	json_object_object_add(jso, "set_data", jsoarray);
-	json_str = json_object_to_json_string(jso);
-	proto_setdata(proto_sock, session->uuid, session->token, json_str);
-	json_object_put(jso);
-
 	return 0;
-
-done:
-	return result;
 }
 
 static void device_forget_destroy(struct mydevice *mydevice)
@@ -1466,10 +1425,31 @@ connect_fail:
 	l_timeout_modify(timeout, 5);
 }
 
+static void append_queue(void *data, void *user_data)
+{
+	const struct session *session = user_data;
+	knot_msg_data *msg = data;
+
+	l_queue_push_tail(session->update_list,
+			  l_memdup(msg, sizeof(msg)));
+}
+
 static bool on_update_cb(const char *id, struct l_queue *data,
 			 void *user_data)
 {
-	/* TODO: new set_data */
+	struct session *session;
+
+	session = l_queue_find(session_list, session_id_cmp, id);
+	if (!session) {
+		hal_log_error("Unable to find the session with id: %s", id);
+		return false;
+	}
+
+	l_queue_foreach(data, append_queue, session);
+
+	if (session->downstream_to)
+		l_timeout_modify_ms(session->downstream_to, 512);
+
 	return true;
 }
 

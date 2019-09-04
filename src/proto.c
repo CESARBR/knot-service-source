@@ -261,15 +261,6 @@ int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
 	return proto->setdata(proto_sock, uuid, token, json_str);
 }
 
-/*
- * Updates de 'devices' db, removing the sensor_id that was acknowledged by the
- * THING.
- */
-int proto_setdata(int proto_sock, char *uuid, char *token, const char *json_str)
-{
-	return proto->setdata(proto_sock, uuid, token, json_str);
-}
-
 static struct proto_ops *get_proto_ops(const char *protocol_name)
 {
 	int i;
