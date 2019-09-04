@@ -711,3 +711,25 @@ fail:
 	json_object_put(json_msg);
 	return NULL;
 }
+
+json_object *parser_device_json_create(const char *owner_uuid,
+				       const char *device_name,
+				       const char *device_id)
+{
+	json_object *device;
+
+	device = json_object_new_object();
+	if (!device)
+		return NULL;
+
+	json_object_object_add(device, "type",
+			       json_object_new_string("KNOTDevice"));
+	json_object_object_add(device, "name",
+			       json_object_new_string(device_name));
+	json_object_object_add(device, "id",
+			       json_object_new_string(device_id));
+	json_object_object_add(device, "owner",
+			       json_object_new_string(owner_uuid));
+
+	return device;
+}
