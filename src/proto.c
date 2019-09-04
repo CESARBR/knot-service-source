@@ -279,53 +279,6 @@ void proto_close(int prot_sock)
 	proto->close(prot_sock);
 }
 
-int proto_mknode(int proto_socket, const char *owner_uuid,
-		 const char *device_name, const char *device_id,
-		 char *uuid, char *token)
-{
-	json_object *device;
-	const char *device_as_string;
-	json_raw_t response;
-	int err, result;
-
-	memset(&response, 0, sizeof(response));
-	device = parser_device_json_create(owner_uuid, device_name, device_id);
-	if (!device) {
-		hal_log_error("JSON: no memory");
-		result = KNOT_ERR_INVALID;
-		goto fail;
-	}
-
-	device_as_string = json_object_to_json_string(device);
-	err = proto->mknode(proto_socket, device_as_string, &response);
-	json_object_put(device);
-
-	if (err < 0) {
-		hal_log_error("manager mknode: %s(%d)", strerror(-err), -err);
-		result = KNOT_ERR_CLOUD_FAILURE;
-		goto fail;
-	}
-
-	if (response.size == 0 ||
-	    (parser_device(response.data, uuid, token) < 0)) {
-		hal_log_error("Unexpected response!");
-		result = KNOT_ERR_CLOUD_FAILURE;
-		goto fail;
-	}
-
-	/* Parse function never returns NULL for 'uuid' or 'token' fields */
-	if (!is_uuid_valid(uuid) || !is_token_valid(token)) {
-		hal_log_error("Invalid UUID or token!");
-		result = KNOT_ERR_CLOUD_FAILURE;
-		goto fail;
-	}
-
-	result = 0;
-fail:
-	l_free(response.data);
-	return result;
-}
-
 int proto_signin(int proto_socket, const char *uuid, const char *token,
 		 proto_property_changed_func_t prop_cb, void *user_data)
 {

@@ -35,4 +35,5 @@ int cloud_publish_data(const char *id, uint8_t sensor_id,
 		       uint8_t value_type,
 		       const knot_value_type *value,
 		       uint8_t kval_len);
+int cloud_register_device(const char *id, const char *name);
 int cloud_unregister_device(const char *id);
