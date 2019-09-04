@@ -40,3 +40,6 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				uint8_t value_type,
 				const knot_value_type *value,
 				uint8_t kval_len);
+json_object *parser_device_json_create(const char *owner_uuid,
+				       const char *device_name,
+				       const char *device_id);
