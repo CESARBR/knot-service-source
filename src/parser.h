@@ -26,7 +26,6 @@ struct mydevice {
        struct l_timeout *unreg_timeout;
 };
 
-int parser_device(const char *json_str, char *uuid, char *token);
 struct l_queue *parser_schema_to_list(const char *json_str);
 struct l_queue *parser_config_to_list(const char *json_str);
 struct l_queue *parser_mydevices_to_list(const char *json_str);

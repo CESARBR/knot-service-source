@@ -525,9 +525,9 @@ static int8_t msg_register(struct session *session,
 	memset(uuid, 0, sizeof(uuid));
 	memset(token, 0, sizeof(token));
 	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
+
 	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_mknode(proto_sock, owner_uuid,
-			      device_name, id, uuid, token);
+	result = cloud_register_device(id, device_name);
 	if (result != 0)
 		return result;
 
