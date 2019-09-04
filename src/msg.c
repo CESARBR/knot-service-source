@@ -289,6 +289,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	knot_msg_data *msg = NULL;
 	knot_msg_config *config;
 	knot_msg_item item;
+	char id[KNOT_ID_LEN];
 	ssize_t olen, osent;
 	void *opdu;
 	uint8_t *sensor_id;
@@ -298,7 +299,8 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	if (session->rollback) {
 		if (session->rollback > ROLLBACK_TICKS) {
 			session->rollback = 0;
-			msg_unregister(session);
+			snprintf(id, sizeof(id), "%016"PRIx64, session->id);
+			device_destroy(id);
 			hal_log_info("[session %p] Removing %s (rollback)",
 				     session, session->uuid);
 			return;
@@ -493,12 +495,11 @@ static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
-	struct knot_device *device;
+	struct mydevice *device_pending = l_new(struct mydevice, 1);
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	char id[KNOT_ID_LEN];
-	int proto_sock;
 	int8_t result;
 
 	if (!msg_register_has_valid_length(kreq, ilen)
@@ -526,30 +527,16 @@ static int8_t msg_register(struct session *session,
 	memset(token, 0, sizeof(token));
 	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
 
-	proto_sock = l_io_get_fd(session->proto_channel);
 	result = cloud_register_device(id, device_name);
 	if (result != 0)
 		return result;
 
-	hal_log_info("[session %p] Registered UUID: %s, TOKEN: %s",
-		     session, uuid, token);
+	device_pending->id = l_strdup(id);
+	device_pending->name = l_strdup(device_name);
+	device_pending->online = false;
 
-	result = proto_signin(proto_sock, uuid, token, property_changed,
-			      L_INT_TO_PTR(session->node_fd));
+	l_queue_push_head(device_id_list, device_pending);
 
-	if (result != 0)
-		return result;
-
-	/* Set online as soon as the device connects to the fog */
-	device = device_get(id);
-	device_set_online(device, true);
-
-	msg_credential_create(krsp, uuid, token);
-
-	session->trusted = true;
-	session->id = kreq->id;			/* Device Id */
-	session->uuid = l_strdup(uuid);
-	session->token = l_strdup(token);
 	session->rollback = 1; /* Initial counter value */
 
 	return 0;
@@ -1089,13 +1076,13 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 
 	hal_log_info("[session %p] disconnected (node)", session);
 
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	if (session->rollback) {
-		msg_unregister(session);
+		device_destroy(id);
 		hal_log_info("[session %p] Removing %s (rollback)",
 			     session, session->uuid);
 	}
 
-	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 	device = device_get(id);
 	if (device)
 		device_set_online(device, false);
@@ -1262,34 +1249,34 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 		hal_log_info("Removing proxy for %s", id);
 }
 
-static void proxy_added(const char *device_id, const char *uuid,
-			const char *name, bool online,
-			void *user_data)
+static void on_device_added(const char *device_id, const char *token,
+			    void *user_data)
 {
-	struct knot_device *device = device_get(device_id);
-	struct mydevice *mydevice = l_new(struct mydevice, 1);
+	struct knot_device *device_dbus = device_get(device_id);
+	struct mydevice *device_pending = l_queue_find(device_id_list,
+						 device_id_cmp,
+						 device_id);
 
 	/* Tracks 'proxy' devices that belongs to Cloud. */
-	hal_log_info("Device added: %s UUID: %s", device_id, uuid);
+	hal_log_info("Device added: %s", device_id);
 
-	if (!device) {
+	if (!device_dbus) {
+		if (!device_pending)
+			return;
 		/* Ownership belongs to device.c */
-		device = device_create(device_id, name, true, true, online);
-		if (!device)
+		device_dbus = device_create(device_pending->id,
+					    device_pending->name,
+					    true /* paired */,
+					    false /* registered */,
+					    false /* online */);
+		if (!device_dbus)
 			return;
 	}
 
-	device_set_uuid(device, uuid);
-	device_set_registered(device, true);
-	device_set_online(device, online);
+	// TODO: Authenticate device on cloud
+	// FIXME: Send REGISTER_RESP
 
-	mydevice->uuid = l_strdup(uuid);
-	mydevice->id = l_strdup(device_id);
-	mydevice->name = l_strdup(name);
-	mydevice->online = online;
-	mydevice->unreg_timeout = NULL;
-
-	l_queue_push_head(device_id_list, mydevice);
+	device_pending->unreg_timeout = NULL;
 }
 
 /*
@@ -1383,7 +1370,6 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 	owner_uuid = settings->uuid;
 	/* Step1: Getting Cloud (device) proxies using owner credential */
 	proto_set_proxy_handlers(sock,
-				 proxy_added,
 				 proxy_ready,
 				 settings);
 
@@ -1486,7 +1472,7 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	err = cloud_set_read_handlers(on_update, on_request,
+	err = cloud_set_read_handlers(on_update, on_request, on_device_added,
 				      on_device_removed, NULL);
 	if (err < 0) {
 		hal_log_error("cloud_set_read_handlers(): %s", strerror(-err));

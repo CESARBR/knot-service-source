@@ -50,6 +50,7 @@
  /* Southbound traffic (commands) */
 #define AMQP_EVENT_DATA_UPDATE "data.update"
 #define AMQP_EVENT_DATA_REQUEST "data.request"
+#define AMQP_EVENT_DEVICE_REGISTERED "device.registered"
 #define AMQP_EVENT_DEVICE_UNREGISTERED "device.unregistered"
 
  /* Northbound traffic (control, measurements) */
@@ -64,6 +65,7 @@ static struct l_hashmap *map_event_to_cb;
 union cloud_cb_t {
 	cloud_downstream_cb_t update_cb;
 	cloud_downstream_cb_t request_cb;
+	cloud_device_added_cb_t added_cb;
 	cloud_device_removed_cb_t removed_cb;
 };
 
@@ -73,7 +75,8 @@ struct event_handler {
 	enum {
 		UPDATE_EVT,
 		REQUEST_EVT,
-		REMOVED_EVT
+		ADDED_EVT,
+		REMOVED_EVT,
 	} event_id;
 };
 
@@ -90,6 +93,20 @@ static const char *get_id_from_json_obj(const json_object *jso)
 	return json_object_get_string(id_json);
 }
 
+static const char *get_token_from_jobj(json_object *jso)
+{
+	json_object *json_token;
+
+	if (!json_object_object_get_ex(jso, "token", &json_token))
+		return NULL;
+
+	if (json_object_get_type(json_token) != json_type_string)
+		return NULL;
+
+	return json_object_get_string(json_token);
+}
+
+
 /**
  * Callback function to consume and parse the received message from AMQP queue
  * and call the respective handling callback function. In case of a error on
@@ -103,7 +120,7 @@ static bool on_cloud_receive_message(const char *exchange,
 {
 	json_object *jso;
 	struct l_queue *list;
-	const char *id;
+	const char *id, *token;
 	bool consumed = true;
 	const struct event_handler *evt_handler;
 	union cloud_cb_t cb_handler;
@@ -145,6 +162,15 @@ static bool on_cloud_receive_message(const char *exchange,
 
 		consumed = cb_handler.request_cb(id, list, user_data);
 		l_queue_destroy(list, l_free);
+		break;
+	case ADDED_EVT:
+		cb_handler.added_cb = evt_handler->cb;
+		id = get_id_from_json_obj(jso);
+		token = get_token_from_jobj(jso);
+		if (!id || !token)
+			return false;
+
+		cb_handler.added_cb(id, token, user_data);
 		break;
 	case REMOVED_EVT:
 		cb_handler.removed_cb = evt_handler->cb;
@@ -270,19 +296,22 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
  */
 int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
+		  cloud_device_added_cb_t on_added,
 		  cloud_device_removed_cb_t on_removed,
 		  void *user_data)
 {
 	const char *fog_events[] = {
 		AMQP_EVENT_DATA_UPDATE,
 		AMQP_EVENT_DATA_REQUEST,
+		AMQP_EVENT_DEVICE_REGISTERED,
 		AMQP_EVENT_DEVICE_UNREGISTERED,
 		NULL
 	};
 	const struct event_handler handlers[] = {
 		{ .cb = on_update, .event_id = UPDATE_EVT },
 		{ .cb = on_request, .event_id = REQUEST_EVT },
-		{ .cb = on_removed, .event_id = REMOVED_EVT }
+		{ .cb = on_added, .event_id = ADDED_EVT },
+		{ .cb = on_removed, .event_id = REMOVED_EVT },
 	};
 	amqp_bytes_t queue_fog;
 	int err, i;
