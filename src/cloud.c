@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <ell/ell.h>
 #include <json-c/json.h>
+#include <hal/linux_log.h>
 #include <amqp.h>
 
 #include <knot/knot_protocol.h>
@@ -64,15 +65,37 @@ static bool cloud_receive_message(const char *exchange,
 				  const char *routing_key,
 				  const char *body, void *user_data)
 {
+	json_object *jso;
+	json_object *id_json;
+	struct l_queue *list;
+	const char *id;
+
 	if (strcmp(AMQP_EXCHANGE_FOG, exchange) != 0)
 		return true;
 
-	/* TODO: Parser body message */
+	jso = json_tokener_parse(body);
+	if (!jso)
+		return false;
+
+	if (!json_object_object_get_ex(jso, "id", &id_json))
+		return false;
+
+	if (json_object_get_type(id_json) != json_type_string)
+		return false;
+
+	id = json_object_get_string(id_json);
 
 	if (cloud_cbs.update_cb != NULL &&
 	    strcmp(AMQP_EVENT_DATA_UPDATE, routing_key) == 0) {
-		return true;
-		/* Call cloud_cbs.update_cb */
+		list = parser_update_to_list(jso);
+		if (list == NULL) {
+			hal_log_error("Error on parse json object");
+			json_object_put(jso);
+			return false;
+		}
+
+		cloud_cbs.update_cb(id, list, user_data);
+		l_queue_destroy(list, l_free);
 	}
 
 	if (cloud_cbs.request_cb != NULL &&
@@ -80,6 +103,8 @@ static bool cloud_receive_message(const char *exchange,
 		return true;
 		/* Call cloud_cbs.request_cb */
 	}
+
+	json_object_put(jso);
 	return true;
 }
 
