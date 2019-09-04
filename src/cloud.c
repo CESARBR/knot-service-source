@@ -181,8 +181,7 @@ int cloud_register_device(const char *id, const char *name)
 	const char *json_str;
 	int result;
 
-	// TODO: remove owner uuid from parser
-	jobj_device = parser_device_json_create(NULL, id, name);
+	jobj_device = parser_device_json_create(id, name);
 	json_str = json_object_to_json_string(jobj_device);
 	result = amqp_publish_persistent_message(AMQP_EXCHANGE_CLOUD,
 						 AMQP_CMD_DEVICE_REGISTER,

@@ -684,9 +684,8 @@ fail:
 	return NULL;
 }
 
-json_object *parser_device_json_create(const char *owner_uuid,
-				       const char *device_name,
-				       const char *device_id)
+json_object *parser_device_json_create(const char *device_id,
+				       const char *device_name)
 {
 	json_object *device;
 
@@ -694,14 +693,17 @@ json_object *parser_device_json_create(const char *owner_uuid,
 	if (!device)
 		return NULL;
 
-	json_object_object_add(device, "type",
-			       json_object_new_string("KNOTDevice"));
 	json_object_object_add(device, "name",
 			       json_object_new_string(device_name));
 	json_object_object_add(device, "id",
 			       json_object_new_string(device_id));
-	json_object_object_add(device, "owner",
-			       json_object_new_string(owner_uuid));
 
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "name": "KNoT Thing"
+	 * }
+	 */
 	return device;
 }
