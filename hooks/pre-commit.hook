@@ -1,0 +1,2 @@
+#!/bin/bash
+exec git diff --cached | ./hooks/scripts/checkpatch.pl --no-tree --no-signoff -q -
