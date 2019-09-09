@@ -36,6 +36,8 @@ fog_exchange = 'fog'
 EVENT_UNREGISTER = 'device.unregister'
 KEY_UNREGISTERED = 'device.unregistered'
 
+EVENT_DATA = 'data.publish'
+
 channel.exchange_declare(exchange=fog_exchange, durable=True,
 exchange_type='topic')
 channel.exchange_declare(exchange=cloud_exchange, durable=True,
@@ -46,6 +48,8 @@ queue_name = result.method.queue
 
 channel.queue_bind(
         exchange=cloud_exchange, queue=queue_name, routing_key='device.*')
+channel.queue_bind(
+        exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
 
 def callback(ch, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
@@ -54,6 +58,8 @@ def callback(ch, method, properties, body):
         message = body
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_UNREGISTERED, body=message)
+    elif method.routing_key == EVENT_DATA:
+        return None
 
     logging.info(" [x] Sent %r" % (message))
 
