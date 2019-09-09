@@ -22,9 +22,13 @@ import pika
 import logging
 import json
 import argparse
+import secrets
 
 cloud_exchange = 'cloud'
 fog_exchange = 'fog'
+
+EVENT_REGISTER = 'device.register'
+KEY_REGISTERED = 'device.registered'
 
 EVENT_UNREGISTER = 'device.unregister'
 KEY_UNREGISTERED = 'device.unregistered'
@@ -64,7 +68,13 @@ def __parse_request_message(msg_file):
 def on_msg_received(ch, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
 
-    if method.routing_key == EVENT_UNREGISTER:
+    if method.routing_key == EVENT_REGISTER:
+        message = json.loads(body)
+        message['token'] = secrets.token_hex(20)
+        del message['name']
+        channel.basic_publish(exchange=fog_exchange,
+                              routing_key=KEY_REGISTERED, body=json.dumps(message))
+    elif method.routing_key == EVENT_UNREGISTER:
         message = body
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_UNREGISTERED, body=message)
