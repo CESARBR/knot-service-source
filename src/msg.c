@@ -1262,7 +1262,7 @@ static void on_device_added(const char *device_id, const char *token,
 	const struct node_ops *node_ops;
 	knot_msg_credential msg;
 	ssize_t olen, osent;
-	int err;
+	int err, result, proto_sock;
 
 	if (!session) {
 		hal_log_dbg("Session not found");
@@ -1297,8 +1297,6 @@ static void on_device_added(const char *device_id, const char *token,
 	session->uuid = l_strdup(device_pending->uuid);
 	session->token = l_strdup(token);
 
-	// TODO: Authenticate device on cloud
-
 	memset(&msg, 0, sizeof(msg));
 	msg_credential_create(&msg, device_pending->uuid, token);
 
@@ -1311,6 +1309,19 @@ static void on_device_added(const char *device_id, const char *token,
 		hal_log_error("[session %p] Can't send register response %s(%d)"
 			      , session, strerror(err), err);
 	}
+
+	proto_sock = l_io_get_fd(session->proto_channel);
+	result = proto_signin(proto_sock, session->uuid, token,
+			      property_changed, L_INT_TO_PTR(session->node_fd));
+	if (result != 0) {
+		l_free(session->uuid);
+		l_free(session->token);
+		session->uuid = NULL;
+		session->token = NULL;
+		return;
+	}
+
+	session->rollback = 0; /* Rollback disabled */
 }
 
 /*
