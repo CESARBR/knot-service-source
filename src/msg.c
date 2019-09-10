@@ -72,10 +72,9 @@ struct session {
 	struct l_queue *schema_list_tmp;/* Schema to be submitted to cloud */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	char *config;			/* Current config */
-	struct l_queue *getdata_list;	/* List of sensors requested */
-	char *getdata;			/* Current get_data */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
 	struct l_queue *update_list;	/* List of update messages */
+	struct l_queue *request_list;	/* List of request messages */
 };
 
 static struct l_queue *session_list;
@@ -109,8 +108,8 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->schema_list = NULL;
 	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
-	session->getdata_list = NULL;
 	session->update_list = l_queue_new();
+	session->request_list = l_queue_new();
 
 	return session_ref(session);
 }
@@ -128,12 +127,11 @@ static void session_destroy(struct session *session)
 	l_queue_destroy(session->schema_list, l_free);
 	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
-	l_queue_destroy(session->getdata_list, l_free);
 	l_queue_destroy(session->update_list, l_free);
+	l_queue_destroy(session->request_list, l_free);
 	l_timeout_remove(session->downstream_to);
 	l_free(session->schema);
 	l_free(session->config);
-	l_free(session->getdata);
 
 	l_free(session);
 }
@@ -331,7 +329,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	}
 
 	/* Priority 3: Get Data */
-	sensor_id = l_queue_peek_head(session->getdata_list);
+	sensor_id = l_queue_peek_head(session->request_list);
 	if (!sensor_id)
 		goto disable_timer;
 
@@ -435,23 +433,6 @@ static bool property_changed(const char *name,
 		session->config_list = list;
 		l_free(session->config);
 		session->config = l_strdup(value);
-	} else if (strcmp("get_data", name) == 0) {
-		if (session->getdata && strcmp(session->getdata, value) == 0)
-			goto done;
-
-		/* Always push to devices when connection is established */
-		list = parser_sensorid_to_list(value);
-		if (list == NULL) {
-			hal_log_error("[session %p] get_data: parse error!",
-				      session);
-			goto done;
-		}
-
-		l_queue_destroy(session->getdata_list, l_free);
-		session->getdata_list = list;
-		l_free(session->getdata);
-		session->getdata = l_strdup(value);
-
 	} else if (strcmp("online", name) == 0) {
 		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 		device = device_get(id);
@@ -733,10 +714,7 @@ done:
 static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 {
 	const knot_msg_schema *schema;
-	const char *json_str;
 	char id[KNOT_ID_LEN];
-	json_object *jobj;
-	int proto_sock;
 	int8_t result;
 	uint8_t sensor_id;
 	uint8_t *sensor_id_ptr;
@@ -764,26 +742,20 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	hal_log_info("[session %p] sensor:%d, unit:%d, value_type:%d", session,
 		     sensor_id, schema->values.unit, schema->values.value_type);
 
-	proto_sock = l_io_get_fd(session->proto_channel);
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
 	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
 				    kvalue, kval_len);
 	if (result < 0)
 		goto done;
 
-	/* Remove pending get data request & update cloud */
-	sensor_id_ptr = l_queue_remove_if(session->getdata_list,
-			       sensor_id_cmp, L_INT_TO_PTR(sensor_id));
+	/* Remove pending get data request */
+	sensor_id_ptr = l_queue_remove_if(session->request_list,
+					  sensor_id_cmp,
+					  L_INT_TO_PTR(sensor_id));
 	if (sensor_id_ptr == NULL)
 		goto done;
 
 	l_free(sensor_id_ptr);
-	/* Updating 'get_data' array at Cloud */
-	jobj = parser_sensorid_to_json("get_data", session->getdata_list);
-	json_str = json_object_to_json_string(jobj);
-	proto_getdata(proto_sock, session->uuid, session->token, json_str);
-
-	json_object_put(jobj);
 
 done:
 	return result;
@@ -1437,6 +1409,18 @@ static void append_queue(void *data, void *user_data)
 			  l_memdup(msg, sizeof(*msg)));
 }
 
+static void append_on_request_list(void *data, void *user_data)
+{
+	const struct session *session = user_data;
+	knot_msg_schema *schema_found;
+	unsigned int *msg = data;
+
+	schema_found = schema_find(session->schema_list, *msg);
+	if (schema_found)
+		l_queue_push_tail(session->request_list,
+				  l_memdup(msg, sizeof(*msg)));
+}
+
 static bool on_update_cb(const char *id, struct l_queue *data,
 			 void *user_data)
 {
@@ -1459,7 +1443,19 @@ static bool on_update_cb(const char *id, struct l_queue *data,
 static bool on_request_cb(const char *id, struct l_queue *data,
 			  void *user_data)
 {
-	/* TODO: new get_data */
+	struct session *session;
+
+	session = l_queue_find(session_list, session_id_cmp, id);
+	if (!session) {
+		hal_log_error("Unable to find the session with id: %s", id);
+		return false;
+	}
+
+	l_queue_foreach(data, append_on_request_list, session);
+
+	if (session->downstream_to)
+		l_timeout_modify_ms(session->downstream_to, 512);
+
 	return true;
 }
 

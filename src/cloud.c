@@ -135,7 +135,16 @@ static bool on_cloud_receive_message(const char *exchange,
 		break;
 	case REQUEST_EVT:
 		cb_handler.request_cb = evt_handler->cb;
-		/* TODO: Call cb_handler.request_cb */
+		id = get_id_from_json_obj(jso);
+		/* TODO: Parse sensor_id to list from json object */
+		list = NULL;
+		if (!id || !list) {
+			hal_log_error("Malformed JSON message");
+			break;
+		}
+
+		consumed = cb_handler.request_cb(id, list, user_data);
+		l_queue_destroy(list, l_free);
 		break;
 	case REMOVED_EVT:
 		cb_handler.removed_cb = evt_handler->cb;

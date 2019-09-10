@@ -242,14 +242,6 @@ static json_object *schema_create_list(struct l_queue *schema_list)
 	return jschema;
 }
 
-/*
- * Updates the 'devices' db, removing the sensor_id that just sent the data
- */
-int proto_getdata(int proto_sock, char *uuid, char *token, const char *json_str)
-{
-	return proto->setdata(proto_sock, uuid, token, json_str);
-}
-
 static struct proto_ops *get_proto_ops(const char *protocol_name)
 {
 	int i;
