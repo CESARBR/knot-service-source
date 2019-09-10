@@ -478,55 +478,40 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 	return list;
 }
 
-struct l_queue *parser_sensorid_to_list(const char *json_str)
+struct l_queue *parser_request_to_list(json_object *jso)
 {
 	struct l_queue *list;
-	json_object *jobjarray;
+	json_object *json_array;
 	json_object *jobjentry;
-	json_object *jobjkey;
 	int sensor_id;
 	uint64_t i;
 
-	jobjarray = json_tokener_parse(json_str);
-	if (!jobjarray)
-		return NULL;
-
-	if (json_object_get_type(jobjarray) != json_type_array) {
-		json_object_put(jobjarray);
-		return NULL;
-	}
-
 	list = l_queue_new();
-	for (i = 0; i < json_object_array_length(jobjarray); i++) {
 
-		jobjentry = json_object_array_get_idx(jobjarray, i);
+	if (!json_object_object_get_ex(jso, "data", &json_array))
+		goto fail;
+
+	for (i = 0; i < json_object_array_length(json_array); i++) {
+
+		jobjentry = json_object_array_get_idx(json_array, i);
 		if (!jobjentry)
-			break;
+			goto fail;
 
-		/* Getting 'sensor_id' */
-		if (!json_object_object_get_ex(jobjentry,
-					       "sensor_id", &jobjkey))
-			continue;
+		if (json_object_get_type(jobjentry) != json_type_int)
+			goto fail;
 
-		errno = 0;
-		sensor_id = json_object_get_int(jobjkey);
-		if (errno == EINVAL)
-			continue;
+		sensor_id = json_object_get_int(jobjentry);
 
-		/* Order matters: Add to tail to generate the same json */
-		l_queue_push_tail(list,
-				  l_memdup(&sensor_id, sizeof(sensor_id)));
-
-	}
-
-	json_object_put(jobjarray);
-
-	if (l_queue_isempty(list)) {
-		l_queue_destroy(list, NULL);
-		return NULL;
+		if (!l_queue_push_tail(list,
+				l_memdup(&sensor_id, sizeof(sensor_id))))
+			goto fail;
 	}
 
 	return list;
+
+fail:
+	l_queue_destroy(list, l_free);
+	return NULL;
 }
 
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)

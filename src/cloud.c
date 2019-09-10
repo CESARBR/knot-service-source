@@ -136,8 +136,7 @@ static bool on_cloud_receive_message(const char *exchange,
 	case REQUEST_EVT:
 		cb_handler.request_cb = evt_handler->cb;
 		id = get_id_from_json_obj(jso);
-		/* TODO: Parse sensor_id to list from json object */
-		list = NULL;
+		list = parser_request_to_list(jso);
 		if (!id || !list) {
 			hal_log_error("Malformed JSON message");
 			break;
