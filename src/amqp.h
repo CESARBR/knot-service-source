@@ -31,5 +31,5 @@ amqp_bytes_t amqp_declare_new_queue(const char *name);
 int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data);
 int amqp_start(struct settings *settings);
 void amqp_stop(void);
-int8_t amqp_publish_persistent_message(const char *exchange,
+int8_t amqp_publish_persistent_message(amqp_bytes_t queue, const char *exchange,
 		const char *routing_keys, const char *body);
