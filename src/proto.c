@@ -62,25 +62,6 @@ struct proto_proxy {
 
 static struct proto_ops *proto = NULL; /* Selected protocol */
 static struct l_timeout *timeout;
-static struct proto_proxy *proxy;
-
-static void mydevice_free(struct mydevice *mydevice)
-{
-	if (unlikely(!mydevice))
-		return;
-
-	l_free(mydevice->id);
-	l_free(mydevice->uuid);
-	l_free(mydevice->name);
-	l_free(mydevice);
-}
-
-static void proxy_destroy(void *user_data)
-{
-	struct proto_proxy *proxy = user_data;
-	l_queue_destroy(proxy->device_list, l_free);
-	l_free(proxy);
-}
 
 static inline bool is_uuid_valid(const char *uuid)
 {
@@ -90,40 +71,6 @@ static inline bool is_uuid_valid(const char *uuid)
 static inline bool is_token_valid(const char *token)
 {
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
-}
-
-// TODO: substitute this timeout to use amqp cloud API
-static void timeout_callback(struct l_timeout *timeout, void *user_data)
-{
-	struct proto_proxy *proxy = user_data;
-	struct l_queue *list;
-	json_raw_t json;
-	int err;
-
-	/* Fetch all devices from cloud */
-	memset(&json, 0, sizeof(json));
-	err = proto->fetch(proxy->sock, NULL, NULL, &json);
-	if (err < 0)
-		hal_log_error("fetch(): %s(%d)", strerror(-err), -err);
-
-	if (json.size == 0)
-		goto done;
-
-	/* List containing all devices returned from cloud */
-	list = parser_mydevices_to_list(json_tokener_parse(json.data));
-
-	l_queue_destroy(list, (l_queue_destroy_func_t) mydevice_free);
-
-	/* Overwrite: Keep a copy for the next iteration */
-
-	if (proxy->ready_cb && !proxy->ready_once) {
-		proxy->ready_cb(proxy->user_data);
-		proxy->ready_once = true;
-	}
-
-done:
-	l_timeout_modify(timeout, 5);
-	l_free(json.data);
 }
 
 static json_object *schema_create_object(uint8_t sensor_id, uint8_t value_type,
@@ -277,22 +224,4 @@ int proto_schema(int proto_socket, const char *uuid,
 		result = 0;
 
 	return result;
-}
-
-int proto_set_proxy_handlers(int sock,
-			     proto_proxy_ready_func_t ready,
-			     void *user_data)
-{
-	proxy = l_new(struct proto_proxy, 1);
-	proxy->sock = sock;
-	proxy->ready_cb = ready;
-	proxy->ready_once = false;
-	proxy->user_data = user_data;
-	proxy->device_list = l_queue_new();
-
-	/* TODO: Currently restricted to one 'watcher' */
-	timeout = l_timeout_create_ms(1, timeout_callback,
-				      proxy, proxy_destroy);
-
-	return 0;
 }

@@ -62,9 +62,24 @@
 
 cloud_cb_t cloud_cb;
 
+static void mydevice_free(void *data)
+{
+	struct mydevice *mydevice = data;
+
+	if (unlikely(!mydevice))
+		return;
+
+	l_free(mydevice->id);
+	l_free(mydevice->uuid);
+	l_free(mydevice->name);
+	l_free(mydevice);
+}
+
 static void cloud_msg_destroy(struct cloud_msg *msg)
 {
-	if (msg->type == UPDATE_MSG || msg->type == REQUEST_MSG)
+	if (msg->type == LIST_MSG)
+		l_queue_destroy(msg->list, mydevice_free);
+	else if (msg->type == UPDATE_MSG || msg->type == REQUEST_MSG)
 		l_queue_destroy(msg->list, l_free);
 
 	l_free(msg);
@@ -128,7 +143,13 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 
 		break;
 	case LIST_MSG:
-		// TODO: parse devices and execute callback
+		msg->device_id = NULL;
+		msg->list = parser_mydevices_to_list(jso);
+		if (!msg->list) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
 		break;
 	default:
 		hal_log_error("Unknown event %s", routing_key);

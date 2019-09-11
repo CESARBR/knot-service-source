@@ -1387,6 +1387,15 @@ static void proxy_ready(void *user_data)
 		proxy_enabled = true;
 }
 
+static bool handle_cloud_msg_list(struct l_queue *devices)
+{
+	hal_log_dbg("Devices listed");
+	// TODO: create devices in DBus
+	proxy_ready(NULL);
+
+	return true;
+}
+
 static void start_timeout(struct l_timeout *timeout, void *user_data)
 {
 	struct settings *settings = user_data;
@@ -1405,9 +1414,7 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 	/* Keep a reference to a valid credential */
 	owner_uuid = settings->uuid;
 	/* Step1: Getting Cloud (device) proxies using owner credential */
-	proto_set_proxy_handlers(sock,
-				 proxy_ready,
-				 settings);
+	cloud_list_devices();
 
 	/* Last operation: Enable if cloud is connected & authenticated */
 	node_start(session_accept_cb);
@@ -1469,9 +1476,10 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 
 	/**
 	 * Verify if thing session exists otherwise requeue the message.
-	 * Unregister message don't require to have a session to be processed
+	 * Unregister/List message don't require to have a session to be
+	 * processed.
 	 */
-	if (!session && msg->type != UNREGISTER_MSG) {
+	if (!session && msg->type != UNREGISTER_MSG && msg->type != LIST_MSG) {
 		hal_log_error("Unable to find the session with id: %s",
 				msg->device_id);
 		return false;
@@ -1488,6 +1496,8 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 		return handle_device_added(session, msg->device_id, msg->token);
 	case UNREGISTER_MSG:
 		return handle_device_removed(msg->device_id);
+	case LIST_MSG:
+		return handle_cloud_msg_list(msg->list);
 	default:
 		return true;
 	}
