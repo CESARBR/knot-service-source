@@ -380,34 +380,22 @@ int8_t parser_config_is_valid(struct l_queue *config_list)
 	return 0;
 }
 
-struct l_queue *parser_mydevices_to_list(const char *json_str)
+struct l_queue *parser_mydevices_to_list(json_object *jobj)
 {
-	json_object *jobj, *jobjentry, *jobjkey;
+	json_object *jobjentry, *jobjkey;
 	struct l_queue *list;
 	struct mydevice *mydevice;
-	const char *uuid;
 	const char *name;
 	const char *id;
-	bool online;
 	int len;
 	int i;
 
-	jobj = json_tokener_parse(json_str);
-	if (!jobj)
+	if (json_object_get_type(jobj) != json_type_array)
 		return NULL;
-
-	if (json_object_get_type(jobj) != json_type_array) {
-		json_object_put(jobj);
-		return NULL;
-	}
 
 	len = json_object_array_length(jobj);
-	if (len == 0) {
-		json_object_put(jobj);
-		return NULL;
-	}
-
 	list = l_queue_new();
+
 	for (i = 0; i < len; i++) {
 		jobjentry = json_object_array_get_idx(jobj, i);
 		/* Getting 'Id': Mandatory field for registered device */
@@ -419,6 +407,7 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 		/* Getting 'schema': Mandatory field for registered device */
 		if (!json_object_object_get_ex(jobjentry, "schema", &jobjkey))
 			continue;
+		// TODO: parse schema
 
 		/* Getting 'Name' */
 		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
@@ -426,27 +415,13 @@ struct l_queue *parser_mydevices_to_list(const char *json_str)
 
 		name = json_object_get_string(jobjkey);
 
-		/* Getting 'Uuid' */
-		if (!json_object_object_get_ex(jobjentry, "uuid", &jobjkey))
-			continue;
-
-		uuid = json_object_get_string(jobjkey);
-
-		/* Getting 'Online' */
-		if (!json_object_object_get_ex(jobjentry, "online", &jobjkey))
-			continue;
-
-		online = json_object_get_boolean(jobjkey);
-
 		mydevice = l_new(struct mydevice, 1);
 		mydevice->id   = l_strdup(id);
 		mydevice->name = l_strdup(name);
-		mydevice->uuid = l_strdup(uuid);
-		mydevice->online = online;
+		mydevice->uuid = l_strdup(id);
 		l_queue_push_tail(list, mydevice);
 	}
 
-	json_object_put(jobj);
 	return list;
 }
 

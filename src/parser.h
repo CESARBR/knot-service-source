@@ -28,7 +28,7 @@ struct mydevice {
 
 struct l_queue *parser_schema_to_list(const char *json_str);
 struct l_queue *parser_config_to_list(const char *json_str);
-struct l_queue *parser_mydevices_to_list(const char *json_str);
+struct l_queue *parser_mydevices_to_list(json_object *jobj);
 
 struct l_queue *parser_request_to_list(json_object *jso);
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list);

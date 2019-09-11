@@ -110,7 +110,7 @@ static void timeout_callback(struct l_timeout *timeout, void *user_data)
 		goto done;
 
 	/* List containing all devices returned from cloud */
-	list = parser_mydevices_to_list(json.data);
+	list = parser_mydevices_to_list(json_tokener_parse(json.data));
 
 	l_queue_destroy(list, (l_queue_destroy_func_t) mydevice_free);
 
