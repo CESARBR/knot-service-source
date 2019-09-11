@@ -27,11 +27,16 @@ import secrets
 cloud_exchange = 'cloud'
 fog_exchange = 'fog'
 
+QUEUE_CLOUD_NAME = 'cloud-messages'
+
 EVENT_REGISTER = 'device.register'
 KEY_REGISTERED = 'device.registered'
 
 EVENT_UNREGISTER = 'device.unregister'
 KEY_UNREGISTERED = 'device.unregistered'
+
+EVENT_LIST = 'device.cmd.list'
+KEY_LIST_DEVICES = 'device.list'
 
 EVENT_DATA = 'data.publish'
 
@@ -78,6 +83,31 @@ def __on_msg_received(channel, method, properties, body):
         message = body
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_UNREGISTERED, body=message)
+    elif method.routing_key == EVENT_LIST:
+        message = [
+        {
+            'id': secrets.token_hex(8),
+            'name': 'test',
+            'schema': [{
+                "sensor_id": 0,
+                "value_type": 3,
+                "unit": 0,
+                "type_id": 65521,
+                "name": "LED"
+            }]
+        },{
+            'id': secrets.token_hex(8),
+            'name': 'test2',
+            'schema': [{
+                "sensor_id": 0,
+                "value_type": 3,
+                "unit": 0,
+                "type_id": 65521,
+                "name": "LED"
+            }]
+        }]
+        channel.basic_publish(exchange=fog_exchange,
+                              routing_key=KEY_LIST_DEVICES, body=json.dumps(message))
     elif method.routing_key == EVENT_DATA:
         return None
 
@@ -98,11 +128,13 @@ def __amqp_start():
 # Parser sub-commands
 def msg_consume(args):
     channel = __amqp_start()
-    result = channel.queue_declare('', exclusive=True)
+    result = channel.queue_declare(QUEUE_CLOUD_NAME, exclusive=False, durable=True)
     queue_name = result.method.queue
 
     channel.queue_bind(
             exchange=cloud_exchange, queue=queue_name, routing_key='device.*')
+    channel.queue_bind(
+        exchange=cloud_exchange, queue=queue_name, routing_key='device.cmd.list')
     channel.queue_bind(
             exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
     channel.basic_consume(
