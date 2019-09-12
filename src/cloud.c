@@ -177,8 +177,14 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 		  cloud_device_removed_cb_t on_removed,
 		  void *user_data)
 {
+	const char *fog_events[] = {
+		AMQP_EVENT_DATA_UPDATE,
+		AMQP_EVENT_DATA_REQUEST,
+		AMQP_EVENT_DEVICE_UNREGISTERED,
+		NULL
+	};
 	amqp_bytes_t queue_fog;
-	int err;
+	int err, i;
 
 	cloud_cbs.update_cb = on_update;
 	cloud_cbs.request_cb = on_request;
@@ -190,25 +196,14 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 		return -1;
 	}
 
-	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
-					AMQP_EVENT_DATA_UPDATE);
-	if (err) {
-		hal_log_error("Error on set up queue to consume.\n");
-		return -1;
-	}
-
-	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
-					AMQP_EVENT_DATA_REQUEST);
-	if (err) {
-		hal_log_error("Error on set up queue to consume.\n");
-		return -1;
-	}
-
-	err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
-					   AMQP_EVENT_DEVICE_UNREGISTERED);
-	if (err) {
-		hal_log_error("Error on set up queue to consume.\n");
-		return -1;
+	for (i = 0; fog_events[i] != NULL; i++) {
+		err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
+					fog_events[i]);
+		if (err) {
+			hal_log_error("Error on set up queue to consume.\n");
+			amqp_bytes_free(queue_fog);
+			return -1;
+		}
 	}
 
 	amqp_bytes_free(queue_fog);
