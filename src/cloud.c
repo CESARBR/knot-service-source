@@ -70,6 +70,7 @@ static void mydevice_free(void *data)
 	if (unlikely(!mydevice))
 		return;
 
+	l_queue_destroy(mydevice->schema, l_free);
 	l_free(mydevice->id);
 	l_free(mydevice->uuid);
 	l_free(mydevice->name);
