@@ -384,6 +384,7 @@ struct l_queue *parser_mydevices_to_list(json_object *jobj)
 {
 	json_object *jobjentry, *jobjkey;
 	struct l_queue *list;
+	struct l_queue *schema;
 	struct mydevice *mydevice;
 	const char *name;
 	const char *id;
@@ -407,7 +408,11 @@ struct l_queue *parser_mydevices_to_list(json_object *jobj)
 		/* Getting 'schema': Mandatory field for registered device */
 		if (!json_object_object_get_ex(jobjentry, "schema", &jobjkey))
 			continue;
-		// TODO: parse schema
+
+		schema = parser_schema_to_list(
+			json_object_to_json_string(jobjkey));
+		if (!schema)
+			continue;
 
 		/* Getting 'Name' */
 		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
@@ -419,6 +424,7 @@ struct l_queue *parser_mydevices_to_list(json_object *jobj)
 		mydevice->id   = l_strdup(id);
 		mydevice->name = l_strdup(name);
 		mydevice->uuid = l_strdup(id);
+		mydevice->schema = schema;
 		l_queue_push_tail(list, mydevice);
 	}
 
