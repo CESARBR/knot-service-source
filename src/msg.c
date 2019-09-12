@@ -154,11 +154,36 @@ static void mydevice_free(void *data)
 	if (unlikely(!mydevice))
 		return;
 
+	l_queue_destroy(mydevice->schema, l_free);
 	l_free(mydevice->id);
 	l_free(mydevice->uuid);
 	l_free(mydevice->name);
 	l_timeout_remove(mydevice->unreg_timeout);
 	l_free(mydevice);
+}
+
+static void schema_dup_foreach(void *data, void *user_data)
+{
+	struct l_queue *schema = user_data;
+	knot_msg_schema *msg = data;
+
+	l_queue_push_tail(schema, l_memdup(msg, sizeof(*msg)));
+}
+
+static struct mydevice *mydevice_dup(const struct mydevice *mydevice)
+{
+	struct mydevice *mydevice_dup;
+
+	mydevice_dup = l_memdup(mydevice, sizeof(*mydevice));
+	mydevice_dup->id = l_strdup(mydevice->id);
+	mydevice_dup->uuid = l_strdup(mydevice->uuid);
+	mydevice_dup->name = l_strdup(mydevice->name);
+	mydevice_dup->schema = l_queue_new();
+
+	l_queue_foreach(mydevice->schema, schema_dup_foreach,
+			mydevice_dup->schema);
+
+	return mydevice_dup;
 }
 
 static bool device_id_cmp(const void *a, const void *b)
@@ -1387,10 +1412,23 @@ static void proxy_ready(void *user_data)
 		proxy_enabled = true;
 }
 
+static void create_devices_dbus(void *data, void *user_data)
+{
+	const struct mydevice *mydevice = data;
+	struct knot_device *device_dbus;
+	bool registered = mydevice->schema != NULL;
+
+	device_dbus = device_create(mydevice->id, mydevice->name, true,
+				    registered, false);
+	if (device_dbus)
+		device_set_uuid(device_dbus, mydevice->uuid);
+
+	l_queue_push_head(device_id_list, mydevice_dup(mydevice));
+}
+
 static bool handle_cloud_msg_list(struct l_queue *devices)
 {
-	hal_log_dbg("Devices listed");
-	// TODO: create devices in DBus
+	l_queue_foreach(devices, create_devices_dbus, NULL);
 	proxy_ready(NULL);
 
 	return true;
