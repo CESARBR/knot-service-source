@@ -1431,7 +1431,7 @@ static void append_queue(void *data, void *user_data)
 	knot_msg_data *msg = data;
 
 	l_queue_push_tail(session->update_list,
-			  l_memdup(msg, sizeof(msg)));
+			  l_memdup(msg, sizeof(*msg)));
 }
 
 static bool on_update_cb(const char *id, struct l_queue *data,
