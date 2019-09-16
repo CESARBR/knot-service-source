@@ -61,40 +61,54 @@ struct cloud_callbacks {
 
 static struct cloud_callbacks cloud_cbs;
 
+static const char *get_id_from_json_obj(const json_object *jso)
+{
+	json_object *id_json;
+
+	if (!json_object_object_get_ex(jso, "id", &id_json))
+		return NULL;
+
+	if (json_object_get_type(id_json) != json_type_string)
+		return NULL;
+
+	return json_object_get_string(id_json);
+}
+
+/**
+ * Callback function to consume and parse the received message from AMQP queue
+ * and call the respective handling callback function. In case of a error on
+ * parse, the message is consumed, but not used.
+ *
+ * Returns true if the message envelope was consumed or returns false otherwise.
+ */
 static bool cloud_receive_message(const char *exchange,
 				  const char *routing_key,
 				  const char *body, void *user_data)
 {
 	json_object *jso;
-	json_object *id_json;
 	struct l_queue *list;
 	const char *id;
-
-	if (strcmp(AMQP_EXCHANGE_FOG, exchange) != 0)
-		return true;
+	bool consumed = true;
 
 	jso = json_tokener_parse(body);
-	if (!jso)
-		return false;
+	if (!jso) {
+		hal_log_error("Error on parse JSON object");
+		return consumed;
+	}
 
-	if (!json_object_object_get_ex(jso, "id", &id_json))
-		return false;
-
-	if (json_object_get_type(id_json) != json_type_string)
-		return false;
-
-	id = json_object_get_string(id_json);
+	id = get_id_from_json_obj(jso);
+	if (!id) {
+		hal_log_error("Malformed JSON message");
+		goto done;
+	}
 
 	if (cloud_cbs.update_cb != NULL &&
 	    strcmp(AMQP_EVENT_DATA_UPDATE, routing_key) == 0) {
 		list = parser_update_to_list(jso);
-		if (list == NULL) {
-			hal_log_error("Error on parse json object");
-			json_object_put(jso);
-			return false;
-		}
+		if (list == NULL)
+			goto done;
 
-		cloud_cbs.update_cb(id, list, user_data);
+		consumed = cloud_cbs.update_cb(id, list, user_data);
 		l_queue_destroy(list, l_free);
 	}
 
@@ -104,8 +118,9 @@ static bool cloud_receive_message(const char *exchange,
 		/* Call cloud_cbs.request_cb */
 	}
 
+done:
 	json_object_put(jso);
-	return true;
+	return consumed;
 }
 
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
