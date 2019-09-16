@@ -102,13 +102,18 @@ static char *amqp_bytes_to_new_string(amqp_bytes_t data)
 	return str;
 }
 
+/**
+ * Callback function to consume message envelope from AMQP queue.
+ *
+ * Returns true on success or false if the read callback is not set.
+ */
 static bool on_receive(struct l_io *io, void *user_data)
 {
 	amqp_rpc_reply_t res;
 	amqp_envelope_t envelope;
 	char *exchange, *routing_key, *body;
 	struct timeval time_out = { .tv_usec = AMQP_CONNECTION_TIMEOUT_US };
-	bool err = true;
+	bool success;
 
 	if (amqp_release_buffers_ok(amqp_ctx.conn))
 		amqp_release_buffers(amqp_ctx.conn);
@@ -139,16 +144,18 @@ static bool on_receive(struct l_io *io, void *user_data)
 	routing_key = amqp_bytes_to_new_string(envelope.routing_key);
 	body = amqp_bytes_to_new_string(envelope.message.body);
 
-	err = amqp_ctx.read_cb(exchange, routing_key, body, user_data);
+	success = amqp_ctx.read_cb(exchange, routing_key, body, user_data);
+	if (!success)
+		/* TODO: Add the msg on the queue again */
+		hal_log_dbg("Message envelope not consumed");
 
-	/* FIXME: Put msg on the queue again */
 	hal_log_dbg("Destroy received envelope");
 	amqp_destroy_envelope(&envelope);
 	l_free(exchange);
 	l_free(routing_key);
 	l_free(body);
 
-	return err;
+	return true;
 }
 
 static int start_connection(struct settings *settings)
