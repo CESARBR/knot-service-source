@@ -331,7 +331,7 @@ int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
 
 	err = l_io_set_read_handler(amqp_ctx.amqp_io, on_receive,
-				    &amqp_ctx.conn, user_data);
+				    user_data, NULL);
 	if (!err) {
 		l_io_destroy(amqp_ctx.amqp_io);
 		hal_log_error("Error on set up read handler on AMQP io\n");
