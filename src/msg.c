@@ -278,6 +278,9 @@ static bool session_uuid_cmp(const void *entry_data, const void *user_data)
 	const struct session *session = entry_data;
 	const char *uuid = user_data;
 
+	if (!session->uuid)
+		return false;
+
 	return strcmp(session->uuid, uuid) == 0 ? true : false;
 }
 
