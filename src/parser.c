@@ -707,3 +707,16 @@ json_object *parser_device_json_create(const char *device_id,
 	 */
 	return device;
 }
+
+const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
+{
+	json_object *jobjkey;
+
+	if (!json_object_object_get_ex(jso, key, &jobjkey))
+		return false;
+
+	if (json_object_get_type(jobjkey) != json_type_string)
+		return false;
+
+	return json_object_get_string(jobjkey);
+}
