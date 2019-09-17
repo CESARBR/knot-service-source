@@ -80,33 +80,6 @@ struct event_handler {
 	} event_id;
 };
 
-static const char *get_id_from_json_obj(const json_object *jso)
-{
-	json_object *id_json;
-
-	if (!json_object_object_get_ex(jso, "id", &id_json))
-		return NULL;
-
-	if (json_object_get_type(id_json) != json_type_string)
-		return NULL;
-
-	return json_object_get_string(id_json);
-}
-
-static const char *get_token_from_jobj(json_object *jso)
-{
-	json_object *json_token;
-
-	if (!json_object_object_get_ex(jso, "token", &json_token))
-		return NULL;
-
-	if (json_object_get_type(json_token) != json_type_string)
-		return NULL;
-
-	return json_object_get_string(json_token);
-}
-
-
 /**
  * Callback function to consume and parse the received message from AMQP queue
  * and call the respective handling callback function. In case of a error on
@@ -140,7 +113,7 @@ static bool on_cloud_receive_message(const char *exchange,
 	switch (evt_handler->event_id) {
 	case UPDATE_EVT:
 		cb_handler.update_cb = evt_handler->cb;
-		id = get_id_from_json_obj(jso);
+		id = parser_get_key_str_from_json_obj(jso, "id");
 		list = parser_update_to_list(jso);
 		if (!id || !list) {
 			hal_log_error("Malformed JSON message");
@@ -153,7 +126,7 @@ static bool on_cloud_receive_message(const char *exchange,
 		break;
 	case REQUEST_EVT:
 		cb_handler.request_cb = evt_handler->cb;
-		id = get_id_from_json_obj(jso);
+		id = parser_get_key_str_from_json_obj(jso, "id");
 		list = parser_request_to_list(jso);
 		if (!id || !list) {
 			hal_log_error("Malformed JSON message");
@@ -165,8 +138,8 @@ static bool on_cloud_receive_message(const char *exchange,
 		break;
 	case ADDED_EVT:
 		cb_handler.added_cb = evt_handler->cb;
-		id = get_id_from_json_obj(jso);
-		token = get_token_from_jobj(jso);
+		id = parser_get_key_str_from_json_obj(jso, "id");
+		token = parser_get_key_str_from_json_obj(jso, "token");
 		if (!id || !token)
 			return false;
 
@@ -174,7 +147,7 @@ static bool on_cloud_receive_message(const char *exchange,
 		break;
 	case REMOVED_EVT:
 		cb_handler.removed_cb = evt_handler->cb;
-		id = get_id_from_json_obj(jso);
+		id = parser_get_key_str_from_json_obj(jso, "id");
 		if (!id) {
 			hal_log_error("Malformed JSON message");
 			break;
