@@ -81,9 +81,9 @@ static const char *get_id_from_json_obj(const json_object *jso)
  *
  * Returns true if the message envelope was consumed or returns false otherwise.
  */
-static bool cloud_receive_message(const char *exchange,
-				  const char *routing_key,
-				  const char *body, void *user_data)
+static bool on_cloud_receive_message(const char *exchange,
+				     const char *routing_key,
+				     const char *body, void *user_data)
 {
 	json_object *jso;
 	struct l_queue *list;
@@ -176,7 +176,7 @@ int cloud_set_cbs(cloud_downstream_cb_t on_update,
 
 	amqp_bytes_free(queue_fog);
 
-	err = amqp_set_read_cb(cloud_receive_message, user_data);
+	err = amqp_set_read_cb(on_cloud_receive_message, user_data);
 	if (err) {
 		hal_log_error("Error on set up read callback\n");
 		return -1;
