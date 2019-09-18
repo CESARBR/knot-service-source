@@ -1400,7 +1400,7 @@ connect_fail:
 	l_timeout_modify(timeout, 5);
 }
 
-static void append_queue(void *data, void *user_data)
+static void append_on_update_list(void *data, void *user_data)
 {
 	const struct session *session = user_data;
 	knot_msg_data *msg = data;
@@ -1421,8 +1421,8 @@ static void append_on_request_list(void *data, void *user_data)
 				  l_memdup(msg, sizeof(*msg)));
 }
 
-static bool on_update_cb(const char *id, struct l_queue *data,
-			 void *user_data)
+static bool on_update(const char *id, struct l_queue *list,
+		      void *user_data)
 {
 	struct session *session;
 
@@ -1432,7 +1432,7 @@ static bool on_update_cb(const char *id, struct l_queue *data,
 		return false;
 	}
 
-	l_queue_foreach(data, append_queue, session);
+	l_queue_foreach(list, append_on_update_list, session);
 
 	if (session->downstream_to)
 		l_timeout_modify_ms(session->downstream_to, 512);
@@ -1440,8 +1440,8 @@ static bool on_update_cb(const char *id, struct l_queue *data,
 	return true;
 }
 
-static bool on_request_cb(const char *id, struct l_queue *data,
-			  void *user_data)
+static bool on_request(const char *id, struct l_queue *list,
+		       void *user_data)
 {
 	struct session *session;
 
@@ -1451,7 +1451,7 @@ static bool on_request_cb(const char *id, struct l_queue *data,
 		return false;
 	}
 
-	l_queue_foreach(data, append_on_request_list, session);
+	l_queue_foreach(list, append_on_request_list, session);
 
 	if (session->downstream_to)
 		l_timeout_modify_ms(session->downstream_to, 512);
@@ -1483,7 +1483,7 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	err = cloud_set_read_handlers(on_update_cb, on_request_cb,
+	err = cloud_set_read_handlers(on_update, on_request,
 				      on_device_removed, NULL);
 	if (err < 0) {
 		hal_log_error("cloud_set_read_handlers(): %s", strerror(-err));
