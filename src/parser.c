@@ -735,13 +735,17 @@ static void schema_item_create_and_append(void *data, void *user_data)
 	json_object_array_add(schema_list, item);
 }
 
-json_object *parser_schema_create_object(struct l_queue *schema_list)
+json_object *parser_schema_create_object(const char *device_id,
+					 struct l_queue *schema_list)
 {
 	json_object *json_msg;
 	json_object *json_schema_array;
 
 	json_msg = json_object_new_object();
 	json_schema_array = json_object_new_array();
+
+	json_object_object_add(json_msg, "id",
+			       json_object_new_string(device_id));
 
 	l_queue_foreach(schema_list, schema_item_create_and_append,
 			json_schema_array);
@@ -751,7 +755,8 @@ json_object *parser_schema_create_object(struct l_queue *schema_list)
 	/*
 	 * Returned JSON object is in the following format:
 	 *
-	 * { "schema" : [{
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "schema" : [{
 	 *         "sensor_id": 1,
 	 *         "value_type": 0xFFF1,
 	 *         "unit": 0,
