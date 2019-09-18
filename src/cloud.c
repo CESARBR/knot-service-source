@@ -122,11 +122,11 @@ static bool on_cloud_receive_message(const char *exchange,
 	switch (evt_handler->event_id) {
 	case UPDATE_EVT:
 		cb_handler.update_cb = evt_handler->cb;
-	id = get_id_from_json_obj(jso);
-	if (!id) {
-		hal_log_error("Malformed JSON message");
-		goto done;
-	}
+		id = get_id_from_json_obj(jso);
+		if (!id) {
+			hal_log_error("Malformed JSON message");
+			goto done;
+		}
 
 		list = parser_update_to_list(jso);
 		if (list == NULL)
@@ -145,7 +145,7 @@ static bool on_cloud_receive_message(const char *exchange,
 		if (!id) {
 			hal_log_error("Malformed JSON message");
 			goto done;
-	}
+		}
 
 		cb_handler.removed_cb(id, user_data);
 		break;
