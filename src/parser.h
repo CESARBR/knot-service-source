@@ -42,5 +42,6 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				uint8_t kval_len);
 json_object *parser_device_json_create(const char *device_id,
 				       const char *device_name);
-json_object *parser_schema_create_object(struct l_queue *schema_list);
+json_object *parser_schema_create_object(const char *device_id,
+					 struct l_queue *schema_list);
 const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key);

@@ -69,7 +69,6 @@ struct session {
 	char *token;			/* Device token */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	char *schema;			/* Current schema */
-	struct l_queue *schema_list_tmp;/* Schema to be submitted to cloud */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	char *config;			/* Current config */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
@@ -106,7 +105,6 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->id = INT32_MAX;
 	session->node_ops = node_ops;
 	session->schema_list = NULL;
-	session->schema_list_tmp = NULL;
 	session->config_list = NULL;
 	session->update_list = l_queue_new();
 	session->request_list = l_queue_new();
@@ -125,7 +123,6 @@ static void session_destroy(struct session *session)
 	l_free(session->uuid);
 	l_free(session->token);
 	l_queue_destroy(session->schema_list, l_free);
-	l_queue_destroy(session->schema_list_tmp, l_free);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->update_list, l_free);
 	l_queue_destroy(session->request_list, l_free);
@@ -660,9 +657,9 @@ static int8_t msg_auth(struct session *session,
 static int8_t msg_schema(struct session *session,
 			 const knot_msg_schema *schema, bool eof)
 {
-	int proto_sock;
-	int8_t result;
+	int8_t result = 0;
 	int err;
+	char id[KNOT_ID_LEN];
 
 	err = knot_schema_is_valid(schema->values.type_id,
 				   schema->values.value_type,
@@ -681,7 +678,7 @@ static int8_t msg_schema(struct session *session,
 	 * {
 	 *	"schema" : [
 	 *		{"sensor_id": x, "value_type": w,
-	 *			"unit": z "type_id": y, "name": "foo"}
+	 *			"unit": z, "type_id": y, "name": "foo"}
 	 * 	]
 	 * }
 	 */
@@ -690,40 +687,23 @@ static int8_t msg_schema(struct session *session,
 	 * Checks whether the schema was received before and if not, adds
 	 * to a temporary list until receiving complete schema.
 	 */
-	if (session->schema_list_tmp == NULL)
-		session->schema_list_tmp = l_queue_new();
+	if (session->schema_list == NULL)
+		session->schema_list = l_queue_new();
 
-	if (!schema_find(session->schema_list_tmp, schema->sensor_id))
-		l_queue_push_tail(session->schema_list_tmp,
+	if (!schema_find(session->schema_list, schema->sensor_id))
+		l_queue_push_tail(session->schema_list,
 				  l_memdup(schema, sizeof(*schema)));
 
-	if (!eof) {
-		result = 0;
-		goto done;
+	if (eof) {
+		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
+		result = cloud_update_schema(id, session->schema_list);
 	}
 
-	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_schema(proto_sock, session->uuid,
-			      session->token, session->schema_list_tmp);
-	if (result != 0) {
-		l_queue_destroy(session->schema_list_tmp, l_free);
-		session->schema_list_tmp = NULL;
-		goto done;
+	if (result < 0) {
+		l_queue_destroy(session->schema_list, l_free);
+		session->schema_list = NULL;
 	}
 
-	/* If succeeded: free old schema and use the new one */
-	l_queue_destroy(session->schema_list, l_free);
-	session->schema_list = session->schema_list_tmp;
-	session->schema_list_tmp = NULL;
-
-	/*
-	 * For security reason, remove from rollback avoiding clonning attack.
-	 * If schema is being sent means that credentals (UUID/token) has been
-	 * properly received (registration complete).
-	 */
-	session->rollback = 0; /* Rollback disabled */
-
-done:
 	return result;
 }
 

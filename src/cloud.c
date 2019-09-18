@@ -59,6 +59,7 @@
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
 #define AMQP_CMD_DEVICE_REGISTER "device.register"
 #define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
+#define AMQP_CMD_SCHEMA_UPDATE "schema.update"
 #define AMQP_CMD_DEVICE_LIST "device.cmd.list"
 
 cloud_cb_t cloud_cb;
@@ -272,6 +273,44 @@ int cloud_unregister_device(const char *id)
 	amqp_bytes_free(queue_cloud);
 
 	return 0;
+}
+
+/**
+ * cloud_update_schema:
+ *
+ * Requests cloud to update the device schema.
+ * The confirmation that the cloud received the message comes from a callback
+ * set in function cloud_set_read_handler with message type SCHEMA_MSG.
+ *
+ * Returns: 0 if successful and a KNoT error otherwise.
+ */
+int cloud_update_schema(const char *id, struct l_queue *schema_list)
+{
+	amqp_bytes_t queue_cloud;
+	json_object *jobj_schema;
+	const char *json_str;
+	int result;
+
+	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	if (!queue_cloud.bytes) {
+		hal_log_error("Error on declare a new queue.\n");
+		return -1;
+	}
+
+	jobj_schema = parser_schema_create_object(id, schema_list);
+	json_str = json_object_to_json_string(jobj_schema);
+
+	result = amqp_publish_persistent_message(queue_cloud,
+						 AMQP_EXCHANGE_CLOUD,
+						 AMQP_CMD_SCHEMA_UPDATE,
+						 json_str);
+	if (result < 0)
+		result = KNOT_ERR_CLOUD_FAILURE;
+
+	json_object_put(jobj_schema);
+	amqp_bytes_free(queue_cloud);
+
+	return result;
 }
 
 /**

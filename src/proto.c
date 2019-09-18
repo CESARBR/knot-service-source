@@ -155,27 +155,3 @@ fail:
 
 	return result;
 }
-
-int proto_schema(int proto_socket, const char *uuid,
-		 const char *token, struct l_queue *schema_list)
-{
-	json_object *jschema_list;
-	const char *jschema_list_as_string;
-	int result, err;
-
-	jschema_list = parser_schema_create_object(schema_list);
-	jschema_list_as_string = json_object_to_json_string(jschema_list);
-
-	err = proto->schema(proto_socket, uuid, token,
-			    jschema_list_as_string);
-
-	json_object_put(jschema_list);
-
-	if (err < 0) {
-		hal_log_error("manager schema(): %s(%d)", strerror(-err), -err);
-		result = KNOT_ERR_CLOUD_FAILURE;
-	} else
-		result = 0;
-
-	return result;
-}
