@@ -125,12 +125,12 @@ static bool on_cloud_receive_message(const char *exchange,
 		id = get_id_from_json_obj(jso);
 		if (!id) {
 			hal_log_error("Malformed JSON message");
-			goto done;
+			break;
 		}
 
 		list = parser_update_to_list(jso);
 		if (list == NULL)
-			goto done;
+			break;
 
 		consumed = cb_handler.update_cb(id, list, user_data);
 		l_queue_destroy(list, l_free);
@@ -144,17 +144,15 @@ static bool on_cloud_receive_message(const char *exchange,
 		id = get_id_from_json_obj(jso);
 		if (!id) {
 			hal_log_error("Malformed JSON message");
-			goto done;
+			break;
 		}
 
 		cb_handler.removed_cb(id, user_data);
 		break;
 	default:
 		hal_log_error("Unknown event %s", routing_key);
-		break;
 	}
 
-done:
 	json_object_put(jso);
 	return consumed;
 }
