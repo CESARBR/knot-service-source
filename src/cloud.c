@@ -123,14 +123,12 @@ static bool on_cloud_receive_message(const char *exchange,
 	case UPDATE_EVT:
 		cb_handler.update_cb = evt_handler->cb;
 		id = get_id_from_json_obj(jso);
-		if (!id) {
+		list = parser_update_to_list(jso);
+		if (!id || !list) {
 			hal_log_error("Malformed JSON message");
+			l_queue_destroy(list, l_free);
 			break;
 		}
-
-		list = parser_update_to_list(jso);
-		if (list == NULL)
-			break;
 
 		consumed = cb_handler.update_cb(id, list, user_data);
 		l_queue_destroy(list, l_free);
