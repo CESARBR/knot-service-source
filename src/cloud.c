@@ -155,6 +155,16 @@ static bool on_cloud_receive_message(const char *exchange,
 	return consumed;
 }
 
+/**
+ * cloud_unregister_device:
+ * @id: device id
+ *
+ * Requests cloud to remove a device.
+ * The confirmation that the cloud received the message comes from a callback
+ * set in function cloud_set_read_handlers.
+ *
+ * Returns: 0 if successful and a KNoT error otherwise.
+ */
 int cloud_unregister_device(const char *id)
 {
 	json_object *jobj;
@@ -175,6 +185,18 @@ int cloud_unregister_device(const char *id)
 	return 0;
 }
 
+/**
+ * cloud_publish_data:
+ * @id: device id
+ * @sensor_id: schema sensor id
+ * @value_type: schema value type defined in KNoT protocol
+ * @value: value to be sent
+ * @kval_len: length of @value
+ *
+ * Sends device's data to cloud.
+ *
+ * Returns: 0 if successful and a KNoT error otherwise.
+ */
 int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 		       const knot_value_type *value,
 		       uint8_t kval_len)
@@ -196,6 +218,17 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	return result;
 }
 
+/**
+ * cloud_set_read_handlers:
+ * @on_update: callback to be called when receive an update message
+ * @on_request: callback to be called when receive an request message
+ * @on_removed: callback to be called when device is removed
+ * @user_data: user data provided to callbacks
+ *
+ * Set callback handlers when receive cloud messages.
+ *
+ * Returns: 0 if successful and -1 otherwise.
+ */
 int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
 		  cloud_device_removed_cb_t on_removed,
