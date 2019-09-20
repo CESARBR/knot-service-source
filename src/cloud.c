@@ -108,7 +108,7 @@ static bool on_cloud_receive_message(const char *exchange,
 	union cloud_cb_t cb_handler;
 
 	evt_handler = l_hashmap_lookup(map_event_to_cb, routing_key);
-	if (!evt_handler->cb) {
+	if (!evt_handler) {
 		hal_log_error("Error cb handler not set");
 		return false;
 	}
