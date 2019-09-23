@@ -20,15 +20,7 @@
 
 import pika
 import logging
-
-logging.basicConfig(
-    format='%(asctime)s %(message)s',
-    level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S')
-
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
+import argparse
 
 cloud_exchange = 'cloud'
 fog_exchange = 'fog'
@@ -37,6 +29,65 @@ EVENT_UNREGISTER = 'device.unregister'
 KEY_UNREGISTERED = 'device.unregistered'
 
 EVENT_DATA = 'data.publish'
+
+KEY_UPDATE = 'data.update'
+KEY_REQUEST = 'data.request'
+
+logging.basicConfig(
+    format='%(asctime)s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
+
+
+def on_msg_received(ch, method, properties, body):
+    logging.info("%r:%r" % (method.routing_key, body))
+
+    if method.routing_key == EVENT_UNREGISTER:
+        message = body
+        channel.basic_publish(exchange=fog_exchange,
+                              routing_key=KEY_UNREGISTERED, body=message)
+    elif method.routing_key == EVENT_DATA:
+        return None
+
+    logging.info(" [x] Sent %r" % (message))
+
+def msg_consume(args):
+    channel.basic_consume(
+    queue=queue_name, on_message_callback=on_msg_received, auto_ack=True)
+
+    logging.info('Listening to messages')
+    channel.start_consuming()
+
+def msg_update(args):
+    channel.basic_publish(exchange=fog_exchange,
+                          routing_key=KEY_UPDATE, body=args.message)
+
+def msg_request(args):
+    channel.basic_publish(exchange=fog_exchange,
+                          routing_key=KEY_REQUEST, body=args.message)
+
+parser = argparse.ArgumentParser(description='Mock KNoT Fog Connector')
+parser.set_defaults(func=msg_consume)
+subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
+
+parser_update = subparsers.add_parser('send-update', help='Sends a message to \
+    update the sensor in device')
+parser_update.add_argument('message', type=str, help='Update message to be \
+    sent. Format: {"id": <device_id>, "data":[{"sensor_id": <sensor_id>, \
+    "data": <sensor_data>}, ...]}')
+parser_update.set_defaults(func=msg_update)
+
+parser_request = subparsers.add_parser('send-request', help='Sends a message \
+    requesting data from sensor device')
+parser_request.add_argument('message', type=str, help='Request message to be \
+    sent. Format: {"id": <device_id>, "data":[<sensor_id>, ...]}')
+parser_request.set_defaults(func=msg_request)
+
+options = parser.parse_args()
+
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(host='localhost'))
+channel = connection.channel()
 
 channel.exchange_declare(exchange=fog_exchange, durable=True,
 exchange_type='topic')
@@ -51,20 +102,4 @@ channel.queue_bind(
 channel.queue_bind(
         exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
 
-def callback(ch, method, properties, body):
-    logging.info("%r:%r" % (method.routing_key, body))
-
-    if method.routing_key == EVENT_UNREGISTER:
-        message = body
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_UNREGISTERED, body=message)
-    elif method.routing_key == EVENT_DATA:
-        return None
-
-    logging.info(" [x] Sent %r" % (message))
-
-channel.basic_consume(
-    queue=queue_name, on_message_callback=callback, auto_ack=True)
-
-logging.info('Listening to messages')
-channel.start_consuming()
+options.func(options)
