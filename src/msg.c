@@ -1487,11 +1487,11 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	err = cloud_set_cbs(on_update_cb, on_request_cb, on_device_removed,
-			    NULL);
+	err = cloud_set_read_handlers(on_update_cb, on_request_cb,
+				      on_device_removed, NULL);
 	if (err < 0) {
-		hal_log_error("cloud_set_cbs(): %s", strerror(-err));
-		goto cloud_set_cbs_fail;
+		hal_log_error("cloud_set_read_handlers(): %s", strerror(-err));
+		goto cloud_set_read_handlers_fail;
 	}
 
 	device_id_list = l_queue_new();
@@ -1499,7 +1499,7 @@ int msg_start(struct settings *settings)
 
 	return (start_to ? 0 : -ENOMEM);
 
-cloud_set_cbs_fail:
+cloud_set_read_handlers_fail:
 	cloud_stop();
 cloud_fail:
 	proto_stop();
