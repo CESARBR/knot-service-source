@@ -196,7 +196,7 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	return result;
 }
 
-int cloud_set_cbs(cloud_downstream_cb_t on_update,
+int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
 		  cloud_downstream_cb_t on_request,
 		  cloud_device_removed_cb_t on_removed,
 		  void *user_data)
