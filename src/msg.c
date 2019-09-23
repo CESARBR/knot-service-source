@@ -827,7 +827,6 @@ static ssize_t msg_process(struct session *session,
 	uint8_t rtype = 0;
 	size_t plen;
 	int8_t result = KNOT_ERR_INVALID;
-	bool eof;
 
 	/* Verify if output PDU has a min length */
 	if (omtu < sizeof(knot_msg)) {
@@ -889,14 +888,20 @@ static ssize_t msg_process(struct session *session,
 					    session, NULL);
 		break;
 	case KNOT_MSG_SCHM_FRAG_REQ:
-	case KNOT_MSG_SCHM_END_REQ:
-		eof = kreq->hdr.type == KNOT_MSG_SCHM_END_REQ ? true : false;
-		result = msg_schema(session, &kreq->schema, eof);
-		if (eof)
-			rtype = KNOT_MSG_SCHM_END_RSP;
-		else
-			rtype = KNOT_MSG_SCHM_FRAG_RSP;
+		rtype = KNOT_MSG_SCHM_FRAG_RSP;
+		result = msg_schema(session, &kreq->schema, false);
 		break;
+	case KNOT_MSG_SCHM_END_REQ:
+		rtype = KNOT_MSG_SCHM_END_REQ;
+		result = msg_schema(session, &kreq->schema, true);
+		if (result != 0)
+			break;
+
+		/*
+		 * KNOT_MSG_SCHM_END_RSP is sent on function
+		 * handle_schema_updated
+		 */
+		return 0;
 	case KNOT_MSG_PUSH_CONFIG_RSP:
 		result = msg_config_resp(session, &kreq->item);
 		/* No octets to be transmitted */
@@ -1316,14 +1321,30 @@ static bool handle_schema_updated(struct session *session,
 				  const char *device_id, const char *err)
 {
 	struct knot_device *device;
+	ssize_t osent;
+	int osent_err;
+	bool result = false;
+	knot_msg msg;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.type = KNOT_MSG_SCHM_END_RSP;
 
 	if (err) {
 		hal_log_error("%s", err);
+
+		msg.action.result = KNOT_ERR_CLOUD_FAILURE;
+		result = true;
+
 		/* TODO: Send a error signal via D-Bus */
-		return true;
 	}
 
-	/* TODO: Send KNOT_MSG_SCHM_END_RSP to the KNoT Thing */
+	osent = session->node_ops->send(session->node_fd, &msg, sizeof(msg));
+	if (osent < 0) {
+		osent_err = -osent;
+		hal_log_error("[session %p] Can't send msg response %s(%d)",
+			      session, strerror(osent_err), osent_err);
+		return result;
+	}
 
 	device = device_get(device_id);
 	if (device)
