@@ -216,6 +216,16 @@ static int start_connection(struct settings *settings)
 	return 0;
 }
 
+/**
+ * amqp_publish_persistent_message:
+ * @exchange: exchange name
+ * @routing_keys: routing key name
+ * @body: the message to be sent
+ *
+ * Publishs a persistent message in the exchange and routing key
+ *
+ * Returns: 0 if successfull and negative integer otherwise.
+ */
 int8_t amqp_publish_persistent_message(const char *exchange,
 				       const char *routing_keys,
 				       const char *body)
@@ -256,6 +266,14 @@ int8_t amqp_publish_persistent_message(const char *exchange,
 	return rc;
 }
 
+/**
+ * amqp_declare_new_queue:
+ * @name: queue name
+ *
+ * Declares a durable queue in amqp connection.
+ *
+ * Returns: the queue declared or NULL otherwise.
+ */
 amqp_bytes_t amqp_declare_new_queue(const char *name)
 {
 	amqp_bytes_t queue;
@@ -282,6 +300,16 @@ amqp_bytes_t amqp_declare_new_queue(const char *name)
 	return queue;
 }
 
+/**
+ * amqp_set_queue_to_consume:
+ * @queue: queue declared
+ * @exchange: exchange to be declared
+ * @routing_key: routing key to bind
+ *
+ * Declares a exchange and bind a routing key to a queue to be a consumer.
+ *
+ * Returns: 0 if successfull and -1 otherwise.
+ */
 int amqp_set_queue_to_consume(amqp_bytes_t queue,
 			      const char *exchange,
 			      const char *routing_key)
@@ -329,6 +357,15 @@ int amqp_set_queue_to_consume(amqp_bytes_t queue,
 	return 0;
 }
 
+/**
+ * amqp_set_read_cb:
+ * @on_read: callback to be called when receive some amqp message
+ * @user_data: user data provided to callback
+ *
+ * Set the callback handler when receive any message from amqp connection.
+ *
+ * Returns: 0 if successfull and -1 otherwise.
+ */
 int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 {
 	int err;
