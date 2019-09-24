@@ -20,6 +20,7 @@
 
 import pika
 import logging
+import json
 import argparse
 
 cloud_exchange = 'cloud'
@@ -38,6 +39,27 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
+def __parse_update_message(msg_file):
+    if msg_file:
+        with open(msg_file) as fd:
+            msg = json.load(fd)
+    else:
+        msg = {
+            "id": "0123456789abcdef",
+            "data": [{"sensor_id": 253, "data": True}]
+        }
+    return json.dumps(msg)
+
+def __parse_request_message(msg_file):
+    if msg_file:
+        with open(msg_file) as fd:
+            msg = json.load(fd)
+    else:
+        msg = {
+            "id": "0123456789abcdef",
+            "data": [253]
+        }
+    return json.dumps(msg)
 
 def on_msg_received(ch, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
@@ -59,28 +81,45 @@ def msg_consume(args):
     channel.start_consuming()
 
 def msg_update(args):
+    msg = __parse_update_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
-                          routing_key=KEY_UPDATE, body=args.message)
+                          routing_key=KEY_UPDATE, body=msg)
 
 def msg_request(args):
+    msg = __parse_request_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
-                          routing_key=KEY_REQUEST, body=args.message)
+                          routing_key=KEY_REQUEST, body=msg)
 
 parser = argparse.ArgumentParser(description='Mock KNoT Fog Connector')
 parser.set_defaults(func=msg_consume)
 subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
 parser_update = subparsers.add_parser('send-update', help='Sends a message to \
-    update the sensor in device')
-parser_update.add_argument('message', type=str, help='Update message to be \
-    sent. Format: {"id": <device_id>, "data":[{"sensor_id": <sensor_id>, \
-    "data": <sensor_data>}, ...]}')
+    update the sensor in device', formatter_class=argparse.RawTextHelpFormatter)
+parser_update.add_argument('-f', '--json-msg-file', type=str,
+    help='''JSON File with update message to be sent.
+    Format: {
+              "id": <device_id>,
+              "data": [{
+                  "sensor_id": <sensor_id>,
+                  "data": <sensor_data>
+              }, ...]
+            }
+    ''',
+    default='', metavar="MSG_FILE")
 parser_update.set_defaults(func=msg_update)
 
 parser_request = subparsers.add_parser('send-request', help='Sends a message \
-    requesting data from sensor device')
-parser_request.add_argument('message', type=str, help='Request message to be \
-    sent. Format: {"id": <device_id>, "data":[<sensor_id>, ...]}')
+    requesting data from sensor device',
+    formatter_class=argparse.RawTextHelpFormatter)
+parser_request.add_argument('-f', '--json-msg-file', type=str,
+    help='''JSON File with request message to be sent.
+    Format: {
+              "id": <device_id>,
+              "data":[<sensor_id>, ...]
+            }
+    ''',
+    default='', metavar="MSG_FILE")
 parser_request.set_defaults(func=msg_request)
 
 options = parser.parse_args()
