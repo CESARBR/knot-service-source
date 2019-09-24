@@ -1403,10 +1403,13 @@ connect_fail:
 static void append_on_update_list(void *data, void *user_data)
 {
 	const struct session *session = user_data;
+	knot_msg_schema *schema_found;
 	knot_msg_data *msg = data;
 
-	l_queue_push_tail(session->update_list,
-			  l_memdup(msg, sizeof(*msg)));
+	schema_found = schema_find(session->schema_list, msg->sensor_id);
+	if (schema_found)
+		l_queue_push_tail(session->update_list,
+				  l_memdup(msg, sizeof(*msg)));
 }
 
 static void append_on_request_list(void *data, void *user_data)
