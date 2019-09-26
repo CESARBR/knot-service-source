@@ -65,7 +65,7 @@ def __parse_request_message(msg_file):
         }
     return json.dumps(msg)
 
-def on_msg_received(ch, method, properties, body):
+def __on_msg_received(channel, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
 
     if method.routing_key == EVENT_REGISTER:
@@ -83,26 +83,57 @@ def on_msg_received(ch, method, properties, body):
 
     logging.info(" [x] Sent %r" % (message))
 
+def __amqp_start():
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange=fog_exchange, durable=True,
+    exchange_type='topic')
+    channel.exchange_declare(exchange=cloud_exchange, durable=True,
+    exchange_type='topic')
+
+    return channel
+
+# Parser sub-commands
 def msg_consume(args):
+    channel = __amqp_start()
+    result = channel.queue_declare('', exclusive=True)
+    queue_name = result.method.queue
+
+    channel.queue_bind(
+            exchange=cloud_exchange, queue=queue_name, routing_key='device.*')
+    channel.queue_bind(
+            exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
     channel.basic_consume(
-    queue=queue_name, on_message_callback=on_msg_received, auto_ack=True)
+    queue=queue_name, on_message_callback=__on_msg_received, auto_ack=True)
 
     logging.info('Listening to messages')
     channel.start_consuming()
 
 def msg_update(args):
+    channel = __amqp_start()
     msg = __parse_update_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
                           routing_key=KEY_UPDATE, body=msg)
 
 def msg_request(args):
+    channel = __amqp_start()
     msg = __parse_request_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
                           routing_key=KEY_REQUEST, body=msg)
 
+def no_command(args):
+    parser.print_help()
+    exit(1)
+
 parser = argparse.ArgumentParser(description='Mock KNoT Fog Connector')
-parser.set_defaults(func=msg_consume)
+parser.set_defaults(func=no_command)
 subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
+
+parser_listen = subparsers.add_parser('listen', help='Listen to messages \
+    from client KNoT daemon', formatter_class=argparse.RawTextHelpFormatter)
+parser_listen.set_defaults(func=msg_consume)
 
 parser_update = subparsers.add_parser('send-update', help='Sends a message to \
     update the sensor in device', formatter_class=argparse.RawTextHelpFormatter)
@@ -133,22 +164,4 @@ parser_request.add_argument('-f', '--json-msg-file', type=str,
 parser_request.set_defaults(func=msg_request)
 
 options = parser.parse_args()
-
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
-
-channel.exchange_declare(exchange=fog_exchange, durable=True,
-exchange_type='topic')
-channel.exchange_declare(exchange=cloud_exchange, durable=True,
-exchange_type='topic')
-
-result = channel.queue_declare('', exclusive=True)
-queue_name = result.method.queue
-
-channel.queue_bind(
-        exchange=cloud_exchange, queue=queue_name, routing_key='device.*')
-channel.queue_bind(
-        exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
-
 options.func(options)
