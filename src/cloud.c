@@ -52,11 +52,13 @@
 #define AMQP_EVENT_DATA_REQUEST "data.request"
 #define AMQP_EVENT_DEVICE_REGISTERED "device.registered"
 #define AMQP_EVENT_DEVICE_UNREGISTERED "device.unregistered"
+#define AMQP_EVENT_DEVICE_LIST "device.list"
 
  /* Northbound traffic (control, measurements) */
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
 #define AMQP_CMD_DEVICE_REGISTER "device.register"
 #define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
+#define AMQP_CMD_DEVICE_LIST "device.cmd.list"
 
 cloud_cb_t cloud_cb;
 
@@ -78,6 +80,8 @@ static int map_routing_key_to_msg_type(const char *routing_key)
 		return REGISTER_MSG;
 	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_UNREGISTERED))
 		return UNREGISTER_MSG;
+	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_LIST))
+		return LIST_MSG;
 	return -1;
 }
 
@@ -122,6 +126,9 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 			goto err;
 		}
 
+		break;
+	case LIST_MSG:
+		// TODO: parse devices and execute callback
 		break;
 	default:
 		hal_log_error("Unknown event %s", routing_key);
@@ -224,6 +231,34 @@ int cloud_unregister_device(const char *id)
 	json_object_put(jobj);
 
 	return 0;
+}
+
+/**
+ * cloud_list_devices:
+ *
+ * Requests cloud to list the devices from the gateway.
+ * The confirmation that the cloud received the message comes from a callback
+ * set in function cloud_set_read_handler with message type LIST_MSG.
+ *
+ * Returns: 0 if successful and a KNoT error otherwise.
+ */
+int cloud_list_devices(void)
+{
+	json_object *jobj_empty;
+	const char *json_str;
+	int result;
+
+	jobj_empty = json_object_new_object();
+	json_str = json_object_to_json_string(jobj_empty);
+	result = amqp_publish_persistent_message(AMQP_EXCHANGE_CLOUD,
+						 AMQP_CMD_DEVICE_LIST,
+						 json_str);
+	if (result < 0)
+		result = KNOT_ERR_CLOUD_FAILURE;
+
+	json_object_put(jobj_empty);
+
+	return result;
 }
 
 /**
