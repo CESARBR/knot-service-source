@@ -484,7 +484,7 @@ static void msg_register_get_device_name(const knot_msg_register *kreq,
 static void msg_credential_create(knot_msg_credential *message,
 				  const char *uuid, const char *token)
 {
-	memcpy(message->uuid, uuid, sizeof(message->uuid));
+	memcpy(message->uuid, uuid, KNOT_ID_LEN);
 	memcpy(message->token, token, sizeof(message->token));
 
 	/* Payload length includes the result, UUID and TOKEN */
@@ -532,11 +532,17 @@ static int8_t msg_register(struct session *session,
 		return result;
 
 	device_pending->id = l_strdup(id);
+	/**
+	 * Hacking: The id is sent inside the uuid field to avoid changes in
+	 * on structs in knot_protocol library.
+	 */
+	device_pending->uuid = l_strdup(id);
 	device_pending->name = l_strdup(device_name);
 	device_pending->online = false;
 
 	l_queue_push_head(device_id_list, device_pending);
 
+	session->id = kreq->id;
 	session->rollback = 1; /* Initial counter value */
 
 	return 0;
@@ -616,9 +622,7 @@ static int8_t msg_auth(struct session *session,
 	session->rollback = 0; /* Rollback disabled */
 
 	if (result != 0) {
-		l_free(session->uuid);
 		l_free(session->token);
-		session->uuid = NULL;
 		session->token = NULL;
 		return result;
 	}
@@ -903,16 +907,13 @@ static ssize_t msg_process(struct session *session,
 	case KNOT_MSG_REG_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
-		rtype = KNOT_MSG_REG_RSP;
 		if (result != 0)
 			break;
-
-		/* Enable downstream after registration & authentication */
 		session->downstream_to =
 			l_timeout_create_ms(512,
 					    downstream_callback,
 					    session, NULL);
-		break;
+		return 0;
 	case KNOT_MSG_UNREG_REQ:
 		result = msg_unregister(session);
 		rtype = KNOT_MSG_UNREG_RSP;
@@ -1256,6 +1257,23 @@ static void on_device_added(const char *device_id, const char *token,
 	struct mydevice *device_pending = l_queue_find(device_id_list,
 						 device_id_cmp,
 						 device_id);
+	struct session *session = l_queue_find(session_list, session_id_cmp,
+					       device_id);
+	const struct node_ops *node_ops;
+	knot_msg_credential msg;
+	ssize_t olen, osent;
+	int err;
+
+	if (!session) {
+		hal_log_dbg("Session not found");
+		/*
+		 * TODO: send a nack to amqp so the same message can be handled
+		 * later
+		 */
+		return;
+	}
+
+	node_ops = session->node_ops;
 
 	/* Tracks 'proxy' devices that belongs to Cloud. */
 	hal_log_info("Device added: %s", device_id);
@@ -1273,10 +1291,26 @@ static void on_device_added(const char *device_id, const char *token,
 			return;
 	}
 
-	// TODO: Authenticate device on cloud
-	// FIXME: Send REGISTER_RESP
-
+	device_set_uuid(device_dbus, device_pending->uuid);
 	device_pending->unreg_timeout = NULL;
+	session->trusted = false;
+	session->uuid = l_strdup(device_pending->uuid);
+	session->token = l_strdup(token);
+
+	// TODO: Authenticate device on cloud
+
+	memset(&msg, 0, sizeof(msg));
+	msg_credential_create(&msg, device_pending->uuid, token);
+
+	msg.hdr.type = KNOT_MSG_REG_RSP;
+	olen = sizeof(msg);
+
+	osent = node_ops->send(session->node_fd, &msg, olen);
+	if (osent < 0) {
+		err = -osent;
+		hal_log_error("[session %p] Can't send register response %s(%d)"
+			      , session, strerror(err), err);
+	}
 }
 
 /*
