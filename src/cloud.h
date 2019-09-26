@@ -25,11 +25,12 @@ struct cloud_msg {
 		UPDATE_MSG,
 		REQUEST_MSG,
 		REGISTER_MSG,
-		UNREGISTER_MSG
+		UNREGISTER_MSG,
+		LIST_MSG
 	} type;
 	union {
 		const char *token; // used when type is REGISTER
-		struct l_queue *list; // used when type is UPDATE/REQUEST
+		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};
 };
 
@@ -44,3 +45,4 @@ int cloud_publish_data(const char *id, uint8_t sensor_id,
 		       uint8_t kval_len);
 int cloud_register_device(const char *id, const char *name);
 int cloud_unregister_device(const char *id);
+int cloud_list_devices(void);
