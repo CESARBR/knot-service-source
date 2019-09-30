@@ -1250,23 +1250,17 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 		hal_log_info("Removing proxy for %s", id);
 }
 
-static bool handle_device_added(const char *device_id, const char *token)
+static bool handle_device_added(struct session *session, const char *device_id,
+				const char *token)
 {
 	struct knot_device *device_dbus = device_get(device_id);
 	struct mydevice *device_pending = l_queue_find(device_id_list,
 						 device_id_cmp,
 						 device_id);
-	struct session *session = l_queue_find(session_list, session_id_cmp,
-					       device_id);
 	const struct node_ops *node_ops;
 	knot_msg_credential msg;
 	ssize_t olen, osent;
 	int err, result, proto_sock;
-
-	if (!session) {
-		hal_log_dbg("Session not found");
-		return false;
-	}
 
 	node_ops = session->node_ops;
 
@@ -1456,20 +1450,10 @@ static void append_on_request_list(void *data, void *user_data)
  * Handle commands from cloud (UPDATE_MSG/REQUEST_MSG) to be sent downstream
  * to thing.
  */
-static bool handle_cloud_msg_downstream(const char *device_id,
+static bool handle_cloud_msg_downstream(struct session *session,
 					struct l_queue *list,
 					l_queue_foreach_func_t append_list_cb)
 {
-	struct session *session;
-
-	session = l_queue_find(session_list, session_id_cmp,
-				device_id);
-	if (!session) {
-		hal_log_error("Unable to find the session with id: %s",
-				device_id);
-		return false;
-	}
-
 	l_queue_foreach(list, append_list_cb, session);
 
 	if (session->downstream_to)
@@ -1480,15 +1464,28 @@ static bool handle_cloud_msg_downstream(const char *device_id,
 
 static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 {
+	struct session *session = l_queue_find(session_list, session_id_cmp,
+					       msg->device_id);
+
+	/**
+	 * Verify if thing session exists otherwise requeue the message.
+	 * Unregister message don't require to have a session to be processed
+	 */
+	if (!session && msg->type != UNREGISTER_MSG) {
+		hal_log_error("Unable to find the session with id: %s",
+				msg->device_id);
+		return false;
+	}
+
 	switch (msg->type) {
 	case UPDATE_MSG:
-		return handle_cloud_msg_downstream(msg->device_id, msg->list,
+		return handle_cloud_msg_downstream(session, msg->list,
 						   append_on_update_list);
 	case REQUEST_MSG:
-		return handle_cloud_msg_downstream(msg->device_id, msg->list,
+		return handle_cloud_msg_downstream(session, msg->list,
 						   append_on_request_list);
 	case REGISTER_MSG:
-		return handle_device_added(msg->device_id, msg->token);
+		return handle_device_added(session, msg->device_id, msg->token);
 	case UNREGISTER_MSG:
 		return handle_device_removed(msg->device_id);
 	default:
