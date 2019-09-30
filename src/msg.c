@@ -1250,8 +1250,7 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 		hal_log_info("Removing proxy for %s", id);
 }
 
-static void on_device_added(const char *device_id, const char *token,
-			    void *user_data)
+static bool handle_device_added(const char *device_id, const char *token)
 {
 	struct knot_device *device_dbus = device_get(device_id);
 	struct mydevice *device_pending = l_queue_find(device_id_list,
@@ -1266,11 +1265,7 @@ static void on_device_added(const char *device_id, const char *token,
 
 	if (!session) {
 		hal_log_dbg("Session not found");
-		/*
-		 * TODO: send a nack to amqp so the same message can be handled
-		 * later
-		 */
-		return;
+		return false;
 	}
 
 	node_ops = session->node_ops;
@@ -1280,7 +1275,7 @@ static void on_device_added(const char *device_id, const char *token,
 
 	if (!device_dbus) {
 		if (!device_pending)
-			return;
+			return true;
 		/* Ownership belongs to device.c */
 		device_dbus = device_create(device_pending->id,
 					    device_pending->name,
@@ -1288,7 +1283,7 @@ static void on_device_added(const char *device_id, const char *token,
 					    false /* registered */,
 					    false /* online */);
 		if (!device_dbus)
-			return;
+			return true;
 	}
 
 	device_set_uuid(device_dbus, device_pending->uuid);
@@ -1311,17 +1306,18 @@ static void on_device_added(const char *device_id, const char *token,
 	}
 
 	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_signin(proto_sock, session->uuid, token,
+	result = proto_signin(proto_sock, session->uuid, session->token,
 			      property_changed, L_INT_TO_PTR(session->node_fd));
 	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);
 		session->uuid = NULL;
 		session->token = NULL;
-		return;
+		return true;
 	}
 
 	session->rollback = 0; /* Rollback disabled */
+	return true;
 }
 
 /*
@@ -1337,7 +1333,7 @@ static void unregister_callback(struct l_timeout *timeout, void *user_data)
 	device_forget_destroy(mydevice);
 }
 
-static void on_device_removed(const char *device_id, void *user_data)
+static bool handle_device_removed(const char *device_id)
 {
 	struct knot_device *device = device_get(device_id);
 	struct mydevice *mydevice = l_queue_find(device_id_list,
@@ -1350,7 +1346,7 @@ static void on_device_removed(const char *device_id, void *user_data)
 	if (device == NULL) {
 		/* Other service or created by external apps(eg: ktool) */
 		hal_log_error("Device %s not found!", device_id);
-		return;
+		return true;
 	}
 
 	/* Send unregister request to device */
@@ -1360,12 +1356,13 @@ static void on_device_removed(const char *device_id, void *user_data)
 		mydevice->unreg_timeout = l_timeout_create_ms(1096,
 							unregister_callback,
 							mydevice, NULL);
-		return;
+		return true;
 	}
 
 	hal_log_info("Unregister message can't be sent!!");
 
 	device_forget_destroy(mydevice);
+	return false;
 }
 
 static void service_ready(const char *service, void *user_data)
@@ -1455,18 +1452,25 @@ static void append_on_request_list(void *data, void *user_data)
 				  l_memdup(msg, sizeof(*msg)));
 }
 
-static bool on_update(const char *id, struct l_queue *list,
-		      void *user_data)
+/**
+ * Handle commands from cloud (UPDATE_MSG/REQUEST_MSG) to be sent downstream
+ * to thing.
+ */
+static bool handle_cloud_msg_downstream(const char *device_id,
+					struct l_queue *list,
+					l_queue_foreach_func_t append_list_cb)
 {
 	struct session *session;
 
-	session = l_queue_find(session_list, session_id_cmp, id);
+	session = l_queue_find(session_list, session_id_cmp,
+				device_id);
 	if (!session) {
-		hal_log_error("Unable to find the session with id: %s", id);
+		hal_log_error("Unable to find the session with id: %s",
+				device_id);
 		return false;
 	}
 
-	l_queue_foreach(list, append_on_update_list, session);
+	l_queue_foreach(list, append_list_cb, session);
 
 	if (session->downstream_to)
 		l_timeout_modify_ms(session->downstream_to, 512);
@@ -1474,23 +1478,22 @@ static bool on_update(const char *id, struct l_queue *list,
 	return true;
 }
 
-static bool on_request(const char *id, struct l_queue *list,
-		       void *user_data)
+static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 {
-	struct session *session;
-
-	session = l_queue_find(session_list, session_id_cmp, id);
-	if (!session) {
-		hal_log_error("Unable to find the session with id: %s", id);
-		return false;
+	switch (msg->type) {
+	case UPDATE_MSG:
+		return handle_cloud_msg_downstream(msg->device_id, msg->list,
+						   append_on_update_list);
+	case REQUEST_MSG:
+		return handle_cloud_msg_downstream(msg->device_id, msg->list,
+						   append_on_request_list);
+	case REGISTER_MSG:
+		return handle_device_added(msg->device_id, msg->token);
+	case UNREGISTER_MSG:
+		return handle_device_removed(msg->device_id);
+	default:
+		return true;
 	}
-
-	l_queue_foreach(list, append_on_request_list, session);
-
-	if (session->downstream_to)
-		l_timeout_modify_ms(session->downstream_to, 512);
-
-	return true;
 }
 
 int msg_start(struct settings *settings)
@@ -1517,11 +1520,10 @@ int msg_start(struct settings *settings)
 		goto cloud_fail;
 	}
 
-	err = cloud_set_read_handlers(on_update, on_request, on_device_added,
-				      on_device_removed, NULL);
+	err = cloud_set_read_handler(on_cloud_receive, NULL);
 	if (err < 0) {
-		hal_log_error("cloud_set_read_handlers(): %s", strerror(-err));
-		goto cloud_set_read_handlers_fail;
+		hal_log_error("cloud_set_read_handler(): %s", strerror(-err));
+		goto cloud_set_read_handler_fail;
 	}
 
 	device_id_list = l_queue_new();
@@ -1529,7 +1531,7 @@ int msg_start(struct settings *settings)
 
 	return (start_to ? 0 : -ENOMEM);
 
-cloud_set_read_handlers_fail:
+cloud_set_read_handler_fail:
 	cloud_stop();
 cloud_fail:
 	proto_stop();

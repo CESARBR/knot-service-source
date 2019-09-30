@@ -58,27 +58,20 @@
 #define AMQP_CMD_DEVICE_REGISTER "device.register"
 #define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
 
-/* Hashmap to user callback from southbound traffic */
-static struct l_hashmap *map_event_to_cb;
+cloud_cb_t cloud_cb;
 
-/* Union with all cloud callbacks */
-union cloud_cb_t {
-	cloud_downstream_cb_t update_cb;
-	cloud_downstream_cb_t request_cb;
-	cloud_device_added_cb_t added_cb;
-	cloud_device_removed_cb_t removed_cb;
-};
-
-/* Struct that has a callback #cb that handle event in #event_id */
-struct event_handler {
-	void *cb;
-	enum {
-		UPDATE_EVT,
-		REQUEST_EVT,
-		ADDED_EVT,
-		REMOVED_EVT,
-	} event_id;
-};
+static int map_routing_key_to_msg_type(const char *routing_key)
+{
+	if (!strcmp(routing_key, AMQP_EVENT_DATA_UPDATE))
+		return UPDATE_MSG;
+	else if (!strcmp(routing_key, AMQP_EVENT_DATA_REQUEST))
+		return REQUEST_MSG;
+	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_REGISTERED))
+		return REGISTER_MSG;
+	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_UNREGISTERED))
+		return UNREGISTER_MSG;
+	return -1;
+}
 
 /**
  * Callback function to consume and parse the received message from AMQP queue
@@ -91,18 +84,9 @@ static bool on_cloud_receive_message(const char *exchange,
 				     const char *routing_key,
 				     const char *body, void *user_data)
 {
+	struct cloud_msg msg;
 	json_object *jso;
-	struct l_queue *list;
-	const char *id, *token;
 	bool consumed = true;
-	const struct event_handler *evt_handler;
-	union cloud_cb_t cb_handler;
-
-	evt_handler = l_hashmap_lookup(map_event_to_cb, routing_key);
-	if (!evt_handler) {
-		hal_log_error("Error cb handler not set");
-		return false;
-	}
 
 	jso = json_tokener_parse(body);
 	if (!jso) {
@@ -110,54 +94,53 @@ static bool on_cloud_receive_message(const char *exchange,
 		return consumed;
 	}
 
-	switch (evt_handler->event_id) {
-	case UPDATE_EVT:
-		cb_handler.update_cb = evt_handler->cb;
-		id = parser_get_key_str_from_json_obj(jso, "id");
-		list = parser_update_to_list(jso);
-		if (!id || !list) {
+	msg.type = map_routing_key_to_msg_type(routing_key);
+
+	switch (msg.type) {
+	case UPDATE_MSG:
+		msg.device_id = parser_get_key_str_from_json_obj(jso, "id");
+		msg.list = parser_update_to_list(jso);
+		if (!msg.device_id || !msg.list) {
 			hal_log_error("Malformed JSON message");
-			l_queue_destroy(list, l_free);
-			break;
+			goto done;
 		}
 
-		consumed = cb_handler.update_cb(id, list, user_data);
-		l_queue_destroy(list, l_free);
 		break;
-	case REQUEST_EVT:
-		cb_handler.request_cb = evt_handler->cb;
-		id = parser_get_key_str_from_json_obj(jso, "id");
-		list = parser_request_to_list(jso);
-		if (!id || !list) {
+	case REQUEST_MSG:
+		msg.device_id = parser_get_key_str_from_json_obj(jso, "id");
+		msg.list = parser_request_to_list(jso);
+		if (!msg.device_id || !msg.list) {
 			hal_log_error("Malformed JSON message");
-			break;
+			goto done;
 		}
 
-		consumed = cb_handler.request_cb(id, list, user_data);
-		l_queue_destroy(list, l_free);
 		break;
-	case ADDED_EVT:
-		cb_handler.added_cb = evt_handler->cb;
-		id = parser_get_key_str_from_json_obj(jso, "id");
-		token = parser_get_key_str_from_json_obj(jso, "token");
-		if (!id || !token)
-			return false;
-
-		cb_handler.added_cb(id, token, user_data);
-		break;
-	case REMOVED_EVT:
-		cb_handler.removed_cb = evt_handler->cb;
-		id = parser_get_key_str_from_json_obj(jso, "id");
-		if (!id) {
+	case REGISTER_MSG:
+		msg.device_id = parser_get_key_str_from_json_obj(jso, "id");
+		msg.token = parser_get_key_str_from_json_obj(jso, "token");
+		if (!msg.device_id || !msg.token) {
 			hal_log_error("Malformed JSON message");
-			break;
+			goto done;
 		}
 
-		cb_handler.removed_cb(id, user_data);
+		break;
+	case UNREGISTER_MSG:
+		msg.device_id = parser_get_key_str_from_json_obj(jso, "id");
+		if (!msg.device_id) {
+			hal_log_error("Malformed JSON message");
+			goto done;
+		}
+
 		break;
 	default:
 		hal_log_error("Unknown event %s", routing_key);
+		goto done;
 	}
+
+	consumed = cloud_cb(&msg, user_data);
+done:
+	if (msg.type == UPDATE_MSG || msg.type == REQUEST_MSG)
+		l_queue_destroy(msg.list, l_free);
 
 	json_object_put(jso);
 	return consumed;
@@ -170,7 +153,7 @@ static bool on_cloud_receive_message(const char *exchange,
  *
  * Requests cloud to add a device.
  * The confirmation that the cloud received the message comes from a callback
- * set in function cloud_set_read_handlers.
+ * set in function cloud_set_read_handler with message type REGISTER_MSG.
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
@@ -199,7 +182,7 @@ int cloud_register_device(const char *id, const char *name)
  *
  * Requests cloud to remove a device.
  * The confirmation that the cloud received the message comes from a callback
- * set in function cloud_set_read_handlers.
+ * set in function cloud_set_read_handler  with message type UNREGISTER_MSG.
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
@@ -257,21 +240,15 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 }
 
 /**
- * cloud_set_read_handlers:
- * @on_update: callback to be called when receive an update message
- * @on_request: callback to be called when receive an request message
- * @on_removed: callback to be called when device is removed
+ * cloud_set_read_handler:
+ * @cb: callback to handle message received from cloud
  * @user_data: user data provided to callbacks
  *
- * Set callback handlers when receive cloud messages.
+ * Set callback handler when receive cloud messages.
  *
  * Returns: 0 if successful and -1 otherwise.
  */
-int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
-		  cloud_downstream_cb_t on_request,
-		  cloud_device_added_cb_t on_added,
-		  cloud_device_removed_cb_t on_removed,
-		  void *user_data)
+int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 {
 	const char *fog_events[] = {
 		AMQP_EVENT_DATA_UPDATE,
@@ -280,16 +257,10 @@ int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
 		AMQP_EVENT_DEVICE_UNREGISTERED,
 		NULL
 	};
-	const struct event_handler handlers[] = {
-		{ .cb = on_update, .event_id = UPDATE_EVT },
-		{ .cb = on_request, .event_id = REQUEST_EVT },
-		{ .cb = on_added, .event_id = ADDED_EVT },
-		{ .cb = on_removed, .event_id = REMOVED_EVT },
-	};
 	amqp_bytes_t queue_fog;
 	int err, i;
 
-	map_event_to_cb = l_hashmap_string_new();
+	cloud_cb = read_handler;
 
 	queue_fog = amqp_declare_new_queue(AMQP_QUEUE_FOG);
 	if (queue_fog.bytes == NULL) {
@@ -298,12 +269,8 @@ int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
 	}
 
 	for (i = 0; fog_events[i] != NULL; i++) {
-		if (handlers[i].cb)
-			l_hashmap_insert(map_event_to_cb, fog_events[i],
-					 l_memdup(handlers + i,
-						  sizeof(handlers[i])));
 		err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
-					fog_events[i]);
+						fog_events[i]);
 		if (err) {
 			hal_log_error("Error on set up queue to consume.\n");
 			amqp_bytes_free(queue_fog);
@@ -329,6 +296,5 @@ int cloud_start(struct settings *settings)
 
 void cloud_stop(void)
 {
-	l_hashmap_destroy(map_event_to_cb, l_free);
 	amqp_stop();
 }
