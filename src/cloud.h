@@ -19,21 +19,23 @@
  *
  */
 
-typedef bool (*cloud_downstream_cb_t) (const char *id, struct l_queue *data,
-				       void *user_data);
+struct cloud_msg {
+	const char *device_id;
+	enum {
+		UPDATE_MSG,
+		REQUEST_MSG,
+		REGISTER_MSG,
+		UNREGISTER_MSG
+	} type;
+	union {
+		const char *token; // used when type is REGISTER
+		struct l_queue *list; // used when type is UPDATE/REQUEST
+	};
+};
 
-typedef void (*cloud_device_added_cb_t) (const char *id,
-					 const char *token,
-					 void *user_data);
+typedef bool (*cloud_cb_t) (const struct cloud_msg *msg, void *user_data);
 
-typedef void (*cloud_device_removed_cb_t) (const char *id,
-					   void *user_data);
-
-int cloud_set_read_handlers(cloud_downstream_cb_t on_update,
-		  cloud_downstream_cb_t on_request,
-		  cloud_device_added_cb_t on_added,
-		  cloud_device_removed_cb_t on_removed,
-		  void *user_data);
+int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data);
 int cloud_start(struct settings *settings);
 void cloud_stop(void);
 int cloud_publish_data(const char *id, uint8_t sensor_id,
