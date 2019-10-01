@@ -1431,6 +1431,9 @@ static bool handle_cloud_msg_list(struct l_queue *devices)
 	l_queue_foreach(devices, create_devices_dbus, NULL);
 	proxy_ready(NULL);
 
+	/* Start to accept thing connections when receive cloud devices */
+	node_start(session_accept_cb);
+
 	return true;
 }
 
@@ -1453,9 +1456,6 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 	owner_uuid = settings->uuid;
 	/* Step1: Getting Cloud (device) proxies using owner credential */
 	cloud_list_devices();
-
-	/* Last operation: Enable if cloud is connected & authenticated */
-	node_start(session_accept_cb);
 
 	return;
 
