@@ -38,6 +38,9 @@ KEY_UNREGISTERED = 'device.unregistered'
 EVENT_LIST = 'device.cmd.list'
 KEY_LIST_DEVICES = 'device.list'
 
+EVENT_SCHEMA = 'schema.update'
+KEY_SCHEMA = 'schema.updated'
+
 EVENT_DATA = 'data.publish'
 
 KEY_UPDATE = 'data.update'
@@ -108,6 +111,12 @@ def __on_msg_received(channel, method, properties, body):
         }]
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_LIST_DEVICES, body=json.dumps(message))
+    elif method.routing_key == EVENT_SCHEMA:
+        message = json.loads(body)
+        del message['schema']
+        message['error'] = None
+        channel.basic_publish(exchange=fog_exchange,
+                              routing_key=KEY_SCHEMA, body=json.dumps(message))
     elif method.routing_key == EVENT_DATA:
         return None
 
@@ -135,6 +144,8 @@ def msg_consume(args):
             exchange=cloud_exchange, queue=queue_name, routing_key='device.*')
     channel.queue_bind(
         exchange=cloud_exchange, queue=queue_name, routing_key='device.cmd.list')
+    channel.queue_bind(
+            exchange=cloud_exchange, queue=queue_name, routing_key='schema.*')
     channel.queue_bind(
             exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
     channel.basic_consume(
