@@ -689,6 +689,30 @@ json_object *parser_device_json_create(const char *device_id,
 	return device;
 }
 
+json_object *parser_auth_json_create(const char *device_id,
+				     const char *device_token)
+{
+	json_object *auth;
+
+	auth = json_object_new_object();
+	if (!auth)
+		return NULL;
+
+	json_object_object_add(auth, "id",
+			       json_object_new_string(device_id));
+	json_object_object_add(auth, "token",
+			       json_object_new_string(device_token));
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "token": "0c20c12e2ac058d0513d81dc58e33b2f9ff8c83d"
+	 * }
+	 */
+	return auth;
+}
+
 static json_object *schema_item_create_obj(knot_msg_schema *schema)
 {
 	json_object *json_schema;

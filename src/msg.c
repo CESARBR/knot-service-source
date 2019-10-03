@@ -512,6 +512,13 @@ static int8_t msg_auth(struct session *session,
 		return 0;
 	}
 
+	mydevice = l_queue_find(device_id_list, device_uuid_cmp, kmauth->uuid);
+	if (!mydevice)
+		return KNOT_ERR_PERM;
+
+	/* Set Id */
+	session->id = strtoull(mydevice->id, NULL, 16);
+
 	/*
 	 * PDU is not null-terminated. Copy UUID and token to
 	 * a null-terminated stringmanage link overload or not connected .
@@ -525,16 +532,11 @@ static int8_t msg_auth(struct session *session,
 	session->uuid = l_strdup(uuid);
 	session->token = l_strdup(token);
 
-	/* Set Id */
-	mydevice = l_queue_find(device_id_list, device_uuid_cmp, session->uuid);
-	if (mydevice)
-		session->id = strtoull(mydevice->id, NULL, 16);
-
 	hal_log_info("[session %p] Authenticating UUID: %s, TOKEN: %s",
 		     session, uuid, token);
 
 	session->device_req_auth = true;
-	result = cloud_auth_device();
+	result = cloud_auth_device(mydevice->id, token);
 
 	session->rollback = 0; /* Rollback disabled */
 
@@ -1209,7 +1211,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 	}
 
 	session->device_req_auth = false;
-	result = cloud_auth_device();
+	result = cloud_auth_device(device_id, session->token);
 	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);
