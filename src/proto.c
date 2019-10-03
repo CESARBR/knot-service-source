@@ -46,12 +46,6 @@
 extern struct proto_ops proto_ws;
 extern struct proto_ops proto_socketio;
 
-static struct proto_ops *proto_ops[] = {
-	&proto_ws,
-	&proto_socketio,
-	NULL
-};
-
 struct proto_proxy {
 	int sock;			/* Cloud connection */
 	proto_proxy_ready_func_t ready_cb; /* Call only once */
@@ -73,21 +67,6 @@ static inline bool is_token_valid(const char *token)
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
 }
 
-static struct proto_ops *get_proto_ops(const char *protocol_name)
-{
-	int i;
-	struct proto_ops *selected_protocol = NULL;
-
-	for (i = 0; proto_ops[i]; i++) {
-		if (strcmp(protocol_name, proto_ops[i]->name) != 0)
-			continue;
-
-		selected_protocol = proto_ops[i];
-	}
-
-	return selected_protocol;
-}
-
 int proto_start(const struct settings *settings)
 {
 	/*
@@ -97,13 +76,7 @@ int proto_start(const struct settings *settings)
 	 * TODO: later support dynamic protocol selection.
 	 */
 
-	proto = get_proto_ops(settings->proto);
-	if (proto == NULL)
-		return -EINVAL;
-
-	hal_log_info("proto_ops: %s", proto->name);
-
-	return proto->probe(settings->host, settings->port);
+	return 0;
 }
 
 void proto_stop()

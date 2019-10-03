@@ -23,9 +23,6 @@ struct settings {
 	const char *config_path;
 	int configfd;
 
-	char *host;
-	unsigned int port;
-	const char *proto;
 	char *uuid;
 	char *token;
 	char *rabbitmq_url;

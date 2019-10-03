@@ -37,9 +37,6 @@
 #include "storage.h"
 
 #define DEFAULT_CONFIG_PATH		"/etc/knot/knotd.conf"
-#define DEFAULT_HOST			"localhost"
-#define DEFAULT_PORT			3000
-#define DEFAULT_PROTO			"ws"
 #define DEFAULT_AMQP_URL		"amqp://guest:guest@localhost:5672"
 
 static bool detach = true;
@@ -52,9 +49,6 @@ static void usage(void)
 	printf("\tknotd [options]\n");
 	printf("Options:\n"
 		"\t-c, --config            Configuration file path\n"
-		"\t-h, --host              Cloud server host name\n"
-		"\t-p, --port              Remote port\n"
-		"\t-P, --proto             Protocol used to communicate with cloud server: socketio, ws\n"
 		"\t-n, --nodetach          Disable running in background\n"
 		"\t-r, --user-root         Run as root(default is knot)\n"
 		"\t-R, --rabbitmq-url      Connect with a different url "
@@ -64,9 +58,6 @@ static void usage(void)
 
 static const struct option main_options[] = {
 	{ "config",		required_argument,	NULL, 'c' },
-	{ "host",		required_argument,	NULL, 'h' },
-	{ "port",		required_argument,	NULL, 'p' },
-	{ "proto",		required_argument,	NULL, 'P' },
 	{ "rabbitmq-url",	required_argument,	NULL, 'R' },
 	{ "nodetach",		no_argument,		NULL, 'n' },
 	{ "user-root",		no_argument,		NULL, 'r' },
@@ -79,7 +70,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "c:h:p:P:R:nrbH",
+		opt = getopt_long(argc, argv, "c:R:nrH",
 				  main_options, NULL);
 		if (opt < 0)
 			break;
@@ -87,15 +78,6 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 		switch (opt) {
 		case 'c':
 			settings->config_path = optarg;
-			break;
-		case 'h':
-			settings->host = l_strdup(optarg);
-			break;
-		case 'p':
-			settings->port = atoi(optarg);
-			break;
-		case 'P':
-			settings->proto = optarg;
 			break;
 		case 'R':
 			settings->rabbitmq_url = optarg;
@@ -127,8 +109,6 @@ struct settings *settings_load(int argc, char *argv[])
 {
 	struct settings *settings;
 	struct stat buf;
-	unsigned int port = 0;
-	char *host = NULL;
 	char *uuid = NULL;
 	char *token = NULL;
 
@@ -136,9 +116,6 @@ struct settings *settings_load(int argc, char *argv[])
 
 	settings->config_path = DEFAULT_CONFIG_PATH;
 	settings->configfd = -1;
-	settings->host = NULL;
-	settings->port = UINT32_MAX;
-	settings->proto = DEFAULT_PROTO;
 	settings->detach = detach;
 	settings->run_as_root = false;
 	settings->help = help;
@@ -178,23 +155,6 @@ struct settings *settings_load(int argc, char *argv[])
 		goto failure;
 	}
 
-	if (settings->host == NULL) {
-		host = storage_read_key_string(settings->configfd,
-					       "Cloud","Host");
-		if(!host)
-			settings->host = l_strdup(DEFAULT_HOST);
-		else
-			settings->host = host;
-	}
-
-	if (settings->port == UINT32_MAX) {
-		if (storage_read_key_int(settings->configfd, "Cloud", "Port",
-					(int *) &port) < 0)
-			settings->port = DEFAULT_PORT;
-		else
-			settings->port = port;
-	}
-
 	settings->uuid = uuid;
 	settings->token = token;
 
@@ -212,7 +172,6 @@ void settings_free(struct settings *settings)
 	if (settings->configfd >= 0)
 		storage_close(settings->configfd);
 
-	l_free(settings->host);
 	l_free(settings->uuid);
 	l_free(settings->token);
 	l_free(settings->rabbitmq_url);
