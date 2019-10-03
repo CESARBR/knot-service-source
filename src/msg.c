@@ -59,6 +59,7 @@
 struct session {
 	int refs;
 	bool trusted;			/* Authenticated */
+	bool device_req_auth;		/* Auth requested by device */
 	struct node_ops *node_ops;
 	struct l_io *node_channel;	/* Radio event source */
 	struct l_io *proto_channel;	/* Cloud event source */
@@ -98,6 +99,7 @@ static struct session *session_new(struct node_ops *node_ops)
 
 	session = l_new(struct session, 1);
 	session->trusted = false;
+	session->device_req_auth = false;
 	session->refs = 0;
 	session->uuid = NULL;
 	session->token = NULL;
@@ -886,7 +888,11 @@ static ssize_t msg_process(struct session *session,
 			l_timeout_create_ms(512,
 					    downstream_callback,
 					    session, NULL);
-		break;
+		/*
+		 * KNOT_MSG_AUTH_RSP is sent on function
+		 * handle_device_auth
+		 */
+		return 0;
 	case KNOT_MSG_SCHM_FRAG_REQ:
 		rtype = KNOT_MSG_SCHM_FRAG_RSP;
 		result = msg_schema(session, &kreq->schema, false);
@@ -1317,6 +1323,43 @@ static bool handle_device_removed(const char *device_id)
 	return false;
 }
 
+static bool handle_device_auth(struct session *session, const char *device_id,
+			       int auth)
+{
+	struct knot_device *device;
+	ssize_t osent;
+	int osent_err;
+	knot_msg msg;
+
+	if (!session->device_req_auth)
+		goto done;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.type = KNOT_MSG_AUTH_RSP;
+
+	if (!auth) {
+		hal_log_error("[session %p] Not Authorized", session);
+		msg.action.result = KNOT_ERR_PERM;
+	}
+
+	osent = session->node_ops->send(session->node_fd, &msg, sizeof(msg));
+	if (osent < 0) {
+		osent_err = -osent;
+		hal_log_error("[session %p] Can't send msg response  %s(%d)",
+			      session, strerror(osent_err), osent_err);
+		return false;
+	}
+
+done:
+	device = device_get(device_id);
+	if (device)
+		device_set_online(device, auth);
+
+	session->trusted = auth;
+
+	return true;
+}
+
 static bool handle_schema_updated(struct session *session,
 				  const char *device_id, const char *err)
 {
@@ -1511,7 +1554,7 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 	case UNREGISTER_MSG:
 		return handle_device_removed(msg->device_id);
 	case AUTH_MSG:
-		return false;
+		return handle_device_auth(session, msg->device_id, msg->auth);
 	case SCHEMA_MSG:
 		return handle_schema_updated(session, msg->device_id,
 					     msg->error);
