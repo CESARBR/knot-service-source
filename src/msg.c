@@ -62,7 +62,6 @@ struct session {
 	bool device_req_auth;		/* Auth requested by device */
 	struct node_ops *node_ops;
 	struct l_io *node_channel;	/* Radio event source */
-	struct l_io *proto_channel;	/* Cloud event source */
 	int node_fd;			/* Unix socket */
 	uint64_t id;			/* Device identification */
 	int rollback;			/* Counter: remove if schema is not received */
@@ -78,7 +77,6 @@ struct session {
 static struct l_queue *session_list;
 static struct l_queue *device_id_list;
 static struct l_timeout *start_to;
-static const char *owner_uuid;
 static bool proxy_enabled = false;
 
 static struct session *session_ref(struct session *session)
@@ -118,7 +116,6 @@ static void session_destroy(struct session *session)
 		return;
 
 	l_io_destroy(session->node_channel);
-	l_io_destroy(session->proto_channel);
 
 	l_free(session->uuid);
 	l_free(session->token);
@@ -874,104 +871,6 @@ static ssize_t msg_process(struct session *session,
 	return (sizeof(knot_msg_header) + krsp->hdr.payload_len);
 }
 
-static void session_proto_disconnected_cb(struct l_io *channel,
-					  void *user_data)
-{
-	struct session *session = user_data;
-	struct knot_device *device;
-	char id[KNOT_ID_LEN];
-
-	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-	device = device_get(id);
-
-	/* Connection to cloud broken */
-	if (device)
-		device_set_online(device, false);
-
-	/*
-	 * This callback gets called when the REMOTE initiates a
-	 * disconnection or if an error happens.
-	 * In this case, radio transport should be left
-	 * connected.
-	 */
-	if (session->proto_channel) {
-		session->proto_channel = NULL;
-		l_io_destroy(channel);
-	}
-
-	session_unref(session);
-}
-
-static struct l_io *create_proto_channel(int proto_sock,
-					 struct session *session)
-{
-	struct l_io *channel;
-	struct knot_device *device;
-	char id[KNOT_ID_LEN];
-
-	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-	device = device_get(id);
-
-	channel = l_io_new(proto_sock);
-	if (channel == NULL) {
-		hal_log_error("[session %p] Can't create proto channel",
-			      session);
-		return NULL;
-	}
-
-	/* Connection to cloud established */
-	if (device)
-		device_set_online(device, true);
-
-	l_io_set_disconnect_handler(channel,
-				    session_proto_disconnected_cb,
-				    session_ref(session),
-				    NULL);
-	return channel;
-}
-
-static int session_proto_connect(struct session *session)
-{
-	int proto_sock;
-
-	proto_sock = proto_connect();
-	if (proto_sock < 0) {
-		hal_log_info("[session %p] Cloud connect(): %s(%d)",
-			     session, strerror(-proto_sock), -proto_sock);
-		return proto_sock;
-	}
-
-	/* Keep one reference to call sign-off */
-	session->proto_channel = create_proto_channel(proto_sock, session);
-
-	return 0;
-}
-
-static void session_cleanup(struct l_timeout *timeout, void *user_data)
-{
-	struct session *session = user_data;
-	struct l_io *proto_channel;
-	int proto_sock;
-
-	/* Disconnect from fog/cloud */
-	if (!session->proto_channel)
-		return;
-
-	proto_sock = l_io_get_fd(session->proto_channel);
-	proto_close(proto_sock);
-
-	/* Remove proto disconnect watch */
-	proto_channel = session->proto_channel;
-	l_io_set_disconnect_handler(proto_channel, NULL, NULL, NULL);
-	session_unref(session);
-
-	session->proto_channel = NULL;
-	l_io_destroy(proto_channel);
-
-	/* Channel cleanup will be held at disconnect callback */
-	session_unref(session);
-}
-
 static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 {
 	struct session *session = user_data;
@@ -996,8 +895,7 @@ static void session_node_disconnected_cb(struct l_io *channel, void *user_data)
 	if (device)
 		device_set_online(device, false);
 
-	/* Delay 5 seconds session cleanup */
-	l_timeout_create(5, session_cleanup, session, NULL);
+	session_unref(session);
 }
 
 static void session_node_destroy_cb(void *user_data)
@@ -1049,26 +947,12 @@ static bool session_node_data_cb(struct l_io *channel, void *user_data)
 		return false;
 	}
 
-	if (!session->proto_channel) {
-		err = session_proto_connect(session);
-		if (err) {
-			/* TODO:  missing reply an error */
-			hal_log_error("[session %p] Can't connect to cloud \
-				      service!", session);
-			on_node_channel_data_error(channel);
-			return false;
-		}
-
-		hal_log_info("[session %p] Reconnected to cloud service",
-			     session);
-	}
-
 	/* Blocking: Wait until response from cloud is received */
 	olen = msg_process(session, ipdu, recvbytes, opdu, sizeof(opdu));
 	/* olen: output length or -errno */
 	if (olen < 0) {
 		/* Server didn't reply any error */
-		hal_log_error("[session %p] KNOT IoT proto error: %s(%zd)",
+		hal_log_error("[session %p] KNOT IoT cloud error: %s(%zd)",
 			      session, strerror(-olen), -olen);
 		return true;
 	}
@@ -1404,28 +1288,6 @@ static bool handle_cloud_msg_list(struct l_queue *devices)
 	return true;
 }
 
-static void start_timeout(struct l_timeout *timeout, void *user_data)
-{
-	struct settings *settings = user_data;
-	int sock;
-
-	/* FIXME: how to manage disconnection from cloud? */
-	sock = proto_connect();
-	if (sock < 0)
-		goto connect_fail;
-
-	/* Keep a reference to a valid credential */
-	owner_uuid = settings->uuid;
-	/* Step1: Getting Cloud (device) proxies using owner credential */
-	cloud_list_devices();
-
-	return;
-
-connect_fail:
-	/* Schedule this callback to 5 seconds */
-	l_timeout_modify(timeout, 5);
-}
-
 static void append_on_update_list(void *data, void *user_data)
 {
 	const struct session *session = user_data;
@@ -1532,15 +1394,20 @@ int msg_start(struct settings *settings)
 	err = cloud_set_read_handler(on_cloud_receive, NULL);
 	if (err < 0) {
 		hal_log_error("cloud_set_read_handler(): %s", strerror(-err));
-		goto cloud_set_read_handler_fail;
+		goto cloud_operation_fail;
 	}
 
 	device_id_list = l_queue_new();
-	start_to =  l_timeout_create_ms(1, start_timeout, settings, NULL);
 
-	return (start_to ? 0 : -ENOMEM);
+	err = cloud_list_devices();
+	if (err < 0) {
+		hal_log_error("cloud_list_devices(): %s", strerror(-err));
+		goto cloud_operation_fail;
+	}
 
-cloud_set_read_handler_fail:
+	return 0;
+
+cloud_operation_fail:
 	cloud_stop();
 cloud_fail:
 	proto_stop();

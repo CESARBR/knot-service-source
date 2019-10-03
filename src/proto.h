@@ -75,5 +75,4 @@ struct proto_ops {
 int proto_start(const struct settings *settings);
 void proto_stop(void);
 
-int proto_connect(void);
 void proto_close(int proto_socket);
