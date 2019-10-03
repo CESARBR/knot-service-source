@@ -61,6 +61,7 @@
 #define AMQP_CMD_DATA_PUBLISH "data.publish"
 #define AMQP_CMD_DEVICE_REGISTER "device.register"
 #define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
+#define AMQP_CMD_DEVICE_AUTH "device.cmd.auth"
 #define AMQP_CMD_SCHEMA_UPDATE "schema.update"
 #define AMQP_CMD_DEVICE_LIST "device.cmd.list"
 
@@ -311,8 +312,31 @@ int cloud_unregister_device(const char *id)
  */
 int cloud_auth_device(void)
 {
-	/* TODO: Requests cloud to auth a device. */
-	return 0;
+	amqp_bytes_t queue_cloud;
+	json_object *jobj_device;
+	const char *json_str;
+	int result;
+
+	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	if (queue_cloud.bytes == NULL) {
+		hal_log_error("Error on declare a new queue.\n");
+		return -1;
+	}
+
+	jobj_device = NULL;
+	json_str = json_object_to_json_string(jobj_device);
+
+	result = amqp_publish_persistent_message(queue_cloud,
+						 AMQP_EXCHANGE_CLOUD,
+						 AMQP_CMD_DEVICE_AUTH,
+						 json_str);
+	if (result < 0)
+		result = KNOT_ERR_CLOUD_FAILURE;
+
+	json_object_put(jobj_device);
+	amqp_bytes_free(queue_cloud);
+
+	return result;
 }
 
 /**
