@@ -1510,6 +1510,8 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 		return handle_device_added(session, msg->device_id, msg->token);
 	case UNREGISTER_MSG:
 		return handle_device_removed(msg->device_id);
+	case AUTH_MSG:
+		return false;
 	case SCHEMA_MSG:
 		return handle_schema_updated(session, msg->device_id,
 					     msg->error);
