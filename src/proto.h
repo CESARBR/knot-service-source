@@ -77,5 +77,3 @@ void proto_stop(void);
 
 int proto_connect(void);
 void proto_close(int proto_socket);
-int proto_signin(int proto_socket, const char *uuid, const char *token,
-		 proto_property_changed_func_t prop_cb, void *user_data);
