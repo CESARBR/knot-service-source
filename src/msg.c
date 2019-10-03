@@ -68,7 +68,6 @@ struct session {
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
-	char *schema;			/* Current schema */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	char *config;			/* Current config */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
@@ -127,7 +126,6 @@ static void session_destroy(struct session *session)
 	l_queue_destroy(session->update_list, l_free);
 	l_queue_destroy(session->request_list, l_free);
 	l_timeout_remove(session->downstream_to);
-	l_free(session->schema);
 	l_free(session->config);
 
 	l_free(session);
@@ -204,19 +202,6 @@ static bool sensor_id_cmp(const void *a, const void *b)
 	const uint8_t val2 = L_PTR_TO_INT(b);
 
 	return (*val1 == val2 ? true : false);
-}
-
-static bool schema_find_invalid(const void *entry_data, const void *user_data)
-{
-	const knot_msg_schema *schema = entry_data;
-	int err;
-
-	err = knot_schema_is_valid(schema->values.type_id,
-				   schema->values.value_type,
-				   schema->values.unit);
-
-	/* Return true for invalid schema */
-	return (err != 0 ? true : false);
 }
 
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
@@ -391,7 +376,6 @@ static bool property_changed(const char *name,
 	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
-	struct mydevice *mydevice;
 	char id[KNOT_ID_LEN];
 
 	/* FIXME: manage link overload or not connected */
@@ -399,42 +383,7 @@ static bool property_changed(const char *name,
 	if (!session)
 		return false;
 
-	/* FIXME: Memory leak & detect if schema has changed */
-	if (strcmp("schema", name) == 0) {
-		if (session->schema && strcmp(session->schema, value) == 0)
-			goto done;
-
-		/* Track to detect if update is required */
-		list = parser_schema_to_list(value);
-		if (list == NULL) {
-			hal_log_error("[session %p] schema: parse error!",
-				      session);
-			goto done;
-		}
-
-		if (l_queue_find(list, schema_find_invalid, NULL)) {
-			hal_log_error("[session %p] schema: consistency error!",
-				      session);
-			goto done;
-		}
-
-		/* TODO: Verify if schema received is valid */
-		l_queue_destroy(session->schema_list, l_free);
-		session->schema_list = list;
-		l_free(session->schema);
-		session->schema = l_strdup(value);
-
-		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-
-		mydevice = l_queue_find(device_id_list, device_id_cmp, id);
-		if (!mydevice)
-			goto done;
-
-		device = device_get(id);
-		if (device)
-			device_set_registered(device, true);
-
-	} else if (strcmp("config", name) == 0) {
+	if (strcmp("config", name) == 0) {
 		if (session->config && strcmp(session->config, value) == 0)
 			goto done;
 
@@ -1315,7 +1264,6 @@ static bool handle_device_added(struct session *session, const char *device_id,
 		return true;
 	}
 
-	session->rollback = 0; /* Rollback disabled */
 	return true;
 }
 
@@ -1362,6 +1310,33 @@ static bool handle_device_removed(const char *device_id)
 
 	device_forget_destroy(mydevice);
 	return false;
+}
+
+static bool handle_schema_updated(struct session *session,
+				  const char *device_id, const char *err)
+{
+	struct knot_device *device;
+
+	if (err) {
+		hal_log_error("%s", err);
+		/* TODO: Send a error signal via D-Bus */
+		return true;
+	}
+
+	/* TODO: Send KNOT_MSG_SCHM_END_RSP to the KNoT Thing */
+
+	device = device_get(device_id);
+	if (device)
+		device_set_registered(device, true);
+
+	/*
+	 * For security reason, remove from rollback avoiding clonning attack.
+	 * If schema is being sent means that credentals (UUID/token) has been
+	 * properly received (registration complete).
+	 */
+	session->rollback = 0; /* Rollback disabled */
+
+	return true;
 }
 
 static void service_ready(const char *service, void *user_data)
@@ -1514,6 +1489,9 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 		return handle_device_added(session, msg->device_id, msg->token);
 	case UNREGISTER_MSG:
 		return handle_device_removed(msg->device_id);
+	case SCHEMA_MSG:
+		return handle_schema_updated(session, msg->device_id,
+					     msg->error);
 	case LIST_MSG:
 		return handle_cloud_msg_list(msg->list);
 	default:
