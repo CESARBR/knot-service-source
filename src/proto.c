@@ -116,14 +116,6 @@ void proto_stop()
 	l_timeout_remove(timeout);
 }
 
-int proto_connect(void)
-{
-	if (unlikely(!proto))
-		return -EIO;
-
-	return proto->connect();
-}
-
 void proto_close(int prot_sock)
 {
 	if (unlikely(!proto))
