@@ -370,32 +370,6 @@ disable_timer:
 	hal_log_info("[session %p] Disabling downstream ...", session);
 }
 
-static bool property_changed(const char *name,
-			     const char *value, void *user_data)
-{
-	struct session *session;
-	struct knot_device *device;
-	char id[KNOT_ID_LEN];
-
-	/* FIXME: manage link overload or not connected */
-	session = l_queue_find(session_list, session_node_fd_cmp, user_data);
-	if (!session)
-		return false;
-
-	if (strcmp("online", name) == 0) {
-		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-		device = device_get(id);
-		if (device)
-			device_set_online(device, (strcmp("true", value) == 0));
-	}
-
-	/* Timeout created already? */
-	if (session->downstream_to)
-		l_timeout_modify_ms(session->downstream_to, 512);
-
-	return true;
-}
-
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
 					  size_t length)
 {
@@ -531,7 +505,6 @@ static int8_t msg_auth(struct session *session,
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	struct mydevice *mydevice;
-	int proto_sock;
 	int8_t result;
 
 	if (session->trusted) {
@@ -551,7 +524,7 @@ static int8_t msg_auth(struct session *session,
 	/* Set UUID & token: Used at property_changed */
 	session->uuid = l_strdup(uuid);
 	session->token = l_strdup(token);
-	proto_sock = l_io_get_fd(session->proto_channel);
+
 	/* Set Id */
 	mydevice = l_queue_find(device_id_list, device_uuid_cmp, session->uuid);
 	if (mydevice)
@@ -560,8 +533,8 @@ static int8_t msg_auth(struct session *session,
 	hal_log_info("[session %p] Authenticating UUID: %s, TOKEN: %s",
 		     session, uuid, token);
 
-	result = proto_signin(proto_sock, uuid, token, property_changed,
-			      L_INT_TO_PTR(session->node_fd));
+	session->device_req_auth = true;
+	result = cloud_auth_device();
 
 	session->rollback = 0; /* Rollback disabled */
 
@@ -1196,7 +1169,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 	const struct node_ops *node_ops;
 	knot_msg_credential msg;
 	ssize_t olen, osent;
-	int err, result, proto_sock;
+	int err, result;
 
 	node_ops = session->node_ops;
 
@@ -1235,9 +1208,8 @@ static bool handle_device_added(struct session *session, const char *device_id,
 			      , session, strerror(err), err);
 	}
 
-	proto_sock = l_io_get_fd(session->proto_channel);
-	result = proto_signin(proto_sock, session->uuid, session->token,
-			      property_changed, L_INT_TO_PTR(session->node_fd));
+	session->device_req_auth = false;
+	result = cloud_auth_device();
 	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);

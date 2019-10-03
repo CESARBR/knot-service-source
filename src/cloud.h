@@ -49,5 +49,6 @@ int cloud_publish_data(const char *id, uint8_t sensor_id,
 		       uint8_t kval_len);
 int cloud_register_device(const char *id, const char *name);
 int cloud_unregister_device(const char *id);
+int cloud_auth_device(void);
 int cloud_update_schema(const char *id, struct l_queue *schema_list);
 int cloud_list_devices(void);
