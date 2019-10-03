@@ -131,27 +131,3 @@ void proto_close(int prot_sock)
 
 	proto->close(prot_sock);
 }
-
-int proto_signin(int proto_socket, const char *uuid, const char *token,
-		 proto_property_changed_func_t prop_cb, void *user_data)
-{
-	json_raw_t response;
-	int err, result;
-
-	/* FIXME: Remove json/response */
-	memset(&response, 0, sizeof(response));
-	err = proto->signin(proto_socket, uuid, token,
-			    &response, prop_cb, user_data);
-	if (err < 0) {
-		hal_log_error("manager signin(): %s(%d)", strerror(-err), -err);
-		result = KNOT_ERR_PERM;
-		goto fail;
-	}
-
-	result = 0;
-
-fail:
-	l_free(response.data);
-
-	return result;
-}

@@ -1414,20 +1414,12 @@ static void start_timeout(struct l_timeout *timeout, void *user_data)
 	if (sock < 0)
 		goto connect_fail;
 
-	/* 'settings' may be changed by D-Bus interface */
-	if (proto_signin(sock, settings->uuid, settings->token,
-			 NULL, NULL) != 0)
-		goto signin_fail;
-
 	/* Keep a reference to a valid credential */
 	owner_uuid = settings->uuid;
 	/* Step1: Getting Cloud (device) proxies using owner credential */
 	cloud_list_devices();
 
 	return;
-
-signin_fail:
-	proto_close(sock);
 
 connect_fail:
 	/* Schedule this callback to 5 seconds */
