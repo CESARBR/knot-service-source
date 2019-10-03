@@ -73,52 +73,6 @@ static inline bool is_token_valid(const char *token)
 	return strlen(token) == KNOT_PROTOCOL_TOKEN_LEN;
 }
 
-static json_object *schema_create_object(uint8_t sensor_id, uint8_t value_type,
-					 uint8_t unit, uint16_t type_id,
-					 const char *name)
-{
-	json_object *schema;
-
-	schema = json_object_new_object();
-	json_object_object_add(schema, "sensor_id",
-			       json_object_new_int(sensor_id));
-	json_object_object_add(schema, "value_type",
-			       json_object_new_int(value_type));
-	json_object_object_add(schema, "unit",
-			       json_object_new_int(unit));
-	json_object_object_add(schema, "type_id",
-			       json_object_new_int(type_id));
-	json_object_object_add(schema, "name",
-			       json_object_new_string(name));
-
-	return schema;
-}
-
-static void schema_create_and_append(knot_msg_schema *schema,
-			      json_object *schema_list)
-{
-	json_object *item = schema_create_object(schema->sensor_id,
-						 schema->values.value_type,
-						 schema->values.unit,
-						 schema->values.type_id,
-						 schema->values.name);
-	json_object_array_add(schema_list, item);
-}
-
-static json_object *schema_create_list(struct l_queue *schema_list)
-{
-	json_object *jschema, *jschema_list;
-
-	jschema = json_object_new_object();
-	jschema_list = json_object_new_array();
-	l_queue_foreach(schema_list,
-			(l_queue_foreach_func_t) schema_create_and_append,
-			jschema_list);
-	json_object_object_add(jschema, "schema", jschema_list);
-
-	return jschema;
-}
-
 static struct proto_ops *get_proto_ops(const char *protocol_name)
 {
 	int i;
@@ -209,7 +163,7 @@ int proto_schema(int proto_socket, const char *uuid,
 	const char *jschema_list_as_string;
 	int result, err;
 
-	jschema_list = schema_create_list(schema_list);
+	jschema_list = parser_schema_create_object(schema_list);
 	jschema_list_as_string = json_object_to_json_string(jschema_list);
 
 	err = proto->schema(proto_socket, uuid, token,

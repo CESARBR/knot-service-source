@@ -689,6 +689,81 @@ json_object *parser_device_json_create(const char *device_id,
 	return device;
 }
 
+static json_object *schema_item_create_obj(knot_msg_schema *schema)
+{
+	json_object *json_schema;
+
+	json_schema = json_object_new_object();
+
+	json_object_object_add(json_schema, "sensor_id",
+				       json_object_new_int(schema->sensor_id));
+	json_object_object_add(json_schema, "value_type",
+				json_object_new_int(
+					schema->values.value_type));
+	json_object_object_add(json_schema, "unit",
+				json_object_new_int(
+					schema->values.unit));
+	json_object_object_add(json_schema, "type_id",
+				json_object_new_int(
+					schema->values.type_id));
+	json_object_object_add(json_schema, "name",
+				json_object_new_string(
+					schema->values.name));
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * {
+	 *   "sensor_id": 1,
+	 *   "value_type": 0xFFF1,
+	 *   "unit": 0,
+	 *   "type_id": 3,
+	 *   "name": "Door lock"
+	 * }
+	 */
+
+	return json_schema;
+}
+
+static void schema_item_create_and_append(void *data, void *user_data)
+{
+	knot_msg_schema *schema = data;
+	json_object *schema_list = user_data;
+	json_object *item;
+
+	item = schema_item_create_obj(schema);
+	json_object_array_add(schema_list, item);
+}
+
+json_object *parser_schema_create_object(struct l_queue *schema_list)
+{
+	json_object *json_msg;
+	json_object *json_schema_array;
+
+	json_msg = json_object_new_object();
+	json_schema_array = json_object_new_array();
+
+	l_queue_foreach(schema_list, schema_item_create_and_append,
+			json_schema_array);
+
+	json_object_object_add(json_msg, "schema", json_schema_array);
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "schema" : [{
+	 *         "sensor_id": 1,
+	 *         "value_type": 0xFFF1,
+	 *         "unit": 0,
+	 *         "type_id": 3,
+	 *         "name": "Door lock"
+	 *   }]
+	 * }
+	 */
+
+	return json_msg;
+}
+
 const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
 {
 	json_object *jobjkey;
