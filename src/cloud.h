@@ -26,10 +26,12 @@ struct cloud_msg {
 		REQUEST_MSG,
 		REGISTER_MSG,
 		UNREGISTER_MSG,
+		SCHEMA_MSG,
 		LIST_MSG
 	} type;
 	union {
 		const char *token; // used when type is REGISTER
+		const char *error; // used when type is SCHEMA
 		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};
 };

@@ -53,6 +53,7 @@
 #define AMQP_EVENT_DATA_REQUEST "data.request"
 #define AMQP_EVENT_DEVICE_REGISTERED "device.registered"
 #define AMQP_EVENT_DEVICE_UNREGISTERED "device.unregistered"
+#define AMQP_EVENT_SCHEMA_UPDATED "schema.updated"
 #define AMQP_EVENT_DEVICE_LIST "device.list"
 
  /* Northbound traffic (control, measurements) */
@@ -98,6 +99,8 @@ static int map_routing_key_to_msg_type(const char *routing_key)
 		return REGISTER_MSG;
 	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_UNREGISTERED))
 		return UNREGISTER_MSG;
+	else if (!strcmp(routing_key, AMQP_EVENT_SCHEMA_UPDATED))
+		return SCHEMA_MSG;
 	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_LIST))
 		return LIST_MSG;
 	return -1;
@@ -144,6 +147,15 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 			goto err;
 		}
 
+		break;
+	case SCHEMA_MSG:
+		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
+		if (!msg->device_id) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
+		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	case LIST_MSG:
 		msg->device_id = NULL;
@@ -409,6 +421,7 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 		AMQP_EVENT_DATA_REQUEST,
 		AMQP_EVENT_DEVICE_REGISTERED,
 		AMQP_EVENT_DEVICE_UNREGISTERED,
+		AMQP_EVENT_SCHEMA_UPDATED,
 		AMQP_EVENT_DEVICE_LIST,
 		NULL
 	};
