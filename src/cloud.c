@@ -303,6 +303,8 @@ int cloud_unregister_device(const char *id)
 
 /**
  * cloud_auth_device:
+ * @id: device id
+ * @token: device token
  *
  * Requests cloud to auth a device.
  * The confirmation that the cloud received the message comes from a callback
@@ -310,7 +312,7 @@ int cloud_unregister_device(const char *id)
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
-int cloud_auth_device(void)
+int cloud_auth_device(const char *id, const char *token)
 {
 	amqp_bytes_t queue_cloud;
 	json_object *jobj_device;
@@ -323,7 +325,7 @@ int cloud_auth_device(void)
 		return -1;
 	}
 
-	jobj_device = NULL;
+	jobj_device = parser_auth_json_create(id, token);
 	json_str = json_object_to_json_string(jobj_device);
 
 	result = amqp_publish_persistent_message(queue_cloud,
