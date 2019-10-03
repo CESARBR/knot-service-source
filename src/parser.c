@@ -781,3 +781,16 @@ const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
 
 	return json_object_get_string(jobjkey);
 }
+
+int parser_get_key_bool_from_json_obj(json_object *jso, const char *key)
+{
+	json_object *jobjkey;
+
+	if (!json_object_object_get_ex(jso, key, &jobjkey))
+		return -1;
+
+	if (json_object_get_type(jobjkey) != json_type_boolean)
+		return -1;
+
+	return json_object_get_boolean(jobjkey);
+}
