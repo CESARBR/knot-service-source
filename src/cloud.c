@@ -301,6 +301,21 @@ int cloud_unregister_device(const char *id)
 }
 
 /**
+ * cloud_auth_device:
+ *
+ * Requests cloud to auth a device.
+ * The confirmation that the cloud received the message comes from a callback
+ * set in function cloud_set_read_handler.
+ *
+ * Returns: 0 if successful and a KNoT error otherwise.
+ */
+int cloud_auth_device(void)
+{
+	/* TODO: Requests cloud to auth a device. */
+	return 0;
+}
+
+/**
  * cloud_update_schema:
  *
  * Requests cloud to update the device schema.
