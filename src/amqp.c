@@ -41,10 +41,12 @@
 #include "amqp.h"
 
 #define AMQP_CONNECTION_TIMEOUT_US 10000
+#define AMQP_CONNECTION_RETRY_TIMEOUT_MS 1000
 
 struct amqp_context {
 	amqp_connection_state_t conn;
 	struct l_io *amqp_io;
+	struct l_timeout *conn_retry_timeout;
 	amqp_read_cb_t read_cb;
 };
 
@@ -160,11 +162,36 @@ static bool on_receive(struct l_io *io, void *user_data)
 
 static void on_disconnect(struct l_io *io, void *user_data)
 {
+	amqp_rpc_reply_t r;
+	int err;
+
 	hal_log_info("AMQP broker disconnected");
+	r = amqp_channel_close(amqp_ctx.conn, 1, AMQP_REPLY_SUCCESS);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL)
+		hal_log_error("amqp_channel_close: %s",
+				amqp_rpc_reply_string(r));
+
+	r = amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL)
+		hal_log_error("amqp_connection_close: %s",
+				amqp_rpc_reply_string(r));
+
+	err = amqp_destroy_connection(amqp_ctx.conn);
+	if (err < 0)
+		hal_log_error("amqp_destroy_connection: %s",
+				amqp_error_string2(err));
+
+	l_io_destroy(amqp_ctx.amqp_io);
+	amqp_ctx.conn = NULL;
+	amqp_ctx.amqp_io = NULL;
+
+	l_timeout_modify_ms(amqp_ctx.conn_retry_timeout,
+			    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
 }
 
-static int start_connection(struct settings *settings)
+static void start_connection(struct l_timeout *ltimeout, void *user_data)
 {
+	const struct settings *settings = user_data;
 	amqp_socket_t *socket;
 	struct amqp_connection_info cinfo;
 	amqp_rpc_reply_t r;
@@ -175,7 +202,9 @@ static int start_connection(struct settings *settings)
 	status = amqp_parse_url((char *) settings->rabbitmq_url, &cinfo);
 	if (status) {
 		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
 
 	amqp_ctx.conn = amqp_new_connection();
@@ -185,7 +214,9 @@ static int start_connection(struct settings *settings)
 		amqp_destroy_connection(amqp_ctx.conn);
 		amqp_ctx.conn = NULL;
 		hal_log_error("error creating tcp socket\n");
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
 
 	status = amqp_socket_open_noblock(socket, cinfo.host, cinfo.port,
@@ -194,7 +225,9 @@ static int start_connection(struct settings *settings)
 		amqp_destroy_connection(amqp_ctx.conn);
 		amqp_ctx.conn = NULL;
 		hal_log_error("error opening socket\n");
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
 
 	r = amqp_login(amqp_ctx.conn, cinfo.vhost,
@@ -205,7 +238,9 @@ static int start_connection(struct settings *settings)
 		amqp_destroy_connection(amqp_ctx.conn);
 		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
 
 	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s\n", cinfo.user,
@@ -219,13 +254,15 @@ static int start_connection(struct settings *settings)
 		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_channel_open(): %s",
 				amqp_rpc_reply_string(r));
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
 
 	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
 
 	status = l_io_set_disconnect_handler(amqp_ctx.amqp_io, on_disconnect,
-					  NULL, NULL);
+					     NULL, NULL);
 	if (!status) {
 		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
 		amqp_destroy_connection(amqp_ctx.conn);
@@ -233,10 +270,10 @@ static int start_connection(struct settings *settings)
 		amqp_ctx.conn = NULL;
 		amqp_ctx.amqp_io = NULL;
 		hal_log_error("Error on set up disconnect handler");
-		return -1;
+		l_timeout_modify_ms(ltimeout,
+				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		return;
 	}
-
-	return 0;
 }
 
 /**
@@ -429,13 +466,9 @@ int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 
 int amqp_start(struct settings *settings)
 {
-	int err;
-
-	err = start_connection(settings);
-	if (err) {
-		hal_log_error("Error on start connection");
-		return -ENOTCONN;
-	}
+	amqp_ctx.conn_retry_timeout = l_timeout_create_ms(1, // start in oneshot
+				start_connection,
+				settings, NULL);
 
 	return 0;
 }
@@ -445,8 +478,7 @@ void amqp_stop(void)
 	amqp_rpc_reply_t r;
 	int err;
 
-	if (amqp_ctx.amqp_io)
-		l_io_destroy(amqp_ctx.amqp_io);
+	l_timeout_remove(amqp_ctx.conn_retry_timeout);
 
 	if (!amqp_ctx.conn)
 		return;
