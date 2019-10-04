@@ -370,6 +370,7 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 		AMQP_EVENT_DATA_REQUEST,
 		AMQP_EVENT_DEVICE_REGISTERED,
 		AMQP_EVENT_DEVICE_UNREGISTERED,
+		AMQP_EVENT_DEVICE_LIST,
 		NULL
 	};
 	amqp_bytes_t queue_fog;
