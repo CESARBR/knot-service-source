@@ -158,6 +158,11 @@ static bool on_receive(struct l_io *io, void *user_data)
 	return true;
 }
 
+static void on_disconnect(struct l_io *io, void *user_data)
+{
+	hal_log_info("AMQP broker disconnected");
+}
+
 static int start_connection(struct settings *settings)
 {
 	amqp_socket_t *socket;
@@ -178,6 +183,7 @@ static int start_connection(struct settings *settings)
 	socket = amqp_tcp_socket_new(amqp_ctx.conn);
 	if (!socket) {
 		amqp_destroy_connection(amqp_ctx.conn);
+		amqp_ctx.conn = NULL;
 		hal_log_error("error creating tcp socket\n");
 		return -1;
 	}
@@ -186,6 +192,7 @@ static int start_connection(struct settings *settings)
 					  &timeout);
 	if (status) {
 		amqp_destroy_connection(amqp_ctx.conn);
+		amqp_ctx.conn = NULL;
 		hal_log_error("error opening socket\n");
 		return -1;
 	}
@@ -196,6 +203,7 @@ static int start_connection(struct settings *settings)
 			cinfo.user, cinfo.password);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
 		amqp_destroy_connection(amqp_ctx.conn);
+		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
 		return -1;
 	}
@@ -208,8 +216,23 @@ static int start_connection(struct settings *settings)
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
 		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
 		amqp_destroy_connection(amqp_ctx.conn);
+		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_channel_open(): %s",
 				amqp_rpc_reply_string(r));
+		return -1;
+	}
+
+	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
+
+	status = l_io_set_disconnect_handler(amqp_ctx.amqp_io, on_disconnect,
+					  NULL, NULL);
+	if (!status) {
+		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
+		amqp_destroy_connection(amqp_ctx.conn);
+		l_io_destroy(amqp_ctx.amqp_io);
+		amqp_ctx.conn = NULL;
+		amqp_ctx.amqp_io = NULL;
+		hal_log_error("Error on set up disconnect handler");
 		return -1;
 	}
 
@@ -388,7 +411,10 @@ int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 
 	amqp_ctx.read_cb = on_read;
 
-	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
+	if (!amqp_ctx.amqp_io) {
+		hal_log_error("Error amqp service not started");
+		return -1;
+	}
 
 	err = l_io_set_read_handler(amqp_ctx.amqp_io, on_receive,
 				    user_data, NULL);
@@ -407,8 +433,8 @@ int amqp_start(struct settings *settings)
 
 	err = start_connection(settings);
 	if (err) {
-		hal_log_error("Error on start connection\n");
-		return -1;
+		hal_log_error("Error on start connection");
+		return -ENOTCONN;
 	}
 
 	return 0;
