@@ -196,21 +196,18 @@ def handle_register(msg):
     credentials = {'uuid': uuid[1:].decode('utf-8'), 'token': token.decode('utf-8')}
     with open(options.filename, 'w') as fd:
         json.dump(credentials, fd)
-    send_knot_msg_auth(s, uuid[1:], token)
+    sensor = schemas.pop()
+    schemas_sents.append(sensor)
+    sensor['sock'] = s
+    send_knot_msg_schema(**sensor)
 
 def handle_auth():
     logging.info('Authenticated')
-    try:
-        sensor = schemas.pop()
-        schemas_sents.append(sensor)
-        sensor['sock'] = s
-        send_knot_msg_schema(**sensor)
-    except IndexError:
-        for data in datas:
-            interval = data.pop('interval') if 'interval' in data else 10
-            data['sock'] = s
-            logging.info('Data_item %d will send every %d seconds', data['sensor_id'], interval)
-            set_interval(send_knot_msg_push_data, interval, **data)
+    for data in datas:
+        interval = data.pop('interval') if 'interval' in data else 10
+        data['sock'] = s
+        logging.info('Data_item %d will send every %d seconds', data['sensor_id'], interval)
+        set_interval(send_knot_msg_push_data, interval, **data)
 
 def handle_schema():
     if schemas:
