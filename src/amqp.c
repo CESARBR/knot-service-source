@@ -194,16 +194,19 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 	const struct settings *settings = user_data;
 	amqp_socket_t *socket;
 	struct amqp_connection_info cinfo;
+	char *tmp_url = l_strdup(settings->rabbitmq_url);
 	amqp_rpc_reply_t r;
 	struct timeval timeout = { .tv_usec = AMQP_CONNECTION_TIMEOUT_US };
 	int status;
 
 	hal_log_dbg("Trying to connect to rabbitmq");
-	status = amqp_parse_url((char *) settings->rabbitmq_url, &cinfo);
+	// This function will change the url after processed
+	status = amqp_parse_url(tmp_url, &cinfo);
 	if (status) {
 		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 
@@ -216,6 +219,7 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 		hal_log_error("error creating tcp socket\n");
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 
@@ -227,6 +231,7 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 		hal_log_error("error opening socket\n");
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 
@@ -240,6 +245,7 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 
@@ -256,6 +262,7 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 				amqp_rpc_reply_string(r));
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 
@@ -272,6 +279,7 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 		hal_log_error("Error on set up disconnect handler");
 		l_timeout_modify_ms(ltimeout,
 				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+		l_free(tmp_url);
 		return;
 	}
 }
