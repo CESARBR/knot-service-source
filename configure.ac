@@ -51,19 +51,11 @@ PKG_CHECK_MODULES(KNOTHAL, hal,
 AC_SUBST(KNOTHAL_CFLAGS)
 AC_SUBST(KNOTHAL_LIBS)
 
-PKG_CHECK_MODULES(WEBSOCKETS, [libwebsockets >= 2.4.2],
-  [AC_DEFINE([HAVE_WEBSOCKETS],[1],[Use WEBSOCKETS])],
-  [AC_MSG_ERROR("libwebsockets missing")])
-AC_SUBST(WEBSOCKETS_CFLAGS)
-AC_SUBST(WEBSOCKETS_LIBS)
-
 PKG_CHECK_MODULES(RABBITMQ, [librabbitmq >= 0.9.0],
   [AC_DEFINE([HAVE_RABBITMQ],[1],[Use RABBITMQ])],
   [AC_MSG_ERROR("librabbitmq missing")])
 AC_SUBST(RABBITMQ_CFLAGS)
 AC_SUBST(RABBITMQ_LIBS)
-
-AM_CONDITIONAL(WEBSOCKETS, (test "${websockets}" != "no"))
 
 AC_ARG_WITH([dbusconfdir], AC_HELP_STRING([--with-dbusconfdir=DIR],
 				[path to D-Bus configuration directory]),

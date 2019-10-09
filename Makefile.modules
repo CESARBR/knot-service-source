@@ -3,10 +3,3 @@
 modules_sources += src/node-unix.c
 modules_sources += src/node-tcp.c
 modules_sources += src/node-tcp6.c
-
-if WEBSOCKETS
-# IoT protocol: Meshblu Websockets
-modules_sources += src/proto-ws.c src/proto-socketio.c
-modules_cflags += @WEBSOCKETS_CFLAGS@
-modules_ldadd += @WEBSOCKETS_LIBS@
-endif

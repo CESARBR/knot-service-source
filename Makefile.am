@@ -23,7 +23,6 @@ src_knotd_SOURCES = src/main.c \
 			src/settings.c src/settings.h \
 			src/manager.h src/manager.c \
 			src/msg.c src/msg.h \
-			src/proto.c src/proto.h \
 			src/node.c src/node.h \
 			src/dbus.c src/dbus.h \
 			src/device.c src/device.h \
@@ -33,9 +32,9 @@ src_knotd_SOURCES = src/main.c \
 			src/cloud.c src/cloud.h \
 			$(modules_sources)
 
-src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @WEBSOCKETS_LIBS@ @RABBITMQ_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ -lm
+src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @RABBITMQ_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @WEBSOCKETS_CFLAGS@ @RABBITMQ_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@ @JSON_CFLAGS@
+src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @RABBITMQ_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@ @JSON_CFLAGS@
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
 			inetbr/settings.c inetbr/settings.h \
