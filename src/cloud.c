@@ -110,6 +110,40 @@ static int map_routing_key_to_msg_type(const char *routing_key)
 	return -1;
 }
 
+static void *cloud_device_array_foreach(json_object *array_item)
+{
+	json_object *jobjkey;
+	struct mydevice *mydevice;
+	struct l_queue *schema;
+	const char *id, *name;
+
+	/* Getting 'Id': Mandatory field for registered device */
+	id = parser_get_key_str_from_json_obj(array_item, "id");
+	if (!id)
+		return NULL;
+
+	/* Getting 'schema': Mandatory field for registered device */
+	if (!json_object_object_get_ex(array_item, "schema", &jobjkey))
+		return NULL;
+
+	schema = parser_schema_to_list(json_object_to_json_string(jobjkey));
+	if (!schema)
+		return NULL;
+
+	/* Getting 'Name' */
+	name = parser_get_key_str_from_json_obj(array_item, "name");
+	if (!name)
+		return NULL;
+
+	mydevice = l_new(struct mydevice, 1);
+	mydevice->id = l_strdup(id);
+	mydevice->name = l_strdup(name);
+	mydevice->uuid = l_strdup(id);
+	mydevice->schema = schema;
+
+	return mydevice;
+}
+
 static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 {
 	struct cloud_msg *msg = l_new(struct cloud_msg, 1);
@@ -173,7 +207,8 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 		break;
 	case LIST_MSG:
 		msg->device_id = NULL;
-		msg->list = parser_mydevices_to_list(jso);
+		msg->list = parser_queue_from_json_array(jso,
+						cloud_device_array_foreach);
 		if (!msg->list) {
 			hal_log_error("Malformed JSON message");
 			goto err;

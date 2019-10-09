@@ -48,7 +48,6 @@
 #include "device.h"
 #include "proxy.h"
 #include "cloud.h"
-#include "parser.h"
 #include "msg.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))

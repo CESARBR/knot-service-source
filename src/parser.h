@@ -18,18 +18,13 @@
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
-struct mydevice {
-	char *id;
-	char *uuid;
-	char *name;
-	bool online;
-	struct l_queue *schema;
-	struct l_timeout *unreg_timeout;
-};
+
+typedef void *(*parser_json_array_item_cb) (json_object *array_item);
 
 struct l_queue *parser_schema_to_list(const char *json_str);
 struct l_queue *parser_config_to_list(const char *json_str);
-struct l_queue *parser_mydevices_to_list(json_object *jobj);
+struct l_queue *parser_queue_from_json_array(json_object *jobj,
+				parser_json_array_item_cb foreach_cb);
 
 struct l_queue *parser_request_to_list(json_object *jso);
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list);

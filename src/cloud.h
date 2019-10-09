@@ -38,6 +38,15 @@ struct cloud_msg {
 	};
 };
 
+struct mydevice {
+	char *id;
+	char *uuid;
+	char *name;
+	bool online;
+	struct l_queue *schema;
+	struct l_timeout *unreg_timeout;
+};
+
 typedef bool (*cloud_cb_t) (const struct cloud_msg *msg, void *user_data);
 
 int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data);
