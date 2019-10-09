@@ -380,14 +380,12 @@ int8_t parser_config_is_valid(struct l_queue *config_list)
 	return 0;
 }
 
-struct l_queue *parser_mydevices_to_list(json_object *jobj)
+struct l_queue *parser_queue_from_json_array(json_object *jobj,
+					parser_json_array_item_cb foreach_cb)
 {
-	json_object *jobjentry, *jobjkey;
+	json_object *jobjentry;
 	struct l_queue *list;
-	struct l_queue *schema;
-	struct mydevice *mydevice;
-	const char *name;
-	const char *id;
+	void *item;
 	int len;
 	int i;
 
@@ -399,33 +397,10 @@ struct l_queue *parser_mydevices_to_list(json_object *jobj)
 
 	for (i = 0; i < len; i++) {
 		jobjentry = json_object_array_get_idx(jobj, i);
-		/* Getting 'Id': Mandatory field for registered device */
-		if (!json_object_object_get_ex(jobjentry, "id", &jobjkey))
-			continue;
 
-		id = json_object_get_string(jobjkey);
-
-		/* Getting 'schema': Mandatory field for registered device */
-		if (!json_object_object_get_ex(jobjentry, "schema", &jobjkey))
-			continue;
-
-		schema = parser_schema_to_list(
-			json_object_to_json_string(jobjkey));
-		if (!schema)
-			continue;
-
-		/* Getting 'Name' */
-		if (!json_object_object_get_ex(jobjentry, "name", &jobjkey))
-			continue;
-
-		name = json_object_get_string(jobjkey);
-
-		mydevice = l_new(struct mydevice, 1);
-		mydevice->id   = l_strdup(id);
-		mydevice->name = l_strdup(name);
-		mydevice->uuid = l_strdup(id);
-		mydevice->schema = schema;
-		l_queue_push_tail(list, mydevice);
+		item = foreach_cb(jobjentry);
+		if (item)
+			l_queue_push_tail(list, item);
 	}
 
 	return list;
