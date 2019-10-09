@@ -16,16 +16,12 @@ ell >= 0.4
 json-c v0.13.1
 automake
 libtool
-libwebsocket v2.4.2
 libssl-dev
 valgrind (optional)
 
 How to install dependencies:
 	$sudo apt-get install automake libtool libssl-dev valgrind
-	To install libwebsockets first you need to install cmake
-		https://cmake.org/install/
-	After install cmake, install libwebsocket v2.4.2
-		https://github.com/warmcat/libwebsockets/releases/tag/v2.4.2
+
 	To install libell, you have to clone the repository and follow the instructions:
 		git://git.kernel.org/pub/scm/libs/ell/ell.git
 	To install the latest version of json-c, you have to clone the repository and follow the instructions:
