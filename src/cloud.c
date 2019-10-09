@@ -67,9 +67,9 @@
 
 cloud_cb_t cloud_cb;
 
-static void mydevice_free(void *data)
+static void cloud_device_free(void *data)
 {
-	struct mydevice *mydevice = data;
+	struct cloud_device *mydevice = data;
 
 	if (unlikely(!mydevice))
 		return;
@@ -84,7 +84,7 @@ static void mydevice_free(void *data)
 static void cloud_msg_destroy(struct cloud_msg *msg)
 {
 	if (msg->type == LIST_MSG)
-		l_queue_destroy(msg->list, mydevice_free);
+		l_queue_destroy(msg->list, cloud_device_free);
 	else if (msg->type == UPDATE_MSG || msg->type == REQUEST_MSG)
 		l_queue_destroy(msg->list, l_free);
 
@@ -113,7 +113,7 @@ static int map_routing_key_to_msg_type(const char *routing_key)
 static void *cloud_device_array_foreach(json_object *array_item)
 {
 	json_object *jobjkey;
-	struct mydevice *mydevice;
+	struct cloud_device *mydevice;
 	struct l_queue *schema;
 	const char *id, *name;
 
@@ -135,7 +135,7 @@ static void *cloud_device_array_foreach(json_object *array_item)
 	if (!name)
 		return NULL;
 
-	mydevice = l_new(struct mydevice, 1);
+	mydevice = l_new(struct cloud_device, 1);
 	mydevice->id = l_strdup(id);
 	mydevice->name = l_strdup(name);
 	mydevice->uuid = l_strdup(id);

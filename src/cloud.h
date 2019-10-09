@@ -38,7 +38,7 @@ struct cloud_msg {
 	};
 };
 
-struct mydevice {
+struct cloud_device {
 	char *id;
 	char *uuid;
 	char *name;
