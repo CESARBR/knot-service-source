@@ -47,6 +47,8 @@ struct amqp_context {
 	amqp_connection_state_t conn;
 	struct l_io *amqp_io;
 	struct l_timeout *conn_retry_timeout;
+	amqp_connected_cb_t connected_cb;
+	void *connected_data;
 	amqp_read_cb_t read_cb;
 };
 
@@ -255,6 +257,8 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 		hal_log_error("Error on set up disconnect handler");
 		goto io_destroy;
 	}
+
+	amqp_ctx.connected_cb(amqp_ctx.connected_data);
 	goto done;
 
 io_destroy:
@@ -464,8 +468,12 @@ int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data)
 	return 0;
 }
 
-int amqp_start(struct settings *settings)
+int amqp_start(struct settings *settings, amqp_connected_cb_t on_connected,
+	       void *user_data)
 {
+	amqp_ctx.connected_cb = on_connected;
+	amqp_ctx.connected_data = user_data;
+
 	amqp_ctx.conn_retry_timeout = l_timeout_create_ms(1, // start in oneshot
 				start_connection,
 				settings, NULL);

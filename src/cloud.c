@@ -548,9 +548,10 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 	return 0;
 }
 
-int cloud_start(struct settings *settings)
+int cloud_start(struct settings *settings, cloud_connected_cb_t connected_cb,
+		void *user_data)
 {
-	return amqp_start(settings);
+	return amqp_start(settings, connected_cb, user_data);
 }
 
 void cloud_stop(void)

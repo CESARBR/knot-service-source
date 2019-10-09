@@ -23,13 +23,15 @@ typedef bool (*amqp_read_cb_t) (const char *exchange,
 				   const char *routing_key,
 				   const char *body,
 				   void *user_data);
+typedef void (*amqp_connected_cb_t) (void *user_data);
 
 int amqp_set_queue_to_consume(amqp_bytes_t queue,
 			      const char *exchange,
 			      const char *routing_key);
 amqp_bytes_t amqp_declare_new_queue(const char *name);
 int amqp_set_read_cb(amqp_read_cb_t on_read, void *user_data);
-int amqp_start(struct settings *settings);
+int amqp_start(struct settings *settings, amqp_connected_cb_t connected_cb,
+	       void *user_data);
 void amqp_stop(void);
 int8_t amqp_publish_persistent_message(amqp_bytes_t queue, const char *exchange,
 		const char *routing_keys, const char *body);
