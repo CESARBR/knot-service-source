@@ -47,7 +47,6 @@
 #include "node.h"
 #include "device.h"
 #include "proxy.h"
-#include "proto.h"
 #include "cloud.h"
 #include "parser.h"
 #include "msg.h"
@@ -1379,12 +1378,6 @@ int msg_start(struct settings *settings)
 		return err;
 	}
 
-	err = proto_start(settings);
-	if (err < 0) {
-		hal_log_error("proto_start(): %s", strerror(-err));
-		goto proto_fail;
-	}
-
 	err = cloud_start(settings);
 	if (err < 0) {
 		hal_log_error("cloud_start(): %s", strerror(-err));
@@ -1410,8 +1403,6 @@ int msg_start(struct settings *settings)
 cloud_operation_fail:
 	cloud_stop();
 cloud_fail:
-	proto_stop();
-proto_fail:
 	device_stop();
 
 	return err;
@@ -1426,7 +1417,6 @@ void msg_stop(void)
 	if (proxy_enabled)
 		proxy_stop();
 	cloud_stop();
-	proto_stop();
 	device_stop();
 
 	l_queue_destroy(device_id_list, mydevice_free);
