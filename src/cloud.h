@@ -48,9 +48,11 @@ struct cloud_device {
 };
 
 typedef bool (*cloud_cb_t) (const struct cloud_msg *msg, void *user_data);
+typedef void (*cloud_connected_cb_t) (void *user_data);
 
 int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data);
-int cloud_start(struct settings *settings);
+int cloud_start(struct settings *settings, cloud_connected_cb_t connected_cb,
+		void *user_data);
 void cloud_stop(void);
 int cloud_publish_data(const char *id, uint8_t sensor_id,
 		       uint8_t value_type,

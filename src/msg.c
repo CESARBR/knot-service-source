@@ -76,6 +76,7 @@ static struct l_queue *session_list;
 static struct l_queue *device_id_list;
 static struct l_timeout *start_to;
 static bool proxy_enabled = false;
+static bool node_enabled;
 
 static struct session *session_ref(struct session *session)
 {
@@ -1300,7 +1301,10 @@ static bool handle_cloud_msg_list(struct l_queue *devices)
 	proxy_ready(NULL);
 
 	/* Start to accept thing connections when receive cloud devices */
-	node_start(session_accept_cb);
+	if (!node_enabled) {
+		node_start(session_accept_cb);
+		node_enabled = true;
+	}
 
 	return true;
 }
@@ -1384,10 +1388,27 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 	}
 }
 
+static void on_cloud_connected(void *user_data)
+{
+	int err;
+
+	hal_log_info("Cloud CONNECTED");
+	err = cloud_set_read_handler(on_cloud_receive, NULL);
+	if (err < 0) {
+		hal_log_error("cloud_set_read_handler(): %s", strerror(-err));
+		return;
+	}
+
+	err = cloud_list_devices();
+	if (err < 0)
+		hal_log_error("cloud_list_devices(): %s", strerror(-err));
+}
+
 int msg_start(struct settings *settings)
 {
 	int err;
 
+	device_id_list = l_queue_new();
 	session_list = l_queue_new();
 
 	err = device_start();
@@ -1396,34 +1417,11 @@ int msg_start(struct settings *settings)
 		return err;
 	}
 
-	err = cloud_start(settings);
-	if (err < 0) {
+	err = cloud_start(settings, on_cloud_connected, NULL);
+	if (err < 0)
 		hal_log_error("cloud_start(): %s", strerror(-err));
-		goto cloud_fail;
-	}
-
-	err = cloud_set_read_handler(on_cloud_receive, NULL);
-	if (err < 0) {
-		hal_log_error("cloud_set_read_handler(): %s", strerror(-err));
-		goto cloud_operation_fail;
-	}
-
-	device_id_list = l_queue_new();
-
-	err = cloud_list_devices();
-	if (err < 0) {
-		hal_log_error("cloud_list_devices(): %s", strerror(-err));
-		goto cloud_operation_fail;
-	}
 
 	return 0;
-
-cloud_operation_fail:
-	cloud_stop();
-cloud_fail:
-	device_stop();
-
-	return err;
 }
 
 void msg_stop(void)
