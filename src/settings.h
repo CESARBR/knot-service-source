@@ -20,11 +20,6 @@
  */
 
 struct settings {
-	const char *config_path;
-	int configfd;
-
-	char *uuid;
-	char *token;
 	char *rabbitmq_url;
 
 	bool help;
