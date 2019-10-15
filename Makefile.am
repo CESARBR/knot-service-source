@@ -13,9 +13,6 @@ noinst_PROGRAMS = tools/ktool unit/ktest unit/inettest
 dbusdir = @DBUS_CONFDIR@/dbus-1/system.d
 dbus_DATA = src/knot.conf
 
-knotconfigdir = @KNOTCONFIGDIR@
-knotconfig_DATA = src/knotd.conf
-
 include Makefile.modules
 
 src_knotd_SOURCES = src/main.c \
