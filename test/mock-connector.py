@@ -58,7 +58,7 @@ def __parse_update_message(msg_file):
     else:
         msg = {
             "id": "0123456789abcdef",
-            "data": [{"sensor_id": 253, "data": True}]
+            "data": [{"sensor_id": 253, "value": True}]
         }
     return json.dumps(msg)
 
