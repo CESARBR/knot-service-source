@@ -523,8 +523,8 @@ struct l_queue *parser_update_to_list(json_object *jso)
 
 		sensor_id = json_object_get_int(jobjkey);
 
-		/* Getting 'data' */
-		if (!json_object_object_get_ex(json_data, "data", &jobjkey))
+		/* Getting 'value' */
+		if (!json_object_object_get_ex(json_data, "value", &jobjkey))
 			goto fail;
 
 		jtype = json_object_get_type(jobjkey);
