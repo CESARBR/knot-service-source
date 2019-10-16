@@ -35,6 +35,9 @@ KEY_REGISTERED = 'device.registered'
 EVENT_UNREGISTER = 'device.unregister'
 KEY_UNREGISTERED = 'device.unregistered'
 
+EVENT_AUTH = 'device.cmd.auth'
+KEY_AUTH = 'device.auth'
+
 EVENT_LIST = 'device.cmd.list'
 KEY_LIST_DEVICES = 'device.list'
 
@@ -86,6 +89,12 @@ def __on_msg_received(channel, method, properties, body):
         message = body
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_UNREGISTERED, body=message)
+    elif method.routing_key == EVENT_AUTH:
+        message = json.loads(body)
+        del message['token']
+        message['authenticated'] = True
+        channel.basic_publish(exchange=fog_exchange,
+                              routing_key=KEY_AUTH, body=json.dumps(message))
     elif method.routing_key == EVENT_LIST:
         message = [
         {
