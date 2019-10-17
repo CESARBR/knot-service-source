@@ -1080,7 +1080,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 	msg_credential_create(&msg, device_pending->uuid, token);
 
 	msg.hdr.type = KNOT_MSG_REG_RSP;
-	olen = sizeof(msg);
+	olen = sizeof(msg.hdr) + msg.hdr.payload_len;
 
 	osent = node_ops->send(session->node_fd, &msg, olen);
 	if (osent < 0) {
@@ -1160,13 +1160,15 @@ static bool handle_device_auth(struct session *session, const char *device_id,
 
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_AUTH_RSP;
+	msg.hdr.payload_len = sizeof(msg.action.result);
 
 	if (!auth) {
 		hal_log_error("[session %p] Not Authorized", session);
 		msg.action.result = KNOT_ERR_PERM;
 	}
 
-	osent = session->node_ops->send(session->node_fd, &msg, sizeof(msg));
+	osent = session->node_ops->send(session->node_fd, &msg,
+					sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (osent < 0) {
 		osent_err = -osent;
 		hal_log_error("[session %p] Can't send msg response  %s(%d)",
@@ -1198,6 +1200,7 @@ static bool handle_schema_updated(struct session *session,
 
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.type = KNOT_MSG_SCHM_END_RSP;
+	msg.hdr.payload_len = sizeof(msg.action.result);
 
 	if (err) {
 		hal_log_error("%s", err);
@@ -1208,7 +1211,8 @@ static bool handle_schema_updated(struct session *session,
 		/* TODO: Send a error signal via D-Bus */
 	}
 
-	osent = session->node_ops->send(session->node_fd, &msg, sizeof(msg));
+	osent = session->node_ops->send(session->node_fd, &msg,
+					sizeof(msg.hdr) + msg.hdr.payload_len);
 	if (osent < 0) {
 		osent_err = -osent;
 		hal_log_error("[session %p] Can't send msg response %s(%d)",
