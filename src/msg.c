@@ -68,8 +68,8 @@ struct session {
 	int rollback;			/* Counter: remove if schema is not received */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
+	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
 	struct l_queue *update_list;	/* List of update messages */
 	struct l_queue *request_list;	/* List of request messages */
@@ -104,8 +104,8 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->token = NULL;
 	session->id = INT32_MAX;
 	session->node_ops = node_ops;
-	session->schema_list = NULL;
 	session->config_list = NULL;
+	session->schema_list = l_queue_new();
 	session->update_list = l_queue_new();
 	session->request_list = l_queue_new();
 
@@ -122,8 +122,8 @@ static void session_destroy(struct session *session)
 
 	l_free(session->uuid);
 	l_free(session->token);
-	l_queue_destroy(session->schema_list, l_free);
 	l_queue_destroy(session->config_list, l_free);
+	l_queue_destroy(session->schema_list, l_free);
 	l_queue_destroy(session->update_list, l_free);
 	l_queue_destroy(session->request_list, l_free);
 	l_timeout_remove(session->downstream_to);
@@ -457,6 +457,7 @@ static int8_t msg_register(struct session *session,
 	device_pending->uuid = l_strdup(id);
 	device_pending->name = l_strdup(device_name);
 	device_pending->online = false;
+	device_pending->schema = l_queue_new();
 
 	l_queue_push_head(device_id_list, device_pending);
 
@@ -546,6 +547,9 @@ static int8_t msg_auth(struct session *session,
 		return result;
 	}
 
+	l_queue_foreach(mydevice->schema, schema_dup_foreach,
+			session->schema_list);
+
 	session->trusted = true;
 
 	return 0;
@@ -579,13 +583,6 @@ static int8_t msg_schema(struct session *session,
 	 * 	]
 	 * }
 	 */
-
-	/*
-	 * Checks whether the schema was received before and if not, adds
-	 * to a temporary list until receiving complete schema.
-	 */
-	if (session->schema_list == NULL)
-		session->schema_list = l_queue_new();
 
 	if (!schema_find(session->schema_list, schema->sensor_id))
 		l_queue_push_tail(session->schema_list,
@@ -1309,6 +1306,9 @@ static bool handle_schema_updated(struct session *session,
 				  const char *device_id, const char *err)
 {
 	struct knot_device *device;
+	struct mydevice *mydevice = l_queue_find(device_id_list,
+						 device_id_cmp,
+						 device_id);
 	ssize_t osent;
 	int osent_err;
 	bool result = false;
@@ -1337,6 +1337,9 @@ static bool handle_schema_updated(struct session *session,
 	device = device_get(device_id);
 	if (device)
 		device_set_registered(device, true);
+
+	l_queue_foreach(session->schema_list, schema_dup_foreach,
+			mydevice->schema);
 
 	/*
 	 * For security reason, remove from rollback avoiding clonning attack.
