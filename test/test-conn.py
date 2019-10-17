@@ -210,7 +210,15 @@ def handle_auth():
         logging.info('Data_item %d will send every %d seconds', data['sensor_id'], interval)
         set_interval(send_knot_msg_push_data, interval, **data)
 
-def handle_schema():
+def handle_schema(msg):
+    _, _, result = struct.unpack(HEADER_FMT + 'b', msg)
+    if result < 0:
+        logging.error('Schema error received')
+        sensor = schemas_sents[-1] # get last item sent to try again
+        sensor['sock'] = s
+        send_knot_msg_schema(**sensor)
+        return
+
     if schemas:
         sensor = schemas.pop()
         schemas_sents.append(sensor)
@@ -219,7 +227,19 @@ def handle_schema():
         return
     s.send(struct.pack(HEADER_FMT, PROTO_SCHM_END_REQ, 0))
 
-def handle_schema_end():
+def handle_schema_end(msg):
+    logging.info(len(msg))
+    _, _, result = struct.unpack(HEADER_FMT + 'b', msg)
+    if result < 0:
+        logging.error('Schema error received')
+        while schemas_sents:
+            schemas.append(schemas_sents.pop()) # requeue the schemas sent to try again
+        sensor = schemas.pop()
+        schemas_sents.append(sensor)
+        sensor['sock'] = s
+        send_knot_msg_schema(**sensor)
+        return
+
     logging.info('Schema sent')
     for data in datas:
         interval = data.pop('interval') if 'interval' in data else 10
@@ -295,8 +315,8 @@ while 1:
     {
         PROTO_AUTH_RSP: handle_auth,
         PROTO_UNREGISTER_REQ: handle_unregister,
-        PROTO_SCHM_FRAG_RSP: handle_schema,
-        PROTO_SCHM_END_RSP: handle_schema_end,
+        PROTO_SCHM_FRAG_RSP:lambda: handle_schema(msg),
+        PROTO_SCHM_END_RSP: lambda: handle_schema_end(msg),
         PROTO_REGISTER_RSP: lambda: handle_register(msg),
         PROTO_PUSH_DATA_REQ: lambda: set_data(msg),
         PROTO_PUSH_DATA_RSP: lambda: logging.info('Data sent'),
