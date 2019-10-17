@@ -168,11 +168,12 @@ def send_knot_msg_auth(sock, uuid, token):
     return sock.send(msg)
 
 def send_knot_msg_schema(sock, sensor_id, value_type, unit, type_id, name):
+    msg_type = PROTO_SCHM_FRAG_REQ if schemas else PROTO_SCHM_END_REQ
     logging.debug('[payload_len: %d] Sending knot_msg 0x%x (%s)', struct.calcsize(SCHEMA_FMT),
-                  PROTO_SCHM_FRAG_REQ, knot_proto_to_str(PROTO_SCHM_FRAG_REQ))
+                  msg_type, knot_proto_to_str(msg_type))
     logging.debug('Schema: %s', json.dumps({'sensor_id': sensor_id, 'value_type': value_type,
                                             'unit': unit, 'type_id': type_id, 'name': name}))
-    header = struct.pack(HEADER_FMT, PROTO_SCHM_FRAG_REQ, struct.calcsize(SCHEMA_FMT))
+    header = struct.pack(HEADER_FMT, msg_type, struct.calcsize(SCHEMA_FMT))
     msg = header + struct.pack('BBB', sensor_id, value_type, unit)
     msg = msg + struct.pack('H', type_id)
     msg = msg + struct.pack('23s', to_string(name))
