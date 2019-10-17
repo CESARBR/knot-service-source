@@ -70,7 +70,6 @@ struct session {
 	char *token;			/* Device token */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
-	char *config;			/* Current config */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
 	struct l_queue *update_list;	/* List of update messages */
 	struct l_queue *request_list;	/* List of request messages */
@@ -128,7 +127,6 @@ static void session_destroy(struct session *session)
 	l_queue_destroy(session->update_list, l_free);
 	l_queue_destroy(session->request_list, l_free);
 	l_timeout_remove(session->downstream_to);
-	l_free(session->config);
 
 	l_free(session);
 }
@@ -375,7 +373,6 @@ disable_timer:
 static bool property_changed(const char *name,
 			     const char *value, void *user_data)
 {
-	struct l_queue *list;
 	struct session *session;
 	struct knot_device *device;
 	char id[KNOT_ID_LEN];
@@ -385,30 +382,7 @@ static bool property_changed(const char *name,
 	if (!session)
 		return false;
 
-	if (strcmp("config", name) == 0) {
-		if (session->config && strcmp(session->config, value) == 0)
-			goto done;
-
-		list = parser_config_to_list(value);
-		if (list == NULL) {
-			hal_log_error("[session %p] config: parse error!",
-				      session);
-			goto done;
-		}
-
-		if (parser_config_is_valid(list) != 0) {
-			hal_log_error("[session %p] config: invalid format!",
-				      session);
-			l_queue_destroy(list, l_free);
-			goto done;
-		}
-
-		/* Always push to devices when connection is established */
-		l_queue_destroy(session->config_list, l_free);
-		session->config_list = list;
-		l_free(session->config);
-		session->config = l_strdup(value);
-	} else if (strcmp("online", name) == 0) {
+	if (strcmp("online", name) == 0) {
 		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 		device = device_get(id);
 		if (device)
@@ -416,12 +390,9 @@ static bool property_changed(const char *name,
 	}
 
 	/* Timeout created already? */
-	if (session->downstream_to) {
+	if (session->downstream_to)
 		l_timeout_modify_ms(session->downstream_to, 512);
-		return true;
-	}
 
-done:
 	return true;
 }
 
