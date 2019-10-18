@@ -207,6 +207,7 @@ def handle_auth(msg):
     if result < 0:
         logging.error('Authentication error')
         send_knot_msg_auth(s, str(credentials['uuid']), str(credentials['token']))
+        return
 
     logging.info('Authenticated')
     for data in datas:
