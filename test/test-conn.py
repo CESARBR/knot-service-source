@@ -202,7 +202,12 @@ def handle_register(msg):
     sensor['sock'] = s
     send_knot_msg_schema(**sensor)
 
-def handle_auth():
+def handle_auth(msg):
+    _, _, result = struct.unpack(HEADER_FMT + 'b', msg)
+    if result < 0:
+        logging.error('Authentication error')
+        send_knot_msg_auth(s, str(credentials['uuid']), str(credentials['token']))
+
     logging.info('Authenticated')
     for data in datas:
         interval = data.pop('interval') if 'interval' in data else 10
@@ -313,7 +318,7 @@ while 1:
     logging.debug('[payload_len: %d] receive knot_msg = 0x%x (%s)', payload_len,
                   msg_type, knot_proto_to_str(msg_type))
     {
-        PROTO_AUTH_RSP: handle_auth,
+        PROTO_AUTH_RSP: lambda: handle_auth(msg),
         PROTO_UNREGISTER_REQ: handle_unregister,
         PROTO_SCHM_FRAG_RSP:lambda: handle_schema(msg),
         PROTO_SCHM_END_RSP: lambda: handle_schema_end(msg),
