@@ -1176,6 +1176,10 @@ static bool handle_device_auth(struct session *session, const char *device_id,
 	if (!auth) {
 		hal_log_error("[session %p] Not Authorized", session);
 		msg.action.result = KNOT_ERR_PERM;
+		l_free(session->uuid);
+		l_free(session->token);
+		session->uuid = NULL;
+		session->token = NULL;
 	}
 
 	osent = session->node_ops->send(session->node_fd, &msg,
