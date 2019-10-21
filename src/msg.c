@@ -288,6 +288,7 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
+	knot_msg_unregister msg_unreg;
 	knot_msg_data *msg = NULL;
 	knot_msg_config *config;
 	knot_msg_item item;
@@ -302,10 +303,13 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 		if (session->rollback > ROLLBACK_TICKS) {
 			session->rollback = 0;
 			snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-			device_destroy(id);
 			hal_log_info("[session %p] Removing %s (rollback)",
 				     session, session->uuid);
-			return;
+			msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
+			msg_unreg.hdr.payload_len = 0;
+			olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
+			opdu = &msg_unreg;
+			goto do_send;
 		}
 
 		l_timeout_modify_ms(timeout, 1096);
