@@ -802,6 +802,10 @@ static ssize_t msg_process(struct session *session,
 		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
 		if (result != 0)
 			break;
+
+		if (session->downstream_to)
+			l_timeout_remove(session->downstream_to);
+
 		session->downstream_to =
 			l_timeout_create_ms(512,
 					    downstream_callback,
@@ -820,6 +824,9 @@ static ssize_t msg_process(struct session *session,
 		rtype = KNOT_MSG_AUTH_RSP;
 		if (result != 0)
 			break;
+
+		if (session->downstream_to)
+			l_timeout_remove(session->downstream_to);
 
 		/* Enable downstream after authentication */
 		session->downstream_to =
