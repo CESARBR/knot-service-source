@@ -276,14 +276,14 @@ int cloud_register_device(const char *id, const char *name)
 	const char *json_str;
 	int result;
 
-	jobj_device = parser_device_json_create(id, name);
-	json_str = json_object_to_json_string(jobj_device);
-
 	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
 	}
+
+	jobj_device = parser_device_json_create(id, name);
+	json_str = json_object_to_json_string(jobj_device);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 						 AMQP_EXCHANGE_CLOUD,
@@ -315,15 +315,15 @@ int cloud_unregister_device(const char *id)
 	const char *json_str;
 	int result;
 
-	jobj = json_object_new_object();
-	json_object_object_add(jobj, "id", json_object_new_string(id));
-	json_str = json_object_to_json_string(jobj);
-
 	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
 	}
+
+	jobj = json_object_new_object();
+	json_object_object_add(jobj, "id", json_object_new_string(id));
+	json_str = json_object_to_json_string(jobj);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 		AMQP_EXCHANGE_CLOUD, AMQP_CMD_DEVICE_UNREGISTER, json_str);
@@ -430,13 +430,14 @@ int cloud_list_devices(void)
 	const char *json_str;
 	int result;
 
-	jobj_empty = json_object_new_object();
-	json_str = json_object_to_json_string(jobj_empty);
 	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
 	}
+
+	jobj_empty = json_object_new_object();
+	json_str = json_object_to_json_string(jobj_empty);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 						 AMQP_EXCHANGE_CLOUD,
