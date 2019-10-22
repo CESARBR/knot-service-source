@@ -311,7 +311,7 @@ int cloud_register_device(const char *id, const char *name)
 int cloud_unregister_device(const char *id)
 {
 	amqp_bytes_t queue_cloud;
-	json_object *jobj;
+	json_object *jobj_unreg;
 	const char *json_str;
 	int result;
 
@@ -321,16 +321,15 @@ int cloud_unregister_device(const char *id)
 		return -1;
 	}
 
-	jobj = json_object_new_object();
-	json_object_object_add(jobj, "id", json_object_new_string(id));
-	json_str = json_object_to_json_string(jobj);
+	jobj_unreg = parser_unregister_json_create(id);
+	json_str = json_object_to_json_string(jobj_unreg);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 		AMQP_EXCHANGE_CLOUD, AMQP_CMD_DEVICE_UNREGISTER, json_str);
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj);
+	json_object_put(jobj_unreg);
 	amqp_bytes_free(queue_cloud);
 
 	return 0;
