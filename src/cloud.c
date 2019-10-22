@@ -349,7 +349,7 @@ int cloud_unregister_device(const char *id)
 int cloud_auth_device(const char *id, const char *token)
 {
 	amqp_bytes_t queue_cloud;
-	json_object *jobj_device;
+	json_object *jobj_auth;
 	const char *json_str;
 	int result;
 
@@ -359,8 +359,8 @@ int cloud_auth_device(const char *id, const char *token)
 		return -1;
 	}
 
-	jobj_device = parser_auth_json_create(id, token);
-	json_str = json_object_to_json_string(jobj_device);
+	jobj_auth = parser_auth_json_create(id, token);
+	json_str = json_object_to_json_string(jobj_auth);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 						 AMQP_EXCHANGE_CLOUD,
@@ -369,7 +369,7 @@ int cloud_auth_device(const char *id, const char *token)
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_device);
+	json_object_put(jobj_auth);
 	amqp_bytes_free(queue_cloud);
 
 	return result;
