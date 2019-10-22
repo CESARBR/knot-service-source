@@ -688,6 +688,25 @@ json_object *parser_auth_json_create(const char *device_id,
 	return auth;
 }
 
+json_object *parser_unregister_json_create(const char *device_id)
+{
+	json_object *unreg;
+
+	unreg = json_object_new_object();
+	if (!unreg)
+		return NULL;
+
+	json_object_object_add(unreg, "id",
+			       json_object_new_string(device_id));
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e" }
+	 */
+	return unreg;
+}
+
 static json_object *schema_item_create_obj(knot_msg_schema *schema)
 {
 	json_object *json_schema;
