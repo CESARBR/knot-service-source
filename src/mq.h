@@ -19,6 +19,10 @@
  *
  */
 
+/**
+ *  Message Queue header file
+ */
+
 typedef bool (*amqp_read_cb_t) (const char *exchange,
 				   const char *routing_key,
 				   const char *body,

@@ -24,7 +24,7 @@ src_knotd_SOURCES = src/main.c \
 			src/device.c src/device.h \
 			src/proxy.c src/proxy.h \
 			src/parser.c src/parser.h \
-			src/amqp.c src/amqp.h \
+			src/mq.c src/mq.h \
 			src/cloud.c src/cloud.h \
 			$(modules_sources)
 
