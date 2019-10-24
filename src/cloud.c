@@ -41,29 +41,29 @@
 #include "parser.h"
 #include "cloud.h"
 
-#define AMQP_QUEUE_FOG "fog-messages"
-#define AMQP_QUEUE_CLOUD "cloud-messages"
+#define MQ_QUEUE_FOG "fog-messages"
+#define MQ_QUEUE_CLOUD "cloud-messages"
 
 /* Exchanges */
-#define AMQP_EXCHANGE_FOG "fog"
-#define AMQP_EXCHANGE_CLOUD "cloud"
+#define MQ_EXCHANGE_FOG "fog"
+#define MQ_EXCHANGE_CLOUD "cloud"
 
  /* Southbound traffic (commands) */
-#define AMQP_EVENT_DATA_UPDATE "data.update"
-#define AMQP_EVENT_DATA_REQUEST "data.request"
-#define AMQP_EVENT_DEVICE_REGISTERED "device.registered"
-#define AMQP_EVENT_DEVICE_UNREGISTERED "device.unregistered"
-#define AMQP_EVENT_DEVICE_AUTH "device.auth"
-#define AMQP_EVENT_SCHEMA_UPDATED "schema.updated"
-#define AMQP_EVENT_DEVICE_LIST "device.list"
+#define MQ_EVENT_DATA_UPDATE "data.update"
+#define MQ_EVENT_DATA_REQUEST "data.request"
+#define MQ_EVENT_DEVICE_REGISTERED "device.registered"
+#define MQ_EVENT_DEVICE_UNREGISTERED "device.unregistered"
+#define MQ_EVENT_DEVICE_AUTH "device.auth"
+#define MQ_EVENT_SCHEMA_UPDATED "schema.updated"
+#define MQ_EVENT_DEVICE_LIST "device.list"
 
  /* Northbound traffic (control, measurements) */
-#define AMQP_CMD_DATA_PUBLISH "data.publish"
-#define AMQP_CMD_DEVICE_REGISTER "device.register"
-#define AMQP_CMD_DEVICE_UNREGISTER "device.unregister"
-#define AMQP_CMD_DEVICE_AUTH "device.cmd.auth"
-#define AMQP_CMD_SCHEMA_UPDATE "schema.update"
-#define AMQP_CMD_DEVICE_LIST "device.cmd.list"
+#define MQ_CMD_DATA_PUBLISH "data.publish"
+#define MQ_CMD_DEVICE_REGISTER "device.register"
+#define MQ_CMD_DEVICE_UNREGISTER "device.unregister"
+#define MQ_CMD_DEVICE_AUTH "device.cmd.auth"
+#define MQ_CMD_SCHEMA_UPDATE "schema.update"
+#define MQ_CMD_DEVICE_LIST "device.cmd.list"
 
 cloud_cb_t cloud_cb;
 
@@ -93,19 +93,19 @@ static void cloud_msg_destroy(struct cloud_msg *msg)
 
 static int map_routing_key_to_msg_type(const char *routing_key)
 {
-	if (!strcmp(routing_key, AMQP_EVENT_DATA_UPDATE))
+	if (!strcmp(routing_key, MQ_EVENT_DATA_UPDATE))
 		return UPDATE_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_DATA_REQUEST))
+	else if (!strcmp(routing_key, MQ_EVENT_DATA_REQUEST))
 		return REQUEST_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_REGISTERED))
+	else if (!strcmp(routing_key, MQ_EVENT_DEVICE_REGISTERED))
 		return REGISTER_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_UNREGISTERED))
+	else if (!strcmp(routing_key, MQ_EVENT_DEVICE_UNREGISTERED))
 		return UNREGISTER_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_AUTH))
+	else if (!strcmp(routing_key, MQ_EVENT_DEVICE_AUTH))
 		return AUTH_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_SCHEMA_UPDATED))
+	else if (!strcmp(routing_key, MQ_EVENT_SCHEMA_UPDATED))
 		return SCHEMA_MSG;
-	else if (!strcmp(routing_key, AMQP_EVENT_DEVICE_LIST))
+	else if (!strcmp(routing_key, MQ_EVENT_DEVICE_LIST))
 		return LIST_MSG;
 	return -1;
 }
@@ -276,7 +276,7 @@ int cloud_register_device(const char *id, const char *name)
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -289,10 +289,10 @@ int cloud_register_device(const char *id, const char *name)
 	}
 	json_str = json_object_to_json_string(jobj_device);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-						 AMQP_EXCHANGE_CLOUD,
-						 AMQP_CMD_DEVICE_REGISTER,
-						 json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_DEVICE_REGISTER,
+					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -319,7 +319,7 @@ int cloud_unregister_device(const char *id)
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -332,8 +332,10 @@ int cloud_unregister_device(const char *id)
 	}
 	json_str = json_object_to_json_string(jobj_unreg);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-		AMQP_EXCHANGE_CLOUD, AMQP_CMD_DEVICE_UNREGISTER, json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_DEVICE_UNREGISTER,
+					       json_str);
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
 
@@ -361,7 +363,7 @@ int cloud_auth_device(const char *id, const char *token)
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (queue_cloud.bytes == NULL) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -374,10 +376,10 @@ int cloud_auth_device(const char *id, const char *token)
 	}
 	json_str = json_object_to_json_string(jobj_auth);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-						 AMQP_EXCHANGE_CLOUD,
-						 AMQP_CMD_DEVICE_AUTH,
-						 json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_DEVICE_AUTH,
+					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -403,7 +405,7 @@ int cloud_update_schema(const char *id, struct l_queue *schema_list)
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -416,10 +418,10 @@ int cloud_update_schema(const char *id, struct l_queue *schema_list)
 	}
 	json_str = json_object_to_json_string(jobj_schema);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-						 AMQP_EXCHANGE_CLOUD,
-						 AMQP_CMD_SCHEMA_UPDATE,
-						 json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_SCHEMA_UPDATE,
+					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -445,7 +447,7 @@ int cloud_list_devices(void)
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -454,10 +456,10 @@ int cloud_list_devices(void)
 	jobj_empty = json_object_new_object();
 	json_str = json_object_to_json_string(jobj_empty);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-						 AMQP_EXCHANGE_CLOUD,
-						 AMQP_CMD_DEVICE_LIST,
-						 json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_DEVICE_LIST,
+					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -488,7 +490,7 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	const char *json_str;
 	int result;
 
-	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
+	queue_cloud = mq_declare_new_queue(MQ_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
@@ -502,10 +504,10 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	}
 	json_str = json_object_to_json_string(jobj_data);
 
-	result = amqp_publish_persistent_message(queue_cloud,
-						 AMQP_EXCHANGE_CLOUD,
-						 AMQP_CMD_DATA_PUBLISH,
-						 json_str);
+	result = mq_publish_persistent_message(queue_cloud,
+					       MQ_EXCHANGE_CLOUD,
+					       MQ_CMD_DATA_PUBLISH,
+					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -526,13 +528,13 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 {
 	const char *fog_events[] = {
-		AMQP_EVENT_DATA_UPDATE,
-		AMQP_EVENT_DATA_REQUEST,
-		AMQP_EVENT_DEVICE_REGISTERED,
-		AMQP_EVENT_DEVICE_UNREGISTERED,
-		AMQP_EVENT_DEVICE_AUTH,
-		AMQP_EVENT_SCHEMA_UPDATED,
-		AMQP_EVENT_DEVICE_LIST,
+		MQ_EVENT_DATA_UPDATE,
+		MQ_EVENT_DATA_REQUEST,
+		MQ_EVENT_DEVICE_REGISTERED,
+		MQ_EVENT_DEVICE_UNREGISTERED,
+		MQ_EVENT_DEVICE_AUTH,
+		MQ_EVENT_SCHEMA_UPDATED,
+		MQ_EVENT_DEVICE_LIST,
 		NULL
 	};
 	amqp_bytes_t queue_fog;
@@ -540,15 +542,15 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 
 	cloud_cb = read_handler;
 
-	queue_fog = amqp_declare_new_queue(AMQP_QUEUE_FOG);
+	queue_fog = mq_declare_new_queue(MQ_QUEUE_FOG);
 	if (queue_fog.bytes == NULL) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
 	}
 
 	for (i = 0; fog_events[i] != NULL; i++) {
-		err = amqp_set_queue_to_consume(queue_fog, AMQP_EXCHANGE_FOG,
-						fog_events[i]);
+		err = mq_set_queue_to_consume(queue_fog, MQ_EXCHANGE_FOG,
+					      fog_events[i]);
 		if (err) {
 			hal_log_error("Error on set up queue to consume.\n");
 			amqp_bytes_free(queue_fog);
@@ -558,7 +560,7 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 
 	amqp_bytes_free(queue_fog);
 
-	err = amqp_set_read_cb(on_cloud_receive_message, user_data);
+	err = mq_set_read_cb(on_cloud_receive_message, user_data);
 	if (err) {
 		hal_log_error("Error on set up read callback\n");
 		return -1;
@@ -570,10 +572,10 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 int cloud_start(struct settings *settings, cloud_connected_cb_t connected_cb,
 		void *user_data)
 {
-	return amqp_start(settings, connected_cb, user_data);
+	return mq_start(settings, connected_cb, user_data);
 }
 
 void cloud_stop(void)
 {
-	amqp_stop();
+	mq_stop();
 }
