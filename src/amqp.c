@@ -359,6 +359,11 @@ amqp_bytes_t amqp_declare_new_queue(const char *name)
 	amqp_bytes_t queue;
 	amqp_queue_declare_ok_t *r;
 
+	if (!amqp_ctx.conn) {
+		queue.bytes = NULL;
+		return queue;
+	}
+
 	r = amqp_queue_declare(amqp_ctx.conn, 1,
 			amqp_cstring_bytes(name),
 			0, /* passive */
