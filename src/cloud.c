@@ -37,7 +37,7 @@
 #include <knot/knot_protocol.h>
 
 #include "settings.h"
-#include "amqp.h"
+#include "mq.h"
 #include "parser.h"
 #include "cloud.h"
 

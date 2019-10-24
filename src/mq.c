@@ -19,6 +19,10 @@
  *
  */
 
+/**
+ *  Message Queue source file
+ */
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -38,7 +42,7 @@
 #include <amqp_tcp_socket.h>
 
 #include "settings.h"
-#include "amqp.h"
+#include "mq.h"
 
 #define AMQP_CONNECTION_TIMEOUT_US 10000
 #define AMQP_CONNECTION_RETRY_TIMEOUT_MS 1000
