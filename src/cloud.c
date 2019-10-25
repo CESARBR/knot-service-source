@@ -488,18 +488,19 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	const char *json_str;
 	int result;
 
-	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
-					      kval_len);
-	if (!jobj_data)
-		return KNOT_ERR_CLOUD_FAILURE;
-
-	json_str = json_object_to_json_string(jobj_data);
-
 	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
 	if (!queue_cloud.bytes) {
 		hal_log_error("Error on declare a new queue.\n");
 		return -1;
 	}
+
+	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
+					      kval_len);
+	if (!jobj_data) {
+		amqp_bytes_free(queue_cloud);
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
+	json_str = json_object_to_json_string(jobj_data);
 
 	result = amqp_publish_persistent_message(queue_cloud,
 						 AMQP_EXCHANGE_CLOUD,
