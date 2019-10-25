@@ -283,6 +283,10 @@ int cloud_register_device(const char *id, const char *name)
 	}
 
 	jobj_device = parser_device_json_create(id, name);
+	if (!jobj_device) {
+		amqp_bytes_free(queue_cloud);
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
 	json_str = json_object_to_json_string(jobj_device);
 
 	result = amqp_publish_persistent_message(queue_cloud,
@@ -322,6 +326,10 @@ int cloud_unregister_device(const char *id)
 	}
 
 	jobj_unreg = parser_unregister_json_create(id);
+	if (!jobj_unreg) {
+		amqp_bytes_free(queue_cloud);
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
 	json_str = json_object_to_json_string(jobj_unreg);
 
 	result = amqp_publish_persistent_message(queue_cloud,
@@ -360,6 +368,10 @@ int cloud_auth_device(const char *id, const char *token)
 	}
 
 	jobj_auth = parser_auth_json_create(id, token);
+	if (!jobj_auth) {
+		amqp_bytes_free(queue_cloud);
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
 	json_str = json_object_to_json_string(jobj_auth);
 
 	result = amqp_publish_persistent_message(queue_cloud,
@@ -398,6 +410,10 @@ int cloud_update_schema(const char *id, struct l_queue *schema_list)
 	}
 
 	jobj_schema = parser_schema_create_object(id, schema_list);
+	if (!jobj_schema) {
+		amqp_bytes_free(queue_cloud);
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
 	json_str = json_object_to_json_string(jobj_schema);
 
 	result = amqp_publish_persistent_message(queue_cloud,
@@ -473,7 +489,10 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	int result;
 
 	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
-				       kval_len);
+					      kval_len);
+	if (!jobj_data)
+		return KNOT_ERR_CLOUD_FAILURE;
+
 	json_str = json_object_to_json_string(jobj_data);
 
 	queue_cloud = amqp_declare_new_queue(AMQP_QUEUE_CLOUD);
