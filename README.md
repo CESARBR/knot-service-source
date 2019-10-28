@@ -46,13 +46,26 @@ You have to install the knot-protocol-source and the knot-hal-source, so you can
 
 ### How to check for memory leaks and open file descriptors:
 ```shell
-$ valgrind --leak-check=full --track-fds=yes ./src/knotd -nr
+$ valgrind --leak-check=full --track-fds=yes ./src/knotd -nr -c src/knotd.conf
 ```
 
-### How to test (Unix sockets):
+### How to test locally:
 
-`$src/knotd`
-`$tools/ktool connect`
+Start the knot daemon:
+
+`$ sudo src/knotd -nr -c src/knotd.conf`
+
+Start the proxy from tcp IPV4/IPV6 to unix sockets:
+
+`$ inetbr/inetbrd -n`
+
+Start the mock connector service to comunicate with cloud:
+
+`$ test/mock-connector listen`
+
+Start the device mock script:
+
+`$ test/test-conn --debug`
 
 ## How to run 'knotd' specifying host & port:
 
