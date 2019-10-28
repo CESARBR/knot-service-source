@@ -46,8 +46,7 @@ You have to install the knot-protocol-source and the knot-hal-source, so you can
 
 ### How to check for memory leaks and open file descriptors:
 ```shell
-$ valgrind --leak-check=full --track-fds=yes ./src/knotd \
---config=src/knotd.conf --proto=ws
+$ valgrind --leak-check=full --track-fds=yes ./src/knotd -nr
 ```
 
 ### How to test (Unix sockets):
@@ -55,10 +54,9 @@ $ valgrind --leak-check=full --track-fds=yes ./src/knotd \
 `$src/knotd`
 `$tools/ktool connect`
 
-### How to run 'knotd' specifying host & port:
+## How to run 'knotd' specifying host & port:
 
-`$src/knotd --config=./src/knotd.conf --proto=ws --host=localhost --port=3000`
-
+`$ sudo src/knotd -nr -c src/knotd.conf --rabbitmq-url amqp://user:password@serverdomain:5672/vhost`
 
 ## How to test a device connection:
 
