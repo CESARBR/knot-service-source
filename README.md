@@ -67,6 +67,32 @@ Start the device mock script:
 
 `$ test/test-conn --debug`
 
+## How to test knot protocol messages
+
+`$ tools/ktool [options]`
+
+### Application Options:
+```shell
+        -a, --add                               Register a device to Meshblu. Eg: ./ktool --add [-U=value | T=value| I=value]
+        -s, --schema                            Get/Put JSON representing device's schema. Eg: ./ktool --schema -u=value -t=value -j=value [-U=value | T=value]
+        -C, --config                            Listen for config file. Eg: ./ktool --config -u=value -t=value [-U=value | -T=value]
+        -c, --connect                           Comprehensive of add, schema and config. If uuid and token are given, authenticates it. Otherwise, register a new device. Eg: ./ktool --connect -j=value [-u=value | -t=value |-U=value | -T=value]
+        -r, --remove                            Unregister a device from Meshblu. Eg: ./ktool --remove -u=value -t=value [-U=value | T=value]
+        -d, --data                              Sends data of a given device. Eg: ./ktool --data -u=value -t=value -j=value [-U=value | -T=value]
+        -i, --id                                Identify (Authenticate) a Meshblu device.
+        -S, --subscribe                         Subscribe for messages of a given device.
+        -n, --unsubscribe                       Unsubscribe for messages.
+```
+### Options usage:
+```shell
+        -I, --device-id                         Device's ID.
+        -u, --uuid                              Device's UUID.
+        -t, --token                             Device's token.
+        -j, --json                              Path to JSON file.
+        -U, --unix                              Specify unix socket to connect. Default: knot.
+        -T, --tty                               Specify TTY to connect.
+        -h  --help                              Show help options
+```
 ## How to run 'knotd' specifying host & port:
 
 `$ sudo src/knotd -nr -c src/knotd.conf --rabbitmq-url amqp://user:password@serverdomain:5672/vhost`
