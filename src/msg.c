@@ -446,8 +446,10 @@ static int8_t msg_register(struct session *session,
 	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
 
 	result = cloud_register_device(id, device_name);
-	if (result != 0)
+	if (result != 0) {
+		cloud_device_free(device_pending);
 		return result;
+	}
 
 	device_pending->id = l_strdup(id);
 	/**
