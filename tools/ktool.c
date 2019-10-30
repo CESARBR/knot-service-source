@@ -380,40 +380,50 @@ static void read_json_entry(struct json_object *jobj,
 	}
 }
 
-static void json_object_foreach(struct json_object *jobj,
-				json_object_func_t func, void *user_data)
+static void wrapper_json_object_object_foreach(struct json_object *jobj,
+                json_object_func_t func, void *user_data)
 {
-	struct json_object *next;
-	enum json_type type;
-	int len, i;
+    struct json_object *next;
+    enum json_type type;
+    int len, i;
 
-	if (!jobj)
-		return;
+    json_object_object_foreach(jobj, key, val) {
+        type = json_object_get_type(val);
+        switch (type) {
+        case json_type_null:
+        case json_type_boolean:
+        case json_type_double:
+        case json_type_int:
+        case json_type_string:
+            func(val, key, user_data);
+            break;
+        case json_type_object:
+            next = json_object_get(val);
+	    if (!next)
+        	return;
+            wrapper_json_object_object_foreach(next, func, user_data);
+            json_object_put(next);
+            break;
+        case json_type_array:
+            len = json_object_array_length(val);
+            for (i = 0; i < len; i++) {
+                next = json_object_array_get_idx(val, i);
+		if (!next)
+        		return;
+                wrapper_json_object_object_foreach(next, func, user_data);
+            }
+            break;
+        }
+    }
+}
 
-	json_object_object_foreach(jobj, key, val) {
-		type = json_object_get_type(val);
-		switch (type) {
-		case json_type_null:
-		case json_type_boolean:
-		case json_type_double:
-		case json_type_int:
-		case json_type_string:
-			func(val, key, user_data);
-			break;
-		case json_type_object:
-			next = json_object_get(val);
-			json_object_foreach(next, func, user_data);
-			json_object_put(next);
-			break;
-		case json_type_array:
-			len = json_object_array_length(val);
-			for (i = 0; i < len; i++) {
-				next = json_object_array_get_idx(val, i);
-				json_object_foreach(next, func, user_data);
-			}
-			break;
-		}
-	}
+static void json_object_foreach(struct json_object *jobj,
+                json_object_func_t func, void *user_data)
+{
+    if (!jobj)
+        return;
+
+    wrapper_json_object_object_foreach(jobj, func, user_data);
 }
 
 static int authenticate(const char *uuid, const char *token)
