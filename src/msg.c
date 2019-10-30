@@ -542,8 +542,10 @@ static int8_t msg_auth(struct session *session,
 	session->rollback = 0; /* Rollback disabled */
 
 	if (result != 0) {
+		l_free(session->uuid);
 		l_free(session->token);
 		session->token = NULL;
+		session->uuid = NULL;
 		return result;
 	}
 
