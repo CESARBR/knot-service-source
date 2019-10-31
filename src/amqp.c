@@ -204,35 +204,27 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 	status = amqp_parse_url(tmp_url, &cinfo);
 	if (status) {
 		hal_log_error("amqp_parse_url: %s", amqp_error_string2(status));
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+		goto done;
 	}
 
 	amqp_ctx.conn = amqp_new_connection();
+	if (!amqp_ctx.conn) {
+		hal_log_error("amqp_new_connection: Error on creation");
+		goto done;
+	}
 
 	socket = amqp_tcp_socket_new(amqp_ctx.conn);
 	if (!socket) {
-		amqp_destroy_connection(amqp_ctx.conn);
-		amqp_ctx.conn = NULL;
-		hal_log_error("error creating tcp socket\n");
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+		hal_log_error("error creating tcp socket");
+		goto destroy_conn;
 	}
 
 	status = amqp_socket_open_noblock(socket, cinfo.host, cinfo.port,
 					  &timeout);
-	if (status) {
-		amqp_destroy_connection(amqp_ctx.conn);
-		amqp_ctx.conn = NULL;
-		hal_log_error("error opening socket\n");
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+	if (status < 0) {
+		hal_log_error("error opening socket: %s",
+					amqp_error_string2(status));
+		goto close_conn;
 	}
 
 	r = amqp_login(amqp_ctx.conn, cinfo.vhost,
@@ -240,30 +232,19 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 			AMQP_DEFAULT_HEARTBEAT, AMQP_SASL_METHOD_PLAIN,
 			cinfo.user, cinfo.password);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		amqp_destroy_connection(amqp_ctx.conn);
-		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_login(): %s", amqp_rpc_reply_string(r));
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+		goto close_conn;
 	}
 
-	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s\n", cinfo.user,
+	hal_log_info("Connected to amqp://%s:%s@%s:%d/%s", cinfo.user,
 		     cinfo.password, cinfo.host, cinfo.port, cinfo.vhost);
 
 	amqp_channel_open(amqp_ctx.conn, 1);
 	r = amqp_get_rpc_reply(amqp_ctx.conn);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
-		amqp_destroy_connection(amqp_ctx.conn);
-		amqp_ctx.conn = NULL;
 		hal_log_error("amqp_channel_open(): %s",
 				amqp_rpc_reply_string(r));
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+		goto close_conn;
 	}
 
 	amqp_ctx.amqp_io = l_io_new(amqp_get_sockfd(amqp_ctx.conn));
@@ -271,17 +252,28 @@ static void start_connection(struct l_timeout *ltimeout, void *user_data)
 	status = l_io_set_disconnect_handler(amqp_ctx.amqp_io, on_disconnect,
 					     NULL, NULL);
 	if (!status) {
-		amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
-		amqp_destroy_connection(amqp_ctx.conn);
-		l_io_destroy(amqp_ctx.amqp_io);
-		amqp_ctx.conn = NULL;
-		amqp_ctx.amqp_io = NULL;
 		hal_log_error("Error on set up disconnect handler");
-		l_timeout_modify_ms(ltimeout,
-				    AMQP_CONNECTION_RETRY_TIMEOUT_MS);
-		l_free(tmp_url);
-		return;
+		goto io_destroy;
 	}
+	goto done;
+
+io_destroy:
+	l_io_destroy(amqp_ctx.amqp_io);
+	amqp_ctx.amqp_io = NULL;
+close_conn:
+	r = amqp_connection_close(amqp_ctx.conn, AMQP_REPLY_SUCCESS);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL)
+		hal_log_error("amqp_connection_close: %s",
+				amqp_rpc_reply_string(r));
+destroy_conn:
+	status = amqp_destroy_connection(amqp_ctx.conn);
+	if (status < 0)
+		hal_log_error("status destroy: %s", amqp_error_string2(status));
+
+	amqp_ctx.conn = NULL;
+	l_timeout_modify_ms(ltimeout, AMQP_CONNECTION_RETRY_TIMEOUT_MS);
+done:
+	l_free(tmp_url);
 }
 
 /**
