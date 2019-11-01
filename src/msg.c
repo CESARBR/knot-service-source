@@ -65,7 +65,6 @@ struct session {
 	int rollback;			/* Counter: remove if schema is not received */
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
-	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
 };
@@ -99,7 +98,6 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->token = NULL;
 	session->id = INT32_MAX;
 	session->node_ops = node_ops;
-	session->config_list = NULL;
 	session->schema_list = l_queue_new();
 
 	return session_ref(session);
@@ -114,7 +112,6 @@ static void session_destroy(struct session *session)
 
 	l_free(session->uuid);
 	l_free(session->token);
-	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->schema_list, l_free);
 	l_timeout_remove(session->downstream_to);
 
@@ -202,14 +199,6 @@ static knot_msg_schema *schema_find(struct l_queue *schema,
 			    L_UINT_TO_PTR(sensor_id));
 }
 
-static bool config_sensor_id_cmp(const void *entry_data, const void *user_data)
-{
-	const knot_msg_config *config = entry_data;
-	unsigned int sensor_id = L_PTR_TO_UINT(user_data);
-
-	return config->sensor_id == sensor_id;
-}
-
 static int8_t msg_unregister(struct session *session)
 {
 	int8_t result;
@@ -276,7 +265,6 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
 	knot_msg_unregister msg_unreg;
-	knot_msg_config *config;
 	char id[KNOT_ID_LEN];
 	ssize_t olen, osent;
 	void *opdu;
@@ -301,16 +289,6 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 		session->rollback++;
 		return;
 	}
-
-	/* Wait schema before sending downstream data */
-
-	/* Priority 1: Config message has higher priority */
-	config = l_queue_peek_head(session->config_list);
-	if (!config)
-		return;
-
-	opdu = config;
-	olen = sizeof(*config);
 
 do_send:
 	osent = node_ops->send(session->node_fd, opdu, olen);
@@ -607,35 +585,6 @@ done:
 	return result;
 }
 
-static int8_t msg_config_resp(struct session *session,
-			      const knot_msg_item *response)
-{
-	knot_msg_config *config;
-	uint8_t sensor_id;
-
-	if (!session->trusted) {
-		hal_log_info("[session %p] config resp: Permission denied!",
-			     session);
-		return KNOT_ERR_PERM;
-	}
-
-	sensor_id = response->sensor_id;
-
-	/* TODO: Always forward instead of avoid sending repeated configs */
-	config = l_queue_remove_if(session->config_list,
-				   config_sensor_id_cmp,
-				   L_UINT_TO_PTR(sensor_id));
-	if (!config)
-		return KNOT_ERR_INVALID;
-
-	l_free(config);
-
-	hal_log_info("[session %p] THING %s received config for sensor %d",
-		     session, session->uuid, sensor_id);
-
-	return 0;
-}
-
 /*
  * Works like msg_data() (copy & paste), but removes the received info from
  * the 'devices' database.
@@ -813,10 +762,6 @@ static ssize_t msg_process(struct session *session,
 		 * KNOT_MSG_SCHM_END_RSP is sent on function
 		 * handle_schema_updated
 		 */
-		return 0;
-	case KNOT_MSG_PUSH_CONFIG_RSP:
-		result = msg_config_resp(session, &kreq->item);
-		/* No octets to be transmitted */
 		return 0;
 	case KNOT_MSG_PUSH_DATA_RSP:
 		result = msg_setdata_resp(session, &kreq->data);
