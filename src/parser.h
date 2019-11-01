@@ -22,7 +22,6 @@
 typedef void *(*parser_json_array_item_cb) (json_object *array_item);
 
 struct l_queue *parser_schema_to_list(const char *json_str);
-struct l_queue *parser_config_to_list(const char *json_str);
 struct l_queue *parser_queue_from_json_array(json_object *jobj,
 				parser_json_array_item_cb foreach_cb);
 
@@ -30,7 +29,6 @@ struct l_queue *parser_request_to_list(json_object *jso);
 json_object *parser_sensorid_to_json(const char *key, struct l_queue *list);
 struct l_queue *parser_update_to_list(json_object *jso);
 
-int8_t parser_config_is_valid(struct l_queue *config_list);
 json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				uint8_t value_type,
 				const knot_value_type *value,
