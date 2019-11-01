@@ -68,8 +68,6 @@ struct session {
 	struct l_queue *config_list;	/* knot_config accepted from cloud */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
 	struct l_timeout *downstream_to; /* Active when there is data to send */
-	struct l_queue *update_list;	/* List of update messages */
-	struct l_queue *request_list;	/* List of request messages */
 };
 
 static struct l_queue *session_list;
@@ -103,8 +101,6 @@ static struct session *session_new(struct node_ops *node_ops)
 	session->node_ops = node_ops;
 	session->config_list = NULL;
 	session->schema_list = l_queue_new();
-	session->update_list = l_queue_new();
-	session->request_list = l_queue_new();
 
 	return session_ref(session);
 }
@@ -120,8 +116,6 @@ static void session_destroy(struct session *session)
 	l_free(session->token);
 	l_queue_destroy(session->config_list, l_free);
 	l_queue_destroy(session->schema_list, l_free);
-	l_queue_destroy(session->update_list, l_free);
-	l_queue_destroy(session->request_list, l_free);
 	l_timeout_remove(session->downstream_to);
 
 	l_free(session);
@@ -190,14 +184,6 @@ static bool device_uuid_cmp(const void *a, const void *b)
 	const struct cloud_device *mydevice = a;
 	const char *uuid = b;
 	return strcmp(mydevice->uuid, uuid) == 0 ? true: false;
-}
-
-static bool sensor_id_cmp(const void *a, const void *b)
-{
-	const uint8_t *val1 = a;
-	const uint8_t val2 = L_PTR_TO_INT(b);
-
-	return (*val1 == val2 ? true : false);
 }
 
 static bool schema_sensor_id_cmp(const void *entry_data, const void *user_data)
@@ -290,13 +276,10 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
 	knot_msg_unregister msg_unreg;
-	knot_msg_data *msg = NULL;
 	knot_msg_config *config;
-	knot_msg_item item;
 	char id[KNOT_ID_LEN];
 	ssize_t olen, osent;
 	void *opdu;
-	uint8_t *sensor_id;
 	int err;
 
 	/* Waiting schema? */
@@ -323,37 +306,16 @@ static void downstream_callback(struct l_timeout *timeout, void *user_data)
 
 	/* Priority 1: Config message has higher priority */
 	config = l_queue_peek_head(session->config_list);
-	if (config) {
-		opdu = config;
-		olen = sizeof(*config);
-		goto do_send;
-	}
+	if (!config)
+		return;
 
-	/* Priority 2: Set Data */
-	if (!l_queue_isempty(session->update_list)) {
-		msg = l_queue_pop_head(session->update_list);
-		opdu = msg;
-		olen = sizeof(msg->hdr) + msg->hdr.payload_len;
-		goto do_send;
-	}
-
-	/* Priority 3: Get Data */
-	sensor_id = l_queue_peek_head(session->request_list);
-	if (!sensor_id)
-		goto disable_timer;
-
-	item.hdr.type = KNOT_MSG_POLL_DATA_REQ;
-	item.hdr.payload_len = sizeof(*sensor_id);
-	item.sensor_id = *sensor_id;
-	olen = sizeof(item);
-	opdu = &item;
+	opdu = config;
+	olen = sizeof(*config);
 
 do_send:
 	osent = node_ops->send(session->node_fd, opdu, olen);
 	hal_log_info("[session %p] Sending downstream data fd(%d)...",
 		     session, session->node_fd);
-	if (msg)
-		l_free(msg);
 
 	if (osent < 0) {
 		err = -osent;
@@ -611,7 +573,6 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 	char id[KNOT_ID_LEN];
 	int8_t result;
 	uint8_t sensor_id;
-	uint8_t *sensor_id_ptr;
 	uint8_t kval_len;
 	/*
 	 * Pointer to KNOT data containing header, sensor id
@@ -641,15 +602,6 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 				    kvalue, kval_len);
 	if (result < 0)
 		goto done;
-
-	/* Remove pending get data request */
-	sensor_id_ptr = l_queue_remove_if(session->request_list,
-					  sensor_id_cmp,
-					  L_INT_TO_PTR(sensor_id));
-	if (sensor_id_ptr == NULL)
-		goto done;
-
-	l_free(sensor_id_ptr);
 
 done:
 	return result;
@@ -1313,28 +1265,67 @@ static bool handle_cloud_msg_list(struct l_queue *devices)
 	return true;
 }
 
-static void append_on_update_list(void *data, void *user_data)
+static void send_push_data_msg_foreach(void *data, void *user_data)
 {
-	const struct session *session = user_data;
-	knot_msg_schema *schema_found;
+	struct session *session = user_data;
+	struct node_ops *node_ops = session->node_ops;
 	knot_msg_data *msg = data;
+	ssize_t olen, osent;
+	void *opdu;
 
-	schema_found = schema_find(session->schema_list, msg->sensor_id);
-	if (schema_found)
-		l_queue_push_tail(session->update_list,
-				  l_memdup(msg, sizeof(*msg)));
+	/**
+	 * The message was created by parser_update_to_list function called
+	 * on cloud source file
+	 */
+	opdu = msg;
+	olen = sizeof(msg->hdr) + msg->hdr.payload_len;
+
+	osent = node_ops->send(session->node_fd, opdu, olen);
+	hal_log_info("[session %p] Sending downstream data fd(%d)...",
+		     session, session->node_fd);
+
+	if (osent < 0)
+		hal_log_error("[session %p] Can't send downstream data: %s(%d)",
+			      session, strerror(-osent), (int)-osent);
 }
 
-static void append_on_request_list(void *data, void *user_data)
+static void send_pool_data_msg_foreach(void *data, void *user_data)
 {
 	const struct session *session = user_data;
+	struct node_ops *node_ops = session->node_ops;
 	knot_msg_schema *schema_found;
-	unsigned int *msg = data;
+	uint8_t *sensor_id = data;
+	knot_msg_item item;
+	ssize_t olen, osent;
+	void *opdu;
 
-	schema_found = schema_find(session->schema_list, *msg);
-	if (schema_found)
-		l_queue_push_tail(session->request_list,
-				  l_memdup(msg, sizeof(*msg)));
+	schema_found = schema_find(session->schema_list,
+				  (unsigned int) *sensor_id);
+	if (!schema_found) {
+		hal_log_error("[session %p] Can't send downstream data: schema \
+			      not found", session);
+		return;
+	}
+
+	if (!sensor_id) {
+		hal_log_error("[session %p] Can't send downstream data: \
+			      sensor_id not found", session);
+		return;
+	}
+
+	item.hdr.type = KNOT_MSG_POLL_DATA_REQ;
+	item.hdr.payload_len = sizeof(*sensor_id);
+	item.sensor_id = *sensor_id;
+	olen = sizeof(item);
+	opdu = &item;
+
+	osent = node_ops->send(session->node_fd, opdu, olen);
+	hal_log_info("[session %p] Sending downstream data fd(%d)...",
+		     session, session->node_fd);
+
+	if (osent < 0)
+		hal_log_error("[session %p] Can't send downstream data: %s(%d)",
+			      session, strerror(-osent), (int)-osent);
 }
 
 /**
@@ -1343,12 +1334,9 @@ static void append_on_request_list(void *data, void *user_data)
  */
 static bool handle_cloud_msg_downstream(struct session *session,
 					struct l_queue *list,
-					l_queue_foreach_func_t append_list_cb)
+					l_queue_foreach_func_t send_msg_foreach)
 {
-	l_queue_foreach(list, append_list_cb, session);
-
-	if (session->downstream_to)
-		l_timeout_modify_ms(session->downstream_to, 512);
+	l_queue_foreach(list, send_msg_foreach, session);
 
 	return true;
 }
@@ -1372,10 +1360,10 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 	switch (msg->type) {
 	case UPDATE_MSG:
 		return handle_cloud_msg_downstream(session, msg->list,
-						   append_on_update_list);
+						   send_push_data_msg_foreach);
 	case REQUEST_MSG:
 		return handle_cloud_msg_downstream(session, msg->list,
-						   append_on_request_list);
+						   send_pool_data_msg_foreach);
 	case REGISTER_MSG:
 		return handle_device_added(session, msg->device_id, msg->token);
 	case UNREGISTER_MSG:
