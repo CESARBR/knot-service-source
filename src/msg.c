@@ -66,7 +66,7 @@ struct session {
 	char *uuid;			/* Device UUID */
 	char *token;			/* Device token */
 	struct l_queue *schema_list;	/* Schema accepted by cloud */
-	struct l_timeout *downstream_to; /* Active when there is data to send */
+	struct l_timeout *schema_timeout; /* Active when wait schema */
 };
 
 static struct l_queue *session_list;
@@ -113,7 +113,7 @@ static void session_destroy(struct session *session)
 	l_free(session->uuid);
 	l_free(session->token);
 	l_queue_destroy(session->schema_list, l_free);
-	l_timeout_remove(session->downstream_to);
+	l_timeout_remove(session->schema_timeout);
 
 	l_free(session);
 }
@@ -217,8 +217,8 @@ static int8_t msg_unregister(struct session *session)
 	if (result != 0)
 		return result;
 
-	l_timeout_remove(session->downstream_to);
-	session->downstream_to = NULL;
+	l_timeout_remove(session->schema_timeout);
+	session->schema_timeout = NULL;
 
 	l_free(session->uuid);
 	session->uuid = NULL;
@@ -260,37 +260,34 @@ static bool session_uuid_cmp(const void *entry_data, const void *user_data)
 	return strcmp(session->uuid, uuid) == 0 ? true : false;
 }
 
-static void downstream_callback(struct l_timeout *timeout, void *user_data)
+static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
 	struct node_ops *node_ops = session->node_ops;
 	knot_msg_unregister msg_unreg;
-	char id[KNOT_ID_LEN];
 	ssize_t olen, osent;
 	void *opdu;
 	int err;
 
-	/* Waiting schema? */
-	if (session->rollback) {
-		if (session->rollback > ROLLBACK_TICKS) {
-			session->rollback = 0;
-			snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-			hal_log_info("[session %p] Removing %s (rollback)",
-				     session, session->uuid);
-			msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
-			msg_unreg.hdr.payload_len = 0;
-			olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
-			opdu = &msg_unreg;
-			goto do_send;
-		}
+	if (!session->rollback)
+		return;
 
+	if (session->rollback <= ROLLBACK_TICKS) {
 		l_timeout_modify_ms(timeout, 1096);
 		hal_log_info("[session %p] Waiting schema...", session);
 		session->rollback++;
 		return;
 	}
 
-do_send:
+	session->rollback = 0;
+
+	hal_log_info("[session %p] Removing %s (rollback)",
+			session, session->uuid);
+	msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
+	msg_unreg.hdr.payload_len = 0;
+	olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
+	opdu = &msg_unreg;
+
 	osent = node_ops->send(session->node_fd, opdu, olen);
 	hal_log_info("[session %p] Sending downstream data fd(%d)...",
 		     session, session->node_fd);
@@ -299,15 +296,11 @@ do_send:
 		err = -osent;
 		hal_log_error("[session %p] Can't send downstream data: " \
 			      "%s(%d)", session, strerror(err), err);
-		goto disable_timer;
+		hal_log_info("[session %p] Disabling downstream ...", session);
+		return;
 	}
 
 	l_timeout_modify_ms(timeout, 1096);
-
-	return;
-
-disable_timer:
-	hal_log_info("[session %p] Disabling downstream ...", session);
 }
 
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
@@ -713,12 +706,12 @@ static ssize_t msg_process(struct session *session,
 		if (result != 0)
 			break;
 
-		if (session->downstream_to)
-			l_timeout_remove(session->downstream_to);
+		if (session->schema_timeout)
+			l_timeout_remove(session->schema_timeout);
 
-		session->downstream_to =
+		session->schema_timeout =
 			l_timeout_create_ms(512,
-					    downstream_callback,
+					    schema_rollback_cb,
 					    session, NULL);
 		return 0;
 	case KNOT_MSG_UNREG_REQ:
@@ -735,13 +728,13 @@ static ssize_t msg_process(struct session *session,
 		if (result != 0)
 			break;
 
-		if (session->downstream_to)
-			l_timeout_remove(session->downstream_to);
+		if (session->schema_timeout)
+			l_timeout_remove(session->schema_timeout);
 
 		/* Enable downstream after authentication */
-		session->downstream_to =
+		session->schema_timeout =
 			l_timeout_create_ms(512,
-					    downstream_callback,
+					    schema_rollback_cb,
 					    session, NULL);
 		/*
 		 * KNOT_MSG_AUTH_RSP is sent on function
