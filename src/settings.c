@@ -109,7 +109,6 @@ struct settings *settings_load(int argc, char *argv[])
 {
 	struct settings *settings;
 	struct stat buf;
-	char *uuid = NULL;
 	char *token = NULL;
 
 	settings = l_new(struct settings, 1);
@@ -119,7 +118,6 @@ struct settings *settings_load(int argc, char *argv[])
 	settings->detach = detach;
 	settings->run_as_root = false;
 	settings->help = help;
-	settings->uuid = NULL;
 	settings->token = NULL;
 	settings->rabbitmq_url = l_strdup(DEFAULT_AMQP_URL);
 
@@ -138,24 +136,17 @@ struct settings *settings_load(int argc, char *argv[])
 
 	/*
 	 * Command line options (host and port) have higher priority
-	 * than values read from config file. UUID should
+	 * than values read from config file. Token should
 	 * not be read from command line due security reason.
 	 */
 
-	/* UUID & Token are  mandatory */
-	uuid = storage_read_key_string(settings->configfd, "Cloud","Uuid");
-	if (uuid == NULL) {
-		fprintf(stderr, "%s UUID missing!\n", settings->config_path);
-		goto failure;
-	}
-
-	token = storage_read_key_string(settings->configfd, "Cloud","Token");
+	/* Token is mandatory */
+	token = storage_read_key_string(settings->configfd, "Cloud", "Token");
 	if (token == NULL) {
 		fprintf(stderr, "%s Token missing!\n", settings->config_path);
 		goto failure;
 	}
 
-	settings->uuid = uuid;
 	settings->token = token;
 
 	goto done;
@@ -172,7 +163,6 @@ void settings_free(struct settings *settings)
 	if (settings->configfd >= 0)
 		storage_close(settings->configfd);
 
-	l_free(settings->uuid);
 	l_free(settings->token);
 	l_free(settings->rabbitmq_url);
 	l_free(settings);
