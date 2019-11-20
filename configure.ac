@@ -72,4 +72,14 @@ fi
 
 AC_SUBST(DBUS_CONFDIR, [${path_dbusconfdir}])
 
+if (test "$sysconfdir" = '${prefix}/etc'); then
+	knotconfigdir="${prefix}/etc/knot"
+else
+	knotconfigdir="${sysconfdir}/knot"
+fi
+
+AC_DEFINE_UNQUOTED(KNOTCONFIGDIR, "${knotconfigdir}",
+			[Directory for the KNoT configuration files])
+AC_SUBST(KNOTCONFIGDIR, "${knotconfigdir}")
+
 AC_OUTPUT(Makefile)
