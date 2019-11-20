@@ -413,7 +413,7 @@ static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
-	struct cloud_device *device_pending = l_new(struct cloud_device, 1);
+	struct cloud_device *device_pending;
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
@@ -446,10 +446,10 @@ static int8_t msg_register(struct session *session,
 	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
 
 	result = cloud_register_device(id, device_name);
-	if (result != 0) {
-		cloud_device_free(device_pending);
+	if (result != 0)
 		return result;
-	}
+
+	device_pending = l_new(struct cloud_device, 1);
 
 	device_pending->id = l_strdup(id);
 	/**
