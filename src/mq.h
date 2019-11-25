@@ -29,11 +29,11 @@ typedef bool (*mq_read_cb_t) (const char *exchange,
 				   void *user_data);
 typedef void (*mq_connected_cb_t) (void *user_data);
 
-int mq_set_queue_to_consume(amqp_bytes_t queue,
+int mq_bind_queue(amqp_bytes_t queue,
 			      const char *exchange,
 			      const char *routing_key);
 amqp_bytes_t mq_declare_new_queue(const char *name);
-int mq_set_read_cb(mq_read_cb_t on_read, void *user_data);
+int mq_set_read_cb(amqp_bytes_t queue, mq_read_cb_t on_read, void *user_data);
 int mq_start(struct settings *settings, mq_connected_cb_t connected_cb,
 	     void *user_data);
 void mq_stop(void);
