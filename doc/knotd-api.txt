@@ -50,6 +50,10 @@ Methods 	void Pair(dict properties)
 		Returns: br.org.cesar.knot.InProgress
 			br.org.cesar.knot.NotAvailable
 
+Signals		NotifyCloudError(string error)
+			This signal indicates that a request had been made to
+			cloud and it return an error.
+
 Properties
 		string Id [readonly]
 
