@@ -192,20 +192,24 @@ done:
 struct l_queue *parser_queue_from_json_array(json_object *jobj,
 					parser_json_array_item_cb foreach_cb)
 {
-	json_object *jobjentry;
+	json_object *jobjentry, *jarray;
 	struct l_queue *list;
 	void *item;
 	int len;
 	int i;
 
-	if (json_object_get_type(jobj) != json_type_array)
+	jarray = json_object_object_get(jobj, "devices");
+	if (!jarray)
 		return NULL;
 
-	len = json_object_array_length(jobj);
+	if (json_object_get_type(jarray) != json_type_array)
+		return NULL;
+
+	len = json_object_array_length(jarray);
 	list = l_queue_new();
 
 	for (i = 0; i < len; i++) {
-		jobjentry = json_object_array_get_idx(jobj, i);
+		jobjentry = json_object_array_get_idx(jarray, i);
 
 		item = foreach_cb(jobjentry);
 		if (item)
@@ -601,10 +605,10 @@ const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
 	json_object *jobjkey;
 
 	if (!json_object_object_get_ex(jso, key, &jobjkey))
-		return false;
+		return NULL;
 
 	if (json_object_get_type(jobjkey) != json_type_string)
-		return false;
+		return NULL;
 
 	return json_object_get_string(jobjkey);
 }
@@ -620,4 +624,17 @@ int parser_get_key_bool_from_json_obj(json_object *jso, const char *key)
 		return -1;
 
 	return json_object_get_boolean(jobjkey);
+}
+
+bool parser_is_key_str_or_null(const json_object *jso, const char *key)
+{
+	json_object *jobjkey;
+	enum json_type type;
+
+	if (!json_object_object_get_ex(jso, key, &jobjkey))
+		return false;
+
+	type = json_object_get_type(jobjkey);
+
+	return type == json_type_string || type == json_type_null;
 }

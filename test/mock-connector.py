@@ -96,28 +96,31 @@ def __on_msg_received(channel, method, properties, body):
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_AUTH, body=json.dumps(message))
     elif method.routing_key == EVENT_LIST:
-        message = [
-        {
-            'id': secrets.token_hex(8),
-            'name': 'test',
-            'schema': [{
-                "sensor_id": 0,
-                "value_type": 3,
-                "unit": 0,
-                "type_id": 65521,
-                "name": "LED"
+        message = {
+            'error': None,
+            'devices': [
+            {
+                'id': secrets.token_hex(8),
+                'name': 'test',
+                'schema': [{
+                    "sensor_id": 0,
+                    "value_type": 3,
+                    "unit": 0,
+                    "type_id": 65521,
+                    "name": "LED"
+                }]
+            },{
+                'id': secrets.token_hex(8),
+                'name': 'test2',
+                'schema': [{
+                    "sensor_id": 0,
+                    "value_type": 3,
+                    "unit": 0,
+                    "type_id": 65521,
+                    "name": "LED"
+                }]
             }]
-        },{
-            'id': secrets.token_hex(8),
-            'name': 'test2',
-            'schema': [{
-                "sensor_id": 0,
-                "value_type": 3,
-                "unit": 0,
-                "type_id": 65521,
-                "name": "LED"
-            }]
-        }]
+        }
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_LIST_DEVICES, body=json.dumps(message))
     elif method.routing_key == EVENT_SCHEMA:

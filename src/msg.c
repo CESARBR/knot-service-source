@@ -53,6 +53,7 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define KNOT_ID_LEN		17 /* 16 char + '\0' */
 #define ROLLBACK_TICKS		5 /* Equals to 5*1096ms */
+#define TIMEOUT_DEVICES_SEC	3 /* Time waiting to request for devices */
 
 struct session {
 	int refs;
@@ -71,7 +72,7 @@ struct session {
 
 static struct l_queue *session_list;
 static struct l_queue *device_id_list;
-static struct l_timeout *start_to;
+static struct l_timeout *list_timeout;
 static bool proxy_enabled = false;
 static bool node_enabled;
 
@@ -1189,8 +1190,16 @@ static void create_devices_dbus(void *data, void *user_data)
 	l_queue_push_head(device_id_list, mydevice_dup(mydevice));
 }
 
-static bool handle_cloud_msg_list(struct l_queue *devices)
+static bool handle_cloud_msg_list(struct l_queue *devices, const char *err)
 {
+	if (err) {
+		hal_log_error("Received List devices error: %s", err);
+		l_timeout_modify(list_timeout, TIMEOUT_DEVICES_SEC);
+		return true;
+	}
+
+	l_timeout_remove(list_timeout);
+	list_timeout = NULL;
 	l_queue_foreach(devices, create_devices_dbus, NULL);
 	proxy_ready(NULL);
 
@@ -1312,9 +1321,17 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 		return handle_schema_updated(session, msg->device_id,
 					     msg->error);
 	case LIST_MSG:
-		return handle_cloud_msg_list(msg->list);
+		return handle_cloud_msg_list(msg->list, msg->error);
 	default:
 		return true;
+	}
+}
+
+static void list_timeout_cb(struct l_timeout *timeout, void *user_data)
+{
+	if (cloud_list_devices() < 0) {
+		hal_log_error("Unable to list devices");
+		l_timeout_modify(list_timeout, TIMEOUT_DEVICES_SEC);
 	}
 }
 
@@ -1329,9 +1346,9 @@ static void on_cloud_connected(void *user_data)
 		return;
 	}
 
-	err = cloud_list_devices();
-	if (err < 0)
-		hal_log_error("cloud_list_devices(): %s", strerror(-err));
+	list_timeout = l_timeout_create_ms(1, /* start in oneshot */
+				list_timeout_cb,
+				NULL, NULL);
 }
 
 int msg_start(struct settings *settings)
@@ -1356,8 +1373,8 @@ int msg_start(struct settings *settings)
 
 void msg_stop(void)
 {
-	if (start_to)
-		l_timeout_remove(start_to);
+	if (list_timeout)
+		l_timeout_remove(list_timeout);
 
 	node_stop();
 	if (proxy_enabled)

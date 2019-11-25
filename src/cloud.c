@@ -157,18 +157,30 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 
 	switch (msg->type) {
 	case UPDATE_MSG:
+		msg->error = NULL;
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
+		if (!msg->device_id) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
 		msg->list = parser_update_to_list(jso);
-		if (!msg->device_id || !msg->list) {
+		if (!msg->list) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
 
 		break;
 	case REQUEST_MSG:
+		msg->error = NULL;
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
+		if (!msg->device_id) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
 		msg->list = parser_request_to_list(jso);
-		if (!msg->device_id || !msg->list) {
+		if (!msg->list) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
@@ -176,34 +188,51 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 		break;
 	case REGISTER_MSG:
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
-		msg->token = parser_get_key_str_from_json_obj(jso, "token");
-		if (!msg->device_id || !msg->token) {
+		if (!msg->device_id ||
+				!parser_is_key_str_or_null(jso, "error")) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
 
+		msg->token = parser_get_key_str_from_json_obj(jso, "token");
+		if (!msg->token) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
+		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	case UNREGISTER_MSG:
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
-		if (!msg->device_id) {
+		if (!msg->device_id ||
+				!parser_is_key_str_or_null(jso, "error")) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
 
+		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	case AUTH_MSG:
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
-		msg->auth = parser_get_key_bool_from_json_obj(jso,
-							      "authenticated");
-		if (!msg->device_id || msg->auth < 0) {
+		if (!msg->device_id ||
+				!parser_is_key_str_or_null(jso, "error")) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
 
+		msg->auth = parser_get_key_bool_from_json_obj(jso,
+							      "authenticated");
+		if (msg->auth < 0) {
+			hal_log_error("Malformed JSON message");
+			goto err;
+		}
+
+		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	case SCHEMA_MSG:
 		msg->device_id = parser_get_key_str_from_json_obj(jso, "id");
-		if (!msg->device_id) {
+		if (!msg->device_id ||
+				!parser_is_key_str_or_null(jso, "error")) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
@@ -214,11 +243,12 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 		msg->device_id = NULL;
 		msg->list = parser_queue_from_json_array(jso,
 						cloud_device_array_foreach);
-		if (!msg->list) {
+		if (!msg->list || !parser_is_key_str_or_null(jso, "error")) {
 			hal_log_error("Malformed JSON message");
 			goto err;
 		}
 
+		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	default:
 		hal_log_error("Unknown event %s", routing_key);
