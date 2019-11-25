@@ -32,7 +32,6 @@ struct cloud_msg {
 		LIST_MSG
 	} type;
 	union {
-		int auth; // used when type is AUTH
 		const char *token; // used when type is REGISTER
 		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};

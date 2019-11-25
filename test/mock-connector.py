@@ -87,13 +87,14 @@ def __on_msg_received(channel, method, properties, body):
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_REGISTERED, body=json.dumps(message))
     elif method.routing_key == EVENT_UNREGISTER:
-        message = body
+        message = json.loads(body)
+        message['error'] = None
         channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_UNREGISTERED, body=message)
+                              routing_key=KEY_UNREGISTERED, body=json.dumps(message))
     elif method.routing_key == EVENT_AUTH:
         message = json.loads(body)
         del message['token']
-        message['authenticated'] = True
+        message['error'] = None
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_AUTH, body=json.dumps(message))
     elif method.routing_key == EVENT_LIST:

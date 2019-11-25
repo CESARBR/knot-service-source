@@ -1032,14 +1032,12 @@ static void unregister_callback(struct l_timeout *timeout, void *user_data)
 	device_forget_destroy(mydevice);
 }
 
-static bool handle_device_removed(const char *device_id)
+static bool handle_device_removed(const char *device_id, const char *err)
 {
 	struct knot_device *device = device_get(device_id);
 	struct cloud_device *mydevice = l_queue_find(device_id_list,
 						 device_id_cmp,
 						 device_id);
-
-	hal_log_info("Device removed: %s", device_id);
 
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
@@ -1047,6 +1045,14 @@ static bool handle_device_removed(const char *device_id)
 		hal_log_error("Device %s not found!", device_id);
 		return true;
 	}
+
+	if (err) {
+		hal_log_error("Received error unregister message: %s", err);
+		device_reply_forget_failed(device, err);
+		return true;
+	}
+
+	hal_log_info("Device removed: %s", device_id);
 
 	/* Send unregister request to device */
 	if(msg_unregister_req(mydevice)) {
@@ -1065,9 +1071,10 @@ static bool handle_device_removed(const char *device_id)
 }
 
 static bool handle_device_auth(struct session *session, const char *device_id,
-			       int auth)
+			       const char *error)
 {
-	struct knot_device *device;
+	struct knot_device *device = device_get(device_id);
+	bool authenticated = true;
 	ssize_t osent;
 	int osent_err;
 	knot_msg msg;
@@ -1079,13 +1086,16 @@ static bool handle_device_auth(struct session *session, const char *device_id,
 	msg.hdr.type = KNOT_MSG_AUTH_RSP;
 	msg.hdr.payload_len = sizeof(msg.action.result);
 
-	if (!auth) {
+	if (error) {
 		hal_log_error("[session %p] Not Authorized", session);
+		if (device)
+			device_send_signal_notify(device, error);
 		msg.action.result = KNOT_ERR_PERM;
 		l_free(session->uuid);
 		l_free(session->token);
 		session->uuid = NULL;
 		session->token = NULL;
+		authenticated = false;
 	}
 
 	osent = session->node_ops->send(session->node_fd, &msg,
@@ -1098,11 +1108,10 @@ static bool handle_device_auth(struct session *session, const char *device_id,
 	}
 
 done:
-	device = device_get(device_id);
 	if (device)
-		device_set_online(device, auth);
+		device_set_online(device, authenticated);
 
-	session->trusted = auth;
+	session->trusted = authenticated;
 
 	return true;
 }
@@ -1123,13 +1132,19 @@ static bool handle_schema_updated(struct session *session,
 	msg.hdr.type = KNOT_MSG_SCHM_END_RSP;
 	msg.hdr.payload_len = sizeof(msg.action.result);
 
+	device = device_get(device_id);
+	if (!device) {
+		hal_log_error("Device dbus not found!");
+		return true;
+	}
+
 	if (err) {
 		hal_log_error("%s", err);
 
 		msg.action.result = KNOT_ERR_CLOUD_FAILURE;
 		result = true;
 
-		/* TODO: Send a error signal via D-Bus */
+		device_send_signal_notify(device, err);
 	}
 
 	osent = session->node_ops->send(session->node_fd, &msg,
@@ -1141,9 +1156,7 @@ static bool handle_schema_updated(struct session *session,
 		return result;
 	}
 
-	device = device_get(device_id);
-	if (device)
-		device_set_registered(device, true);
+	device_set_registered(device, true);
 
 	l_queue_foreach(session->schema_list, schema_dup_foreach,
 			mydevice->schema);
@@ -1325,9 +1338,9 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 		return handle_device_added(session, msg->device_id, msg->token,
 					   msg->error);
 	case UNREGISTER_MSG:
-		return handle_device_removed(msg->device_id);
+		return handle_device_removed(msg->device_id, msg->error);
 	case AUTH_MSG:
-		return handle_device_auth(session, msg->device_id, msg->auth);
+		return handle_device_auth(session, msg->device_id, msg->error);
 	case SCHEMA_MSG:
 		return handle_schema_updated(session, msg->device_id,
 					     msg->error);

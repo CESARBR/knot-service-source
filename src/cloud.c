@@ -220,13 +220,6 @@ static struct cloud_msg *create_msg(const char *routing_key, json_object *jso)
 			goto err;
 		}
 
-		msg->auth = parser_get_key_bool_from_json_obj(jso,
-							      "authenticated");
-		if (msg->auth < 0) {
-			hal_log_error("Malformed JSON message");
-			goto err;
-		}
-
 		msg->error = parser_get_key_str_from_json_obj(jso, "error");
 		break;
 	case SCHEMA_MSG:
