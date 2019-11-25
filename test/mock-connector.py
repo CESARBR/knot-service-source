@@ -82,6 +82,7 @@ def __on_msg_received(channel, method, properties, body):
     if method.routing_key == EVENT_REGISTER:
         message = json.loads(body)
         message['token'] = secrets.token_hex(20)
+        message['error'] = None
         del message['name']
         channel.basic_publish(exchange=fog_exchange,
                               routing_key=KEY_REGISTERED, body=json.dumps(message))
