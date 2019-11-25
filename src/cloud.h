@@ -21,6 +21,7 @@
 
 struct cloud_msg {
 	const char *device_id;
+	const char *error;
 	enum {
 		UPDATE_MSG,
 		REQUEST_MSG,
@@ -33,7 +34,6 @@ struct cloud_msg {
 	union {
 		int auth; // used when type is AUTH
 		const char *token; // used when type is REGISTER
-		const char *error; // used when type is SCHEMA
 		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};
 };
