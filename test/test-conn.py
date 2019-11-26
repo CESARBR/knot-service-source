@@ -104,8 +104,8 @@ PROTO_SCHM_END_RSP = 0x43
 
 HEADER_FMT = 'BB'           # 2 uint8_t, (type, payload_len)
 REGISTER_FMT = 'Q64s'       # uint64_t, char[64] (thing_id, name)
-REGISTER_RSP_FMT = '37s40s' # char[37], char[40] (uuid, token)
-AUTH_FMT = '37s40s'         # char[37], char[40] (uuid, token)
+REGISTER_RSP_FMT = 'b36s40s' # int8_t, char[36], char[40] (result, uuid, token)
+AUTH_FMT = 'b36s40s'         # int8_t, char[36], char[40] (result, uuid, token)
 SCHEMA_FMT = 'BBBH22s' # 3 uint8_t, uint16_t, char[22] (sensor_id, value_type, unit, type_id, name)
 
 # Util functions
@@ -193,8 +193,13 @@ def send_knot_msg_push_data(sock, sensor_id, value):
 
 def handle_register(msg):
     logging.info('Registered')
-    _, _, uuid, token = struct.unpack(HEADER_FMT + REGISTER_RSP_FMT, msg)
-    credentials = {'uuid': uuid[1:].decode('utf-8'), 'token': token.decode('utf-8')}
+    _, _, result, uuid, token = struct.unpack(HEADER_FMT + REGISTER_RSP_FMT, msg)
+    if result < 0:
+        logging.error('Registrer error')
+        send_knot_msg_register(s, THING_ID, THING_NAME)
+        return
+
+    credentials = {'uuid': uuid.decode('utf-8'), 'token': token.decode('utf-8')}
     with open(options.filename, 'w') as fd:
         json.dump(credentials, fd)
     sensor = schemas.pop()
