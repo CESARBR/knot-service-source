@@ -49,6 +49,14 @@ EVENT_DATA = 'data.publish'
 KEY_UPDATE = 'data.update'
 KEY_REQUEST = 'data.request'
 
+mapper = {
+    EVENT_REGISTER: KEY_REGISTERED,
+    EVENT_UNREGISTER: KEY_UNREGISTERED,
+    EVENT_AUTH: KEY_AUTH,
+    EVENT_LIST: KEY_LIST_DEVICES,
+    EVENT_SCHEMA: KEY_SCHEMA,
+}
+
 logging.basicConfig(
     format='%(asctime)s %(message)s',
     level=logging.INFO,
@@ -78,62 +86,51 @@ def __parse_request_message(msg_file):
 
 def __on_msg_received(channel, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
+    message = json.loads(body)
+    message['error'] = None
 
-    if method.routing_key == EVENT_REGISTER:
-        message = json.loads(body)
+    if method.routing_key == EVENT_DATA:
+        return None
+    elif method.routing_key == EVENT_REGISTER:
         message['token'] = secrets.token_hex(20)
-        message['error'] = None
         del message['name']
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_REGISTERED, body=json.dumps(message))
     elif method.routing_key == EVENT_UNREGISTER:
         message = json.loads(body)
-        message['error'] = None
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_UNREGISTERED, body=json.dumps(message))
     elif method.routing_key == EVENT_AUTH:
         message = json.loads(body)
         del message['token']
-        message['error'] = None
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_AUTH, body=json.dumps(message))
     elif method.routing_key == EVENT_LIST:
-        message = {
-            'error': None,
-            'devices': [
-            {
-                'id': secrets.token_hex(8),
-                'name': 'test',
-                'schema': [{
-                    "sensor_id": 0,
-                    "value_type": 3,
-                    "unit": 0,
-                    "type_id": 65521,
-                    "name": "LED"
-                }]
-            },{
-                'id': secrets.token_hex(8),
-                'name': 'test2',
-                'schema': [{
-                    "sensor_id": 0,
-                    "value_type": 3,
-                    "unit": 0,
-                    "type_id": 65521,
-                    "name": "LED"
-                }]
+        message['devices'] = [
+        {
+            'id': secrets.token_hex(8),
+            'name': 'test',
+            'schema': [{
+                "sensor_id": 0,
+                "value_type": 3,
+                "unit": 0,
+                "type_id": 65521,
+                "name": "LED"
             }]
-        }
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_LIST_DEVICES, body=json.dumps(message))
+        }, {
+            'id': secrets.token_hex(8),
+            'name': 'test2',
+            'schema': [{
+                "sensor_id": 0,
+                "value_type": 3,
+                "unit": 0,
+                "type_id": 65521,
+                "name": "LED"
+            }]
+        }]
     elif method.routing_key == EVENT_SCHEMA:
         message = json.loads(body)
         del message['schema']
-        message['error'] = None
-        channel.basic_publish(exchange=fog_exchange,
-                              routing_key=KEY_SCHEMA, body=json.dumps(message))
-    elif method.routing_key == EVENT_DATA:
-        return None
 
+    channel.basic_publish(
+        exchange=fog_exchange,
+        routing_key=mapper[method.routing_key],
+        body=json.dumps(message)
+    )
     logging.info(" [x] Sent %r" % (message))
 
 def __amqp_start():
