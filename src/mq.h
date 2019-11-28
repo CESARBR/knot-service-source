@@ -38,4 +38,6 @@ int mq_start(struct settings *settings, mq_connected_cb_t connected_cb,
 	     void *user_data);
 void mq_stop(void);
 int8_t mq_publish_persistent_message(amqp_bytes_t queue, const char *exchange,
-				const char *routing_keys, const char *body);
+				const char *routing_keys,
+				amqp_table_entry_t *headers,
+				size_t num_headers, const char *body);

@@ -289,6 +289,8 @@ done:
  * @queue: queue declared previously
  * @exchange: exchange name
  * @routing_keys: routing key name
+ * @headers: array of table entry with headers
+ * @num_headers: headers length
  * @body: the message to be sent
  *
  * Publishs a persistent message in the exchange and routing key to aqueue bond,
@@ -299,6 +301,8 @@ done:
 int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 				       const char *exchange,
 				       const char *routing_keys,
+				       amqp_table_entry_t *headers,
+				       size_t num_headers,
 				       const char *body)
 {
 	amqp_basic_properties_t props;
@@ -334,9 +338,13 @@ int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 	}
 
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG |
-			AMQP_BASIC_DELIVERY_MODE_FLAG;
+			AMQP_BASIC_DELIVERY_MODE_FLAG |
+			AMQP_BASIC_HEADERS_FLAG;
 	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = AMQP_DELIVERY_PERSISTENT;
+	props.headers.num_entries = num_headers;
+	props.headers.entries = headers;
+
 	rc = amqp_basic_publish(mq_ctx.conn, 1,
 			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes(routing_keys),
