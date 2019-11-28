@@ -48,6 +48,9 @@
 #define MQ_EXCHANGE_FOG "fog"
 #define MQ_EXCHANGE_CLOUD "cloud"
 
+/* Headers */
+#define MQ_AUTHORIZATION_HEADER "Authorization"
+
  /* Southbound traffic (commands) */
 #define MQ_EVENT_DATA_UPDATE "data.update"
 #define MQ_EVENT_DATA_REQUEST "data.request"
@@ -66,6 +69,8 @@
 #define MQ_CMD_DEVICE_LIST "device.cmd.list"
 
 cloud_cb_t cloud_cb;
+struct settings *conf;
+amqp_table_entry_t headers[1];
 
 static void cloud_device_free(void *data)
 {
@@ -289,9 +294,12 @@ int cloud_register_device(const char *id, const char *name)
 	}
 	json_str = json_object_to_json_string(jobj_device);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_REGISTER,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -332,9 +340,12 @@ int cloud_unregister_device(const char *id)
 	}
 	json_str = json_object_to_json_string(jobj_unreg);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_UNREGISTER,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
@@ -376,9 +387,12 @@ int cloud_auth_device(const char *id, const char *token)
 	}
 	json_str = json_object_to_json_string(jobj_auth);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_AUTH,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -418,9 +432,12 @@ int cloud_update_schema(const char *id, struct l_queue *schema_list)
 	}
 	json_str = json_object_to_json_string(jobj_schema);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_SCHEMA_UPDATE,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -456,9 +473,12 @@ int cloud_list_devices(void)
 	jobj_empty = json_object_new_object();
 	json_str = json_object_to_json_string(jobj_empty);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_LIST,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -504,9 +524,12 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 	}
 	json_str = json_object_to_json_string(jobj_data);
 
+	headers[0].value.value.bytes = amqp_cstring_bytes(conf->token);
+
 	result = mq_publish_persistent_message(queue_cloud,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DATA_PUBLISH,
+					       headers, 1,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -572,6 +595,11 @@ int cloud_set_read_handler(cloud_cb_t read_handler, void *user_data)
 int cloud_start(struct settings *settings, cloud_connected_cb_t connected_cb,
 		void *user_data)
 {
+	conf = settings;
+	headers[0].key = amqp_cstring_bytes(MQ_AUTHORIZATION_HEADER);
+	headers[0].value.kind = AMQP_FIELD_KIND_UTF8;
+	headers[0].value.value.bytes = amqp_cstring_bytes(settings->token);
+
 	return mq_start(settings, connected_cb, user_data);
 }
 
