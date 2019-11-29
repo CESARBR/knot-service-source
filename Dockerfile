@@ -80,6 +80,9 @@ COPY --from=builder /usr/lib64/librabbitmq.a* /usr/lib/
 # Copy dbus configuration
 COPY --from=builder /etc/dbus-1/system.d/ /etc/dbus-1/system.d/
 
+# Copy knotd configuration
+COPY --from=builder /usr/local/src/knotd.conf /etc/knot/knotd.conf
+
 # Copy binary executables
 COPY --from=builder /usr/local/src/knotd /usr/bin/knotd
 COPY --from=builder /usr/local/inetbr/inetbrd /usr/bin/inetbrd
