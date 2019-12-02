@@ -84,20 +84,17 @@ def __parse_request_message(msg_file):
         }
     return json.dumps(msg)
 
-def __on_msg_received(channel, method, properties, body):
+def __on_msg_received(args, channel, method, properties, body):
     logging.info("%r:%r" % (method.routing_key, body))
     message = json.loads(body)
-    message['error'] = None
+    message['error'] = 'error mocked' if args.with_side_effect else None
 
     if method.routing_key == EVENT_DATA:
         return None
     elif method.routing_key == EVENT_REGISTER:
         message['token'] = secrets.token_hex(20)
         del message['name']
-    elif method.routing_key == EVENT_UNREGISTER:
-        message = json.loads(body)
     elif method.routing_key == EVENT_AUTH:
-        message = json.loads(body)
         del message['token']
     elif method.routing_key == EVENT_LIST:
         message['devices'] = [
@@ -123,7 +120,6 @@ def __on_msg_received(channel, method, properties, body):
             }]
         }]
     elif method.routing_key == EVENT_SCHEMA:
-        message = json.loads(body)
         del message['schema']
 
     channel.basic_publish(
@@ -159,8 +155,13 @@ def msg_consume(args):
             exchange=cloud_exchange, queue=queue_name, routing_key='schema.*')
     channel.queue_bind(
             exchange=cloud_exchange, queue=queue_name, routing_key='data.*')
-    channel.basic_consume(
-    queue=queue_name, on_message_callback=__on_msg_received, auto_ack=True)
+
+    def __wrapper_msg_received(ch, mth, props, body):
+        __on_msg_received(args, ch, mth, props, body)
+
+    channel.basic_consume(queue=queue_name,
+    on_message_callback=__wrapper_msg_received,
+    auto_ack=True)
 
     logging.info('Listening to messages')
     channel.start_consuming()
@@ -187,6 +188,8 @@ subparsers = parser.add_subparsers(help='sub-command help', dest='subcommand')
 
 parser_listen = subparsers.add_parser('listen', help='Listen to messages \
     from client KNoT daemon', formatter_class=argparse.RawTextHelpFormatter)
+parser_listen.add_argument('-s', '--with-side-effect', action='store_true',
+                            help='Send messages with error')
 parser_listen.set_defaults(func=msg_consume)
 
 parser_update = subparsers.add_parser('send-update', help='Sends a message to \
