@@ -200,37 +200,6 @@ static knot_msg_schema *schema_find(struct l_queue *schema,
 			    L_UINT_TO_PTR(sensor_id));
 }
 
-static int8_t msg_unregister(struct session *session)
-{
-	int8_t result;
-	char id[KNOT_ID_LEN];
-
-	if (!session->trusted) {
-		hal_log_info("[session %p] unregister: Permission denied!",
-			     session);
-		return KNOT_ERR_PERM;
-	}
-
-	snprintf(id, sizeof(id), "%016"PRIX64, session->id);
-	hal_log_info("[session %p] rmnode: %s", session, id);
-
-	result = cloud_unregister_device(id);
-	if (result != 0)
-		return result;
-
-	l_timeout_remove(session->schema_timeout);
-	session->schema_timeout = NULL;
-
-	l_free(session->uuid);
-	session->uuid = NULL;
-	l_free(session->token);
-	session->token = NULL;
-	session->trusted = false;
-	session->id = INT32_MAX;
-
-	return 0;
-}
-
 static bool session_node_fd_cmp(const void *entry_data, const void *user_data)
 {
 	const struct session *session = entry_data;
@@ -259,49 +228,6 @@ static bool session_uuid_cmp(const void *entry_data, const void *user_data)
 		return false;
 
 	return strcmp(session->uuid, uuid) == 0 ? true : false;
-}
-
-static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
-{
-	struct session *session = user_data;
-	struct node_ops *node_ops = session->node_ops;
-	knot_msg_unregister msg_unreg;
-	ssize_t olen, osent;
-	void *opdu;
-	int err;
-
-	if (!session->rollback)
-		return;
-
-	if (session->rollback <= ROLLBACK_TICKS) {
-		l_timeout_modify_ms(timeout, 1096);
-		hal_log_info("[session %p] Waiting schema...", session);
-		session->rollback++;
-		return;
-	}
-
-	session->rollback = 0;
-
-	hal_log_info("[session %p] Removing %s (rollback)",
-			session, session->uuid);
-	msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
-	msg_unreg.hdr.payload_len = 0;
-	olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
-	opdu = &msg_unreg;
-
-	osent = node_ops->send(session->node_fd, opdu, olen);
-	hal_log_info("[session %p] Sending downstream data fd(%d)...",
-		     session, session->node_fd);
-
-	if (osent < 0) {
-		err = -osent;
-		hal_log_error("[session %p] Can't send downstream data: " \
-			      "%s(%d)", session, strerror(err), err);
-		hal_log_info("[session %p] Disabling downstream ...", session);
-		return;
-	}
-
-	l_timeout_modify_ms(timeout, 1096);
 }
 
 static bool msg_register_has_valid_length(const knot_msg_register *kreq,
@@ -403,6 +329,37 @@ static int8_t msg_register(struct session *session,
 	return 0;
 }
 
+static int8_t msg_unregister(struct session *session)
+{
+	int8_t result;
+	char id[KNOT_ID_LEN];
+
+	if (!session->trusted) {
+		hal_log_info("[session %p] unregister: Permission denied!",
+			     session);
+		return KNOT_ERR_PERM;
+	}
+
+	snprintf(id, sizeof(id), "%016"PRIX64, session->id);
+	hal_log_info("[session %p] rmnode: %s", session, id);
+
+	result = cloud_unregister_device(id);
+	if (result != 0)
+		return result;
+
+	l_timeout_remove(session->schema_timeout);
+	session->schema_timeout = NULL;
+
+	l_free(session->uuid);
+	session->uuid = NULL;
+	l_free(session->token);
+	session->token = NULL;
+	session->trusted = false;
+	session->id = INT32_MAX;
+
+	return 0;
+}
+
 static bool msg_unregister_req(void *user_data)
 {
 	knot_msg_unregister kmunreg;
@@ -433,6 +390,35 @@ static bool msg_unregister_req(void *user_data)
 	}
 
 	return true;
+}
+
+static void device_forget_destroy(struct cloud_device *mydevice)
+{
+	struct knot_device *device;
+
+	if (!mydevice)
+		return;
+
+	device = device_get(mydevice->id);
+
+	if (device_forget(device))
+		hal_log_info("Removing proxy for %s", mydevice->id);
+
+	mydevice = l_queue_remove_if(device_id_list, device_id_cmp,
+			mydevice->id);
+
+	cloud_device_free(mydevice);
+}
+
+static int8_t msg_unregister_resp(struct session *session)
+{
+	struct cloud_device *mydevice = l_queue_find(device_id_list,
+						 device_uuid_cmp,
+						 session->uuid);
+
+	device_forget_destroy(mydevice);
+
+	return 0;
 }
 
 /* Mandatory before any operation */
@@ -633,33 +619,47 @@ static int8_t msg_setdata_resp(struct session *session,
 	return 0;
 }
 
-static void device_forget_destroy(struct cloud_device *mydevice)
+static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 {
-	struct knot_device *device;
+	struct session *session = user_data;
+	struct node_ops *node_ops = session->node_ops;
+	knot_msg_unregister msg_unreg;
+	ssize_t olen, osent;
+	void *opdu;
+	int err;
 
-	if (!mydevice)
+	if (!session->rollback)
 		return;
 
-	device = device_get(mydevice->id);
+	if (session->rollback <= ROLLBACK_TICKS) {
+		l_timeout_modify_ms(timeout, 1096);
+		hal_log_info("[session %p] Waiting schema...", session);
+		session->rollback++;
+		return;
+	}
 
-	if (device_forget(device))
-		hal_log_info("Removing proxy for %s", mydevice->id);
+	session->rollback = 0;
 
-	mydevice = l_queue_remove_if(device_id_list, device_id_cmp,
-			mydevice->id);
+	hal_log_info("[session %p] Removing %s (rollback)",
+			session, session->uuid);
+	msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
+	msg_unreg.hdr.payload_len = 0;
+	olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
+	opdu = &msg_unreg;
 
-	cloud_device_free(mydevice);
-}
+	osent = node_ops->send(session->node_fd, opdu, olen);
+	hal_log_info("[session %p] Sending downstream data fd(%d)...",
+		     session, session->node_fd);
 
-static int8_t msg_unregister_resp(struct session *session)
-{
-	struct cloud_device *mydevice = l_queue_find(device_id_list,
-						 device_uuid_cmp,
-						 session->uuid);
+	if (osent < 0) {
+		err = -osent;
+		hal_log_error("[session %p] Can't send downstream data: " \
+			      "%s(%d)", session, strerror(err), err);
+		hal_log_info("[session %p] Disabling downstream ...", session);
+		return;
+	}
 
-	device_forget_destroy(mydevice);
-
-	return 0;
+	l_timeout_modify_ms(timeout, 1096);
 }
 
 static ssize_t msg_process(struct session *session,
@@ -932,21 +932,6 @@ static bool session_accept_cb(struct node_ops *node_ops, int client_socket)
 	return true;
 }
 
-static void forget_if_unknown(struct knot_device *device, void *user_data)
-{
-	const char *id = device_get_id(device);
-
-	/* device_id_list contains cloud devices */
-
-	if (l_queue_find(device_id_list, device_id_cmp, id))
-		return; /* match: belongs to service & cloud */
-
-	hal_log_info("Device %s not found at Cloud", id);
-
-	if (device_forget(device))
-		hal_log_info("Removing proxy for %s", id);
-}
-
 static bool handle_device_added(struct session *session, const char *device_id,
 				const char *token, const char *error)
 {
@@ -1169,6 +1154,21 @@ static bool handle_schema_updated(struct session *session,
 	session->rollback = 0; /* Rollback disabled */
 
 	return true;
+}
+
+static void forget_if_unknown(struct knot_device *device, void *user_data)
+{
+	const char *id = device_get_id(device);
+
+	/* device_id_list contains cloud devices */
+
+	if (l_queue_find(device_id_list, device_id_cmp, id))
+		return; /* match: belongs to service & cloud */
+
+	hal_log_info("Device %s not found at Cloud", id);
+
+	if (device_forget(device))
+		hal_log_info("Removing proxy for %s", id);
 }
 
 static void service_ready(const char *service, void *user_data)
