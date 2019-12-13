@@ -421,6 +421,19 @@ static int8_t msg_unregister_resp(struct session *session)
 	return 0;
 }
 
+/*
+ * Forget device and destroy its proxy if the unregister response isn't
+ * received within 1096 seconds.
+ */
+static void unregister_callback(struct l_timeout *timeout, void *user_data)
+{
+	struct cloud_device *mydevice = user_data;
+
+	hal_log_info("Unregister response not received");
+
+	device_forget_destroy(mydevice);
+}
+
 /* Mandatory before any operation */
 static int8_t msg_auth(struct session *session,
 		       const knot_msg_authentication *kmauth)
@@ -622,11 +635,8 @@ static int8_t msg_setdata_resp(struct session *session,
 static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
-	struct node_ops *node_ops = session->node_ops;
-	knot_msg_unregister msg_unreg;
-	ssize_t olen, osent;
-	void *opdu;
-	int err;
+	struct cloud_device *device;
+	char id[KNOT_ID_LEN];
 
 	if (!session->rollback)
 		return;
@@ -640,26 +650,26 @@ static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 
 	session->rollback = 0;
 
-	hal_log_info("[session %p] Removing %s (rollback)",
-			session, session->uuid);
-	msg_unreg.hdr.type = KNOT_MSG_UNREG_REQ;
-	msg_unreg.hdr.payload_len = 0;
-	olen = sizeof(msg_unreg) + msg_unreg.hdr.payload_len;
-	opdu = &msg_unreg;
+	snprintf(id, sizeof(id), "%016"PRIx64, session->id);
 
-	osent = node_ops->send(session->node_fd, opdu, olen);
-	hal_log_info("[session %p] Sending downstream data fd(%d)...",
-		     session, session->node_fd);
-
-	if (osent < 0) {
-		err = -osent;
-		hal_log_error("[session %p] Can't send downstream data: " \
-			      "%s(%d)", session, strerror(err), err);
-		hal_log_info("[session %p] Disabling downstream ...", session);
+	if (!session->uuid) {
+		hal_log_info("[session %p] Device not registered. Removing %s \
+			     (rollback)", session, id);
 		return;
 	}
 
-	l_timeout_modify_ms(timeout, 1096);
+	hal_log_info("[session %p] Removing %s (rollback)", session,
+		     session->uuid);
+
+	/* Send unregister request to device */
+	device = l_queue_find(device_id_list, device_id_cmp, id);
+	if (msg_unregister_req(device)) {
+		hal_log_info("Sending unregister message ...");
+		/* Start unregister timeout */
+		device->unreg_timeout = l_timeout_create_ms(1096,
+							unregister_callback,
+							device, NULL);
+	}
 }
 
 static ssize_t msg_process(struct session *session,
@@ -1002,19 +1012,6 @@ send:
 	}
 
 	return true;
-}
-
-/*
- * Forget device and destroy its proxy if the unregister response isn't
- * received within 1096 seconds.
- */
-static void unregister_callback(struct l_timeout *timeout, void *user_data)
-{
-	struct cloud_device *mydevice = user_data;
-
-	hal_log_info("Unregister response not received");
-
-	device_forget_destroy(mydevice);
 }
 
 static bool handle_device_removed(const char *device_id, const char *err)
