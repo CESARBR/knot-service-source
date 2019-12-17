@@ -2,7 +2,7 @@
 
 KNOT service is part of KNOT project. It aims to provide a "proxy" service
 for KNOT nodes, allowing power constrained embedded device to interact
-with Meshblu cloud services.
+with cloud services.
 
 The initial target platform are nRF24L01 nodes, and Raspiberry PI GW. nRF24L01
 is a highly integrated, ultra low power (ULP) 2Mbps RF transceiver IC for the
