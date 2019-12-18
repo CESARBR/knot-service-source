@@ -59,7 +59,7 @@ struct session {
 	int refs;
 	struct cloud_device *device;	/* Associated cloud device */
 	bool trusted;			/* Authenticated */
-	bool device_req_auth;		/* Auth requested by device */
+	bool device_requesting_auth;	/* Device is requesting auth message */
 	struct node_ops *node_ops;
 	struct l_io *node_channel;	/* Radio event source */
 	int node_fd;			/* Unix socket */
@@ -95,7 +95,7 @@ static struct session *session_new(struct node_ops *node_ops)
 	session = l_new(struct session, 1);
 	session->device = NULL;
 	session->trusted = false;
-	session->device_req_auth = false;
+	session->device_requesting_auth = false;
 	session->refs = 0;
 	session->uuid = NULL;
 	session->token = NULL;
@@ -456,6 +456,12 @@ static int8_t msg_auth(struct session *session,
 		return 0;
 	}
 
+	if (session->device_requesting_auth) {
+		hal_log_info("[session %p] Authentication in progress",
+								       session);
+		return 0;
+	}
+
 	session->device = l_queue_find(registered_devices, device_uuid_cmp,
 				       kmauth->uuid);
 	if (!session->device)
@@ -481,7 +487,7 @@ static int8_t msg_auth(struct session *session,
 	hal_log_info("[session %p] Authenticating UUID: %s, TOKEN: %s",
 		     session, uuid, token);
 
-	session->device_req_auth = true;
+	session->device_requesting_auth = true;
 	result = cloud_auth_device(session->device->id, token);
 
 	if (result != 0) {
@@ -494,8 +500,6 @@ static int8_t msg_auth(struct session *session,
 
 	l_queue_foreach(session->device->schema, schema_dup_foreach,
 			session->schema_list);
-
-	session->trusted = true;
 
 	return 0;
 }
@@ -979,7 +983,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 	session->uuid = l_strdup(session->device->uuid);
 	session->token = l_strdup(token);
 
-	session->device_req_auth = false;
+	session->device_requesting_auth = false;
 	result = cloud_auth_device(device_id, session->token);
 	if (result != 0) {
 		l_free(session->uuid);
@@ -1061,7 +1065,7 @@ static bool handle_device_auth(struct session *session, const char *device_id,
 	int osent_err;
 	knot_msg msg;
 
-	if (!session->device_req_auth)
+	if (!session->device_requesting_auth)
 		goto done;
 
 	memset(&msg, 0, sizeof(msg));
