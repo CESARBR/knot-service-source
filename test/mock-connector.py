@@ -24,10 +24,10 @@ import json
 import argparse
 import secrets
 
-cloud_exchange = 'cloud'
-fog_exchange = 'fog'
+cloud_exchange = 'connIn'
+fog_exchange = 'connOut'
 
-QUEUE_CLOUD_NAME = 'cloud-messages'
+QUEUE_CLOUD_NAME = 'connIn-messages'
 
 EVENT_REGISTER = 'device.register'
 KEY_REGISTERED = 'device.registered'
