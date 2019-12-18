@@ -41,12 +41,12 @@
 #include "parser.h"
 #include "cloud.h"
 
-#define MQ_QUEUE_FOG "fog-messages"
-#define MQ_QUEUE_CLOUD "cloud-messages"
+#define MQ_QUEUE_FOG "connOut-messages"
+#define MQ_QUEUE_CLOUD "connIn-messages"
 
 /* Exchanges */
-#define MQ_EXCHANGE_FOG "fog"
-#define MQ_EXCHANGE_CLOUD "cloud"
+#define MQ_EXCHANGE_FOG "connOut"
+#define MQ_EXCHANGE_CLOUD "connIn"
 
 /* Headers */
 #define MQ_AUTHORIZATION_HEADER "Authorization"
