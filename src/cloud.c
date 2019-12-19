@@ -51,6 +51,8 @@
 /* Headers */
 #define MQ_AUTHORIZATION_HEADER "Authorization"
 
+#define MQ_MSG_EXPIRATION_TIME_MS 2000
+
  /* Southbound traffic (commands) */
 #define MQ_EVENT_DATA_UPDATE "data.update"
 #define MQ_EVENT_DATA_REQUEST "data.request"
@@ -323,6 +325,7 @@ int cloud_register_device(const char *id, const char *name)
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_REGISTER,
 					       headers, 1,
+					       MQ_MSG_EXPIRATION_TIME_MS,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -369,6 +372,7 @@ int cloud_unregister_device(const char *id)
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_UNREGISTER,
 					       headers, 1,
+					       MQ_MSG_EXPIRATION_TIME_MS,
 					       json_str);
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
@@ -416,6 +420,7 @@ int cloud_auth_device(const char *id, const char *token)
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_AUTH,
 					       headers, 1,
+					       0, // Set no expiration time
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -461,6 +466,7 @@ int cloud_update_schema(const char *id, struct l_queue *schema_list)
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_SCHEMA_UPDATE,
 					       headers, 1,
+					       MQ_MSG_EXPIRATION_TIME_MS,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -502,6 +508,7 @@ int cloud_list_devices(void)
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DEVICE_LIST,
 					       headers, 1,
+					       0, // Set no expiration time
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
@@ -553,6 +560,7 @@ int cloud_publish_data(const char *id, uint8_t sensor_id, uint8_t value_type,
 					       MQ_EXCHANGE_CLOUD,
 					       MQ_CMD_DATA_PUBLISH,
 					       headers, 1,
+					       MQ_MSG_EXPIRATION_TIME_MS,
 					       json_str);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;

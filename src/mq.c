@@ -291,6 +291,7 @@ done:
  * @routing_keys: routing key name
  * @headers: array of table entry with headers
  * @num_headers: headers length
+ * @expiration_ms: expiration property in miliseconds or 0 if no expiration time
  * @body: the message to be sent
  *
  * Publishs a persistent message in the exchange and routing key to aqueue bond,
@@ -303,10 +304,12 @@ int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 				       const char *routing_keys,
 				       amqp_table_entry_t *headers,
 				       size_t num_headers,
+				       uint64_t expiration_ms,
 				       const char *body)
 {
 	amqp_basic_properties_t props;
 	amqp_rpc_reply_t resp;
+	char *expiration_str;
 	int8_t rc; // Return Code
 
 	/* Declare the exchange as durable */
@@ -337,9 +340,15 @@ int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 		return -1;
 	}
 
-	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG |
-			AMQP_BASIC_DELIVERY_MODE_FLAG |
+	props._flags =	AMQP_BASIC_CONTENT_TYPE_FLAG	|
+			AMQP_BASIC_DELIVERY_MODE_FLAG	|
 			AMQP_BASIC_HEADERS_FLAG;
+	if (expiration_ms) {
+		props._flags |= AMQP_BASIC_EXPIRATION_FLAG;
+		expiration_str = l_strdup_printf("%"PRIu64, expiration_ms);
+		props.expiration = amqp_cstring_bytes(expiration_str);
+	}
+
 	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = AMQP_DELIVERY_PERSISTENT;
 	props.headers.num_entries = num_headers;
@@ -354,6 +363,9 @@ int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 	if (rc < 0)
 		hal_log_error("amqp_basic_publish(): %s",
 				amqp_error_string2(rc));
+
+	if (expiration_ms)
+		l_free(expiration_str);
 
 	return rc;
 }
