@@ -715,13 +715,6 @@ static ssize_t msg_process(struct session *session,
 		if (result != 0)
 			break;
 
-		if (session->schema_timeout)
-			l_timeout_remove(session->schema_timeout);
-
-		session->schema_timeout =
-			l_timeout_create_ms(512,
-					    schema_rollback_cb,
-					    session, NULL);
 		return 0;
 	case KNOT_MSG_UNREG_REQ:
 		result = msg_unregister(session);
@@ -998,6 +991,13 @@ send:
 		err = -osent;
 		hal_log_error("[session %p] Can't send register response %s(%d)"
 			      , session, strerror(err), err);
+	} else if (!error) {
+		if (session->schema_timeout)
+			l_timeout_remove(session->schema_timeout);
+
+		session->schema_timeout = l_timeout_create_ms(512,
+							schema_rollback_cb,
+							session, NULL);
 	}
 
 	return true;
