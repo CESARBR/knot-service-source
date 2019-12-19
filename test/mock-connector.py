@@ -29,6 +29,8 @@ fog_exchange = 'connOut'
 
 QUEUE_CLOUD_NAME = 'connIn-messages'
 
+MESSAGE_EXPIRATION_TIME_MS = '10000'
+
 EVENT_REGISTER = 'device.register'
 KEY_REGISTERED = 'device.registered'
 
@@ -170,12 +172,18 @@ def msg_update(args):
     channel = __amqp_start()
     msg = __parse_update_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
+                          properties=pika.BasicProperties(
+                            expiration=MESSAGE_EXPIRATION_TIME_MS,
+                          ),
                           routing_key=KEY_UPDATE, body=msg)
 
 def msg_request(args):
     channel = __amqp_start()
     msg = __parse_request_message(args.json_msg_file)
     channel.basic_publish(exchange=fog_exchange,
+                          properties=pika.BasicProperties(
+                            expiration=MESSAGE_EXPIRATION_TIME_MS,
+                          ),
                           routing_key=KEY_REQUEST, body=msg)
 
 def no_command(args):
