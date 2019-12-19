@@ -341,18 +341,21 @@ int8_t mq_publish_persistent_message(amqp_bytes_t queue,
 	}
 
 	props._flags =	AMQP_BASIC_CONTENT_TYPE_FLAG	|
-			AMQP_BASIC_DELIVERY_MODE_FLAG	|
-			AMQP_BASIC_HEADERS_FLAG;
+			AMQP_BASIC_DELIVERY_MODE_FLAG;
 	if (expiration_ms) {
 		props._flags |= AMQP_BASIC_EXPIRATION_FLAG;
 		expiration_str = l_strdup_printf("%"PRIu64, expiration_ms);
 		props.expiration = amqp_cstring_bytes(expiration_str);
 	}
 
+	if (num_headers > 0) {
+		props._flags |= AMQP_BASIC_HEADERS_FLAG;
+		props.headers.num_entries = num_headers;
+		props.headers.entries = headers;
+	}
+
 	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = AMQP_DELIVERY_PERSISTENT;
-	props.headers.num_entries = num_headers;
-	props.headers.entries = headers;
 
 	rc = amqp_basic_publish(mq_ctx.conn, 1,
 			amqp_cstring_bytes(exchange),
