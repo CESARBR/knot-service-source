@@ -40,4 +40,6 @@ void mq_stop(void);
 int8_t mq_publish_persistent_message(amqp_bytes_t queue, const char *exchange,
 				const char *routing_keys,
 				amqp_table_entry_t *headers,
-				size_t num_headers, const char *body);
+				size_t num_headers,
+				uint64_t expiration,
+				const char *body);
