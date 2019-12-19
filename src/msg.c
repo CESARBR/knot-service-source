@@ -474,8 +474,6 @@ static int8_t msg_auth(struct session *session,
 	session->device_req_auth = true;
 	result = cloud_auth_device(mydevice->id, token);
 
-	session->rollback = 0; /* Rollback disabled */
-
 	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);
@@ -738,15 +736,6 @@ static ssize_t msg_process(struct session *session,
 		rtype = KNOT_MSG_AUTH_RSP;
 		if (result != 0)
 			break;
-
-		if (session->schema_timeout)
-			l_timeout_remove(session->schema_timeout);
-
-		/* Enable downstream after authentication */
-		session->schema_timeout =
-			l_timeout_create_ms(512,
-					    schema_rollback_cb,
-					    session, NULL);
 		/*
 		 * KNOT_MSG_AUTH_RSP is sent on function
 		 * handle_device_auth
