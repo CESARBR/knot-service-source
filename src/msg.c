@@ -510,6 +510,8 @@ static int8_t msg_schema(struct session *session,
 		return KNOT_ERR_PERM;
 	}
 
+	session->rollback = 1; /* Reset schema rollback ticks */
+
 	/*
 	 * {
 	 *	"schema" : [
