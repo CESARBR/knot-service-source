@@ -71,7 +71,7 @@ struct session {
 };
 
 static struct l_queue *session_list;
-static struct l_queue *device_id_list;
+static struct l_queue *registered_devices;
 static struct l_timeout *list_timeout;
 static bool proxy_enabled = false;
 static bool node_enabled;
@@ -321,7 +321,7 @@ static int8_t msg_register(struct session *session,
 	device_pending->online = false;
 	device_pending->schema = l_queue_new();
 
-	l_queue_push_head(device_id_list, device_pending);
+	l_queue_push_head(registered_devices, device_pending);
 
 	session->id = kreq->id;
 	session->rollback = 1; /* Initial counter value */
@@ -404,7 +404,7 @@ static void device_forget_destroy(struct cloud_device *mydevice)
 	if (device_forget(device))
 		hal_log_info("Removing proxy for %s", mydevice->id);
 
-	mydevice = l_queue_remove_if(device_id_list, device_id_cmp,
+	mydevice = l_queue_remove_if(registered_devices, device_id_cmp,
 			mydevice->id);
 
 	cloud_device_free(mydevice);
@@ -412,7 +412,7 @@ static void device_forget_destroy(struct cloud_device *mydevice)
 
 static int8_t msg_unregister_resp(struct session *session)
 {
-	struct cloud_device *mydevice = l_queue_find(device_id_list,
+	struct cloud_device *mydevice = l_queue_find(registered_devices,
 						 device_uuid_cmp,
 						 session->uuid);
 
@@ -448,7 +448,8 @@ static int8_t msg_auth(struct session *session,
 		return 0;
 	}
 
-	mydevice = l_queue_find(device_id_list, device_uuid_cmp, kmauth->uuid);
+	mydevice = l_queue_find(registered_devices, device_uuid_cmp,
+								kmauth->uuid);
 	if (!mydevice)
 		return KNOT_ERR_PERM;
 
@@ -662,7 +663,7 @@ static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 		     session->uuid);
 
 	/* Send unregister request to device */
-	device = l_queue_find(device_id_list, device_id_cmp, id);
+	device = l_queue_find(registered_devices, device_id_cmp, id);
 	if (msg_unregister_req(device)) {
 		hal_log_info("Sending unregister message ...");
 		/* Start unregister timeout */
@@ -930,7 +931,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 				const char *token, const char *error)
 {
 	struct knot_device *device_dbus = device_get(device_id);
-	struct cloud_device *device_pending = l_queue_find(device_id_list,
+	struct cloud_device *device_pending = l_queue_find(registered_devices,
 						 device_id_cmp,
 						 device_id);
 	const struct node_ops *node_ops;
@@ -942,7 +943,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 
 	if (error) {
 		hal_log_error("Receive register error: %s", error);
-		l_queue_remove_if(device_id_list, device_id_cmp,
+		l_queue_remove_if(registered_devices, device_id_cmp,
 			device_pending->id);
 		cloud_device_free(device_pending);
 		goto send;
@@ -1008,7 +1009,7 @@ send:
 static bool handle_device_removed(const char *device_id, const char *err)
 {
 	struct knot_device *device = device_get(device_id);
-	struct cloud_device *mydevice = l_queue_find(device_id_list,
+	struct cloud_device *mydevice = l_queue_find(registered_devices,
 						 device_id_cmp,
 						 device_id);
 
@@ -1093,7 +1094,7 @@ static bool handle_schema_updated(struct session *session,
 				  const char *device_id, const char *err)
 {
 	struct knot_device *device;
-	struct cloud_device *mydevice = l_queue_find(device_id_list,
+	struct cloud_device *mydevice = l_queue_find(registered_devices,
 						 device_id_cmp,
 						 device_id);
 	ssize_t osent;
@@ -1148,9 +1149,9 @@ static void forget_if_unknown(struct knot_device *device, void *user_data)
 {
 	const char *id = device_get_id(device);
 
-	/* device_id_list contains cloud devices */
+	/* registered_devices contains cloud registered devices */
 
-	if (l_queue_find(device_id_list, device_id_cmp, id))
+	if (l_queue_find(registered_devices, device_id_cmp, id))
 		return; /* match: belongs to service & cloud */
 
 	hal_log_info("Device %s not found at Cloud", id);
@@ -1198,7 +1199,7 @@ static void create_devices_dbus(void *data, void *user_data)
 	if (device_dbus)
 		device_set_uuid(device_dbus, mydevice->uuid);
 
-	l_queue_push_head(device_id_list, mydevice_dup(mydevice));
+	l_queue_push_head(registered_devices, mydevice_dup(mydevice));
 }
 
 static bool handle_cloud_msg_list(struct l_queue *devices, const char *err)
@@ -1367,7 +1368,7 @@ int msg_start(struct settings *settings)
 {
 	int err;
 
-	device_id_list = l_queue_new();
+	registered_devices = l_queue_new();
 	session_list = l_queue_new();
 
 	err = device_start();
@@ -1394,7 +1395,7 @@ void msg_stop(void)
 	cloud_stop();
 	device_stop();
 
-	l_queue_destroy(device_id_list, cloud_device_free);
+	l_queue_destroy(registered_devices, cloud_device_free);
 
 	l_queue_destroy(session_list,
 			(l_queue_destroy_func_t) session_unref);
