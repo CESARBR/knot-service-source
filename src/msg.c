@@ -307,6 +307,13 @@ static int8_t msg_register(struct session *session,
 	memset(token, 0, sizeof(token));
 	snprintf(id, sizeof(id), "%016"PRIx64, kreq->id);
 
+	if (l_queue_find(registered_devices, device_id_cmp, id)) {
+		hal_log_info("[session %p] A different device is already \
+			     registered with this ID: %s", session, id);
+
+		return KNOT_ERR_CLOUD_FAILURE;
+	}
+
 	result = cloud_register_device(id, device_name);
 	if (result != 0)
 		return result;
@@ -715,8 +722,10 @@ static ssize_t msg_process(struct session *session,
 	case KNOT_MSG_REG_REQ:
 		/* Payload length is set by the caller */
 		result = msg_register(session, &kreq->reg, ilen, &krsp->cred);
-		if (result != 0)
+		if (result != 0) {
+			rtype = KNOT_MSG_REG_RSP;
 			break;
+		}
 
 		return 0;
 	case KNOT_MSG_UNREG_REQ:
