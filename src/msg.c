@@ -57,6 +57,7 @@
 
 struct session {
 	int refs;
+	struct cloud_device *device;	/* Associated cloud device */
 	bool trusted;			/* Authenticated */
 	bool device_req_auth;		/* Auth requested by device */
 	struct node_ops *node_ops;
@@ -92,6 +93,7 @@ static struct session *session_new(struct node_ops *node_ops)
 	struct session *session;
 
 	session = l_new(struct session, 1);
+	session->device = NULL;
 	session->trusted = false;
 	session->device_req_auth = false;
 	session->refs = 0;
@@ -321,7 +323,7 @@ static int8_t msg_register(struct session *session,
 	device_pending->online = false;
 	device_pending->schema = l_queue_new();
 
-	l_queue_push_head(registered_devices, device_pending);
+	session->device = device_pending;
 
 	session->id = kreq->id;
 	session->rollback = 1; /* Initial counter value */
@@ -412,11 +414,8 @@ static void device_forget_destroy(struct cloud_device *mydevice)
 
 static int8_t msg_unregister_resp(struct session *session)
 {
-	struct cloud_device *mydevice = l_queue_find(registered_devices,
-						 device_uuid_cmp,
-						 session->uuid);
-
-	device_forget_destroy(mydevice);
+	device_forget_destroy(session->device);
+	session->device = NULL;
 
 	return 0;
 }
@@ -440,7 +439,6 @@ static int8_t msg_auth(struct session *session,
 {
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
-	struct cloud_device *mydevice;
 	int8_t result;
 
 	if (session->trusted) {
@@ -448,13 +446,14 @@ static int8_t msg_auth(struct session *session,
 		return 0;
 	}
 
-	mydevice = l_queue_find(registered_devices, device_uuid_cmp,
-								kmauth->uuid);
-	if (!mydevice)
+	session->device = l_queue_find(registered_devices, device_uuid_cmp,
+				       kmauth->uuid);
+	if (!session->device)
 		return KNOT_ERR_PERM;
 
+
 	/* Set Id */
-	session->id = strtoull(mydevice->id, NULL, 16);
+	session->id = strtoull(session->device->id, NULL, 16);
 
 	/*
 	 * PDU is not null-terminated. Copy UUID and token to
@@ -473,7 +472,7 @@ static int8_t msg_auth(struct session *session,
 		     session, uuid, token);
 
 	session->device_req_auth = true;
-	result = cloud_auth_device(mydevice->id, token);
+	result = cloud_auth_device(session->device->id, token);
 
 	if (result != 0) {
 		l_free(session->uuid);
@@ -483,7 +482,7 @@ static int8_t msg_auth(struct session *session,
 		return result;
 	}
 
-	l_queue_foreach(mydevice->schema, schema_dup_foreach,
+	l_queue_foreach(session->device->schema, schema_dup_foreach,
 			session->schema_list);
 
 	session->trusted = true;
@@ -636,7 +635,6 @@ static int8_t msg_setdata_resp(struct session *session,
 static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 {
 	struct session *session = user_data;
-	struct cloud_device *device;
 	char id[KNOT_ID_LEN];
 
 	if (!session->rollback)
@@ -663,13 +661,12 @@ static void schema_rollback_cb(struct l_timeout *timeout, void *user_data)
 		     session->uuid);
 
 	/* Send unregister request to device */
-	device = l_queue_find(registered_devices, device_id_cmp, id);
-	if (msg_unregister_req(device)) {
+	if (msg_unregister_req(session->device)) {
 		hal_log_info("Sending unregister message ...");
 		/* Start unregister timeout */
-		device->unreg_timeout = l_timeout_create_ms(1096,
+		session->device->unreg_timeout = l_timeout_create_ms(1096,
 							unregister_callback,
-							device, NULL);
+							session->device, NULL);
 	}
 }
 
@@ -931,9 +928,6 @@ static bool handle_device_added(struct session *session, const char *device_id,
 				const char *token, const char *error)
 {
 	struct knot_device *device_dbus = device_get(device_id);
-	struct cloud_device *device_pending = l_queue_find(registered_devices,
-						 device_id_cmp,
-						 device_id);
 	const struct node_ops *node_ops;
 	knot_msg_credential msg;
 	ssize_t olen, osent;
@@ -943,21 +937,22 @@ static bool handle_device_added(struct session *session, const char *device_id,
 
 	if (error) {
 		hal_log_error("Receive register error: %s", error);
-		l_queue_remove_if(registered_devices, device_id_cmp,
-			device_pending->id);
-		cloud_device_free(device_pending);
+		cloud_device_free(session->device);
+		session->device = NULL;
 		goto send;
 	}
 
 	/* Tracks 'proxy' devices that belongs to Cloud. */
 	hal_log_info("Device added: %s", device_id);
 
+	l_queue_push_head(registered_devices, session->device);
+
 	if (!device_dbus) {
-		if (!device_pending)
+		if (!session->device)
 			return true;
 		/* Ownership belongs to device.c */
-		device_dbus = device_create(device_pending->id,
-					    device_pending->name,
+		device_dbus = device_create(session->device->id,
+					    session->device->name,
 					    true /* paired */,
 					    false /* registered */,
 					    false /* online */);
@@ -965,10 +960,10 @@ static bool handle_device_added(struct session *session, const char *device_id,
 			return true;
 	}
 
-	device_set_uuid(device_dbus, device_pending->uuid);
-	device_pending->unreg_timeout = NULL;
+	device_set_uuid(device_dbus, session->device->uuid);
+	session->device->unreg_timeout = NULL;
 	session->trusted = false;
-	session->uuid = l_strdup(device_pending->uuid);
+	session->uuid = l_strdup(session->device->uuid);
 	session->token = l_strdup(token);
 
 	session->device_req_auth = false;
@@ -1094,9 +1089,6 @@ static bool handle_schema_updated(struct session *session,
 				  const char *device_id, const char *err)
 {
 	struct knot_device *device;
-	struct cloud_device *mydevice = l_queue_find(registered_devices,
-						 device_id_cmp,
-						 device_id);
 	ssize_t osent;
 	int osent_err;
 	bool result = false;
@@ -1133,7 +1125,7 @@ static bool handle_schema_updated(struct session *session,
 	device_set_registered(device, true);
 
 	l_queue_foreach(session->schema_list, schema_dup_foreach,
-			mydevice->schema);
+			session->device->schema);
 
 	/*
 	 * For security reason, remove from rollback avoiding clonning attack.
