@@ -729,9 +729,10 @@ static ssize_t msg_process(struct session *session,
 		break;
 	case KNOT_MSG_AUTH_REQ:
 		result = msg_auth(session, &kreq->auth);
-		rtype = KNOT_MSG_AUTH_RSP;
-		if (result != 0)
+		if (result != 0) {
+			rtype = KNOT_MSG_AUTH_RSP;
 			break;
+		}
 		/*
 		 * KNOT_MSG_AUTH_RSP is sent on function
 		 * handle_device_auth
@@ -742,11 +743,11 @@ static ssize_t msg_process(struct session *session,
 		result = msg_schema(session, &kreq->schema, false);
 		break;
 	case KNOT_MSG_SCHM_END_REQ:
-		rtype = KNOT_MSG_SCHM_END_RSP;
 		result = msg_schema(session, &kreq->schema, true);
-		if (result != 0)
+		if (result != 0) {
+			rtype = KNOT_MSG_SCHM_END_RSP;
 			break;
-
+		}
 		/*
 		 * KNOT_MSG_SCHM_END_RSP is sent on function
 		 * handle_schema_updated
