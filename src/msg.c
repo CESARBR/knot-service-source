@@ -311,6 +311,9 @@ static int8_t msg_register(struct session *session,
 	if (result != 0)
 		return result;
 
+	if (session->device)
+		goto done;
+
 	device_pending = l_new(struct cloud_device, 1);
 
 	device_pending->id = l_strdup(id);
@@ -324,7 +327,7 @@ static int8_t msg_register(struct session *session,
 	device_pending->schema = l_queue_new();
 
 	session->device = device_pending;
-
+done:
 	session->id = kreq->id;
 	session->rollback = 1; /* Initial counter value */
 
