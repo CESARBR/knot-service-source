@@ -71,5 +71,9 @@ MAINTAINERCLEANFILES = Makefile.in \
 	aclocal.m4 configure config.h.in config.sub config.guess \
 	ltmain.sh depcomp compile missing install-sh
 
+README: README.md
+
+CLEANFILES: README
+
 clean-local:
 	$(RM) -r src/knotd inetbr/inetbrd tools/ktool unit/ktest
