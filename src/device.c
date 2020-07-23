@@ -25,10 +25,10 @@
 #include "hal/linux_log.h"
 #include <knot/knot_types.h>
 #include <knot/knot_protocol.h>
+#include <knot/knot_cloud.h>
 
 #include "dbus.h"
 #include "settings.h"
-#include "cloud.h"
 #include "device.h"
 #include "proxy.h"
 
@@ -201,7 +201,7 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 		 *  KNoT operations sending unregister request if the
 		 *  peer (thing) is connected.
 		 */
-		cloud_unregister_device(device->id);
+		knot_cloud_unregister_device(device->id);
 		/* Reply sent at method_reply */
 		return NULL;
 	}
