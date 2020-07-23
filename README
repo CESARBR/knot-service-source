@@ -12,6 +12,7 @@ such as Bluetooth Low Energy, and Wi-Fi are planned.
 Dependencies:
 knot-protocol-source
 knot-hal-source
+knot-cloud-sdk-c
 ell >= 0.4
 json-c v0.13.1
 rabbitmq-c
