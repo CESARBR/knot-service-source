@@ -41,13 +41,13 @@
 
 #include <knot/knot_types.h>
 #include <knot/knot_protocol.h>
+#include <knot/knot_cloud.h>
 #include <hal/linux_log.h>
 
 #include "settings.h"
 #include "node.h"
 #include "device.h"
 #include "proxy.h"
-#include "cloud.h"
 #include "msg.h"
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -57,7 +57,7 @@
 
 struct session {
 	int refs;
-	struct cloud_device *device;	/* Associated cloud device */
+	struct knot_cloud_device *device; /* Associated cloud device */
 	bool trusted;			/* Authenticated */
 	bool device_requesting_auth;	/* Device is requesting auth message */
 	struct node_ops *node_ops;
@@ -133,9 +133,9 @@ static void session_unref(struct session *session)
 	session_destroy(session);
 }
 
-static void cloud_device_free(void *data)
+static void knot_cloud_device_free(void *data)
 {
-	struct cloud_device *mydevice = data;
+	struct knot_cloud_device *mydevice = data;
 	if (unlikely(!mydevice))
 		return;
 
@@ -155,9 +155,10 @@ static void schema_dup_foreach(void *data, void *user_data)
 	l_queue_push_tail(schema, l_memdup(msg, sizeof(*msg)));
 }
 
-static struct cloud_device *mydevice_dup(const struct cloud_device *mydevice)
+static struct knot_cloud_device *mydevice_dup(const struct knot_cloud_device
+					      *mydevice)
 {
-	struct cloud_device *mydevice_dup;
+	struct knot_cloud_device *mydevice_dup;
 
 	mydevice_dup = l_memdup(mydevice, sizeof(*mydevice));
 	mydevice_dup->id = l_strdup(mydevice->id);
@@ -173,7 +174,7 @@ static struct cloud_device *mydevice_dup(const struct cloud_device *mydevice)
 
 static bool device_id_cmp(const void *a, const void *b)
 {
-	const struct cloud_device *val1 = a;
+	const struct knot_cloud_device *val1 = a;
 	const char *id = b;
 
 	return strcmp(val1->id, id) == 0 ? true : false;
@@ -181,7 +182,7 @@ static bool device_id_cmp(const void *a, const void *b)
 
 static bool device_uuid_cmp(const void *a, const void *b)
 {
-	const struct cloud_device *mydevice = a;
+	const struct knot_cloud_device *mydevice = a;
 	const char *uuid = b;
 	return strcmp(mydevice->uuid, uuid) == 0 ? true: false;
 }
@@ -275,7 +276,7 @@ static int8_t msg_register(struct session *session,
 			   const knot_msg_register *kreq, size_t ilen,
 			   knot_msg_credential *krsp)
 {
-	struct cloud_device *device_pending;
+	struct knot_cloud_device *device_pending;
 	char device_name[KNOT_PROTOCOL_DEVICE_NAME_LEN];
 	char uuid[KNOT_PROTOCOL_UUID_LEN + 1];
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
@@ -314,14 +315,14 @@ static int8_t msg_register(struct session *session,
 		return KNOT_ERR_CLOUD_FAILURE;
 	}
 
-	result = cloud_register_device(id, device_name);
+	result = knot_cloud_register_device(id, device_name);
 	if (result != 0)
 		return result;
 
 	if (session->device)
 		goto done;
 
-	device_pending = l_new(struct cloud_device, 1);
+	device_pending = l_new(struct knot_cloud_device, 1);
 
 	device_pending->id = l_strdup(id);
 	/**
@@ -355,7 +356,7 @@ static int8_t msg_unregister(struct session *session)
 	snprintf(id, sizeof(id), "%016"PRIX64, session->id);
 	hal_log_info("[session %p] rmnode: %s", session, id);
 
-	result = cloud_unregister_device(id);
+	result = knot_cloud_unregister_device(id);
 	if (result != 0)
 		return result;
 
@@ -377,7 +378,7 @@ static bool msg_unregister_req(void *user_data)
 	knot_msg_unregister kmunreg;
 	struct session *session;
 	struct node_ops *node_ops;
-	struct cloud_device *mydevice = user_data;
+	struct knot_cloud_device *mydevice = user_data;
 	ssize_t olen, osent;
 	void *opdu;
 	int err = 0;
@@ -404,7 +405,7 @@ static bool msg_unregister_req(void *user_data)
 	return true;
 }
 
-static void device_forget_destroy(struct cloud_device *mydevice)
+static void device_forget_destroy(struct knot_cloud_device *mydevice)
 {
 	struct knot_device *device;
 
@@ -419,7 +420,7 @@ static void device_forget_destroy(struct cloud_device *mydevice)
 	mydevice = l_queue_remove_if(registered_devices, device_id_cmp,
 			mydevice->id);
 
-	cloud_device_free(mydevice);
+	knot_cloud_device_free(mydevice);
 }
 
 static int8_t msg_unregister_resp(struct session *session)
@@ -436,7 +437,7 @@ static int8_t msg_unregister_resp(struct session *session)
  */
 static void unregister_callback(struct l_timeout *timeout, void *user_data)
 {
-	struct cloud_device *mydevice = user_data;
+	struct knot_cloud_device *mydevice = user_data;
 
 	hal_log_info("Unregister response not received");
 
@@ -488,7 +489,7 @@ static int8_t msg_auth(struct session *session,
 		     session, uuid, token);
 
 	session->device_requesting_auth = true;
-	result = cloud_auth_device(session->device->id, token);
+	result = knot_cloud_auth_device(session->device->id, token);
 
 	if (result != 0) {
 		l_free(session->uuid);
@@ -541,7 +542,7 @@ static int8_t msg_schema(struct session *session,
 
 	if (eof) {
 		snprintf(id, sizeof(id), "%016"PRIx64, session->id);
-		result = cloud_update_schema(id, session->schema_list);
+		result = knot_cloud_update_schema(id, session->schema_list);
 	}
 
 	if (result < 0) {
@@ -583,8 +584,9 @@ static int8_t msg_data(struct session *session, const knot_msg_data *kmdata)
 		     sensor_id, schema->values.unit, schema->values.value_type);
 
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
-	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
-				    kvalue, kval_len);
+	result = knot_cloud_publish_data(id, sensor_id,
+					 schema->values.value_type,
+					 kvalue, kval_len);
 	if (result < 0)
 		goto done;
 
@@ -635,8 +637,9 @@ static int8_t msg_setdata_resp(struct session *session,
 		     schema->values.value_type);
 
 	kval_len = kmdata->hdr.payload_len - sizeof(kmdata->sensor_id);
-	result = cloud_publish_data(id, sensor_id, schema->values.value_type,
-				    kvalue, kval_len);
+	result = knot_cloud_publish_data(id, sensor_id,
+					 schema->values.value_type,
+					 kvalue, kval_len);
 	if (result != 0)
 		return result;
 
@@ -954,7 +957,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 
 	if (error) {
 		hal_log_error("Receive register error: %s", error);
-		cloud_device_free(session->device);
+		knot_cloud_device_free(session->device);
 		session->device = NULL;
 		goto send;
 	}
@@ -984,7 +987,7 @@ static bool handle_device_added(struct session *session, const char *device_id,
 	session->token = l_strdup(token);
 
 	session->device_requesting_auth = false;
-	result = cloud_auth_device(device_id, session->token);
+	result = knot_cloud_auth_device(device_id, session->token);
 	if (result != 0) {
 		l_free(session->uuid);
 		l_free(session->token);
@@ -1021,9 +1024,9 @@ send:
 static bool handle_device_removed(const char *device_id, const char *err)
 {
 	struct knot_device *device = device_get(device_id);
-	struct cloud_device *mydevice = l_queue_find(registered_devices,
-						 device_id_cmp,
-						 device_id);
+	struct knot_cloud_device *mydevice = l_queue_find(registered_devices,
+							  device_id_cmp,
+							  device_id);
 
 	/* Tracks 'proxy' devices removed from Cloud. */
 	if (device == NULL) {
@@ -1199,7 +1202,7 @@ static void proxy_ready(void *user_data)
 
 static void create_devices_dbus(void *data, void *user_data)
 {
-	const struct cloud_device *mydevice = data;
+	const struct knot_cloud_device *mydevice = data;
 	struct knot_device *device_dbus;
 	bool registered = mydevice->schema != NULL;
 
@@ -1309,7 +1312,7 @@ static bool handle_cloud_msg_downstream(struct session *session,
 	return true;
 }
 
-static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
+static bool on_cloud_receive(const struct knot_cloud_msg *msg, void *user_data)
 {
 	struct session *session = l_queue_find(session_list, session_id_cmp,
 					       msg->device_id);
@@ -1344,6 +1347,7 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 					     msg->error);
 	case LIST_MSG:
 		return handle_cloud_msg_list(msg->list, msg->error);
+	case MSG_TYPES_LENGTH:
 	default:
 		return true;
 	}
@@ -1351,7 +1355,7 @@ static bool on_cloud_receive(const struct cloud_msg *msg, void *user_data)
 
 static void list_timeout_cb(struct l_timeout *timeout, void *user_data)
 {
-	if (cloud_list_devices() < 0) {
+	if (knot_cloud_list_devices() < 0) {
 		hal_log_error("Unable to list devices");
 		l_timeout_modify(list_timeout, TIMEOUT_DEVICES_SEC);
 	}
@@ -1362,9 +1366,11 @@ static void on_cloud_connected(void *user_data)
 	int err;
 
 	hal_log_info("Cloud CONNECTED");
-	err = cloud_set_read_handler(on_cloud_receive, NULL);
+
+	/* FIXME: pass a unique identifier instead of 'knotd' */
+	err = knot_cloud_read_start("knotd", on_cloud_receive, NULL);
 	if (err < 0) {
-		hal_log_error("cloud_set_read_handler(): %s", strerror(-err));
+		hal_log_error("knot_cloud_read_start(): %s", strerror(-err));
 		return;
 	}
 
@@ -1386,9 +1392,10 @@ int msg_start(struct settings *settings)
 		return err;
 	}
 
-	err = cloud_start(settings, on_cloud_connected, NULL);
+	err = knot_cloud_start(settings->rabbitmq_url, settings->token,
+			       on_cloud_connected, NULL, NULL);
 	if (err < 0)
-		hal_log_error("cloud_start(): %s", strerror(-err));
+		hal_log_error("knot_cloud_start(): %s", strerror(-err));
 
 	return 0;
 }
@@ -1401,10 +1408,10 @@ void msg_stop(void)
 	node_stop();
 	if (proxy_enabled)
 		proxy_stop();
-	cloud_stop();
+	knot_cloud_stop();
 	device_stop();
 
-	l_queue_destroy(registered_devices, cloud_device_free);
+	l_queue_destroy(registered_devices, knot_cloud_device_free);
 
 	l_queue_destroy(session_list,
 			(l_queue_destroy_func_t) session_unref);
