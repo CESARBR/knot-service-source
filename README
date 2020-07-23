@@ -15,7 +15,6 @@ knot-hal-source
 knot-cloud-sdk-c
 ell >= 0.4
 json-c v0.13.1
-rabbitmq-c
 automake
 libtool
 libssl-dev
@@ -28,10 +27,6 @@ How to install dependencies:
 		git://git.kernel.org/pub/scm/libs/ell/ell.git
 	To install the latest version of json-c, you have to clone the repository and follow the instructions:
 		https://github.com/json-c/json-c/releases/tag/json-c-0.13.1-20180305
-	To install rabbitmq-c first you need to install cmake:
-		https://cmake.org/install/
-	After install cmake, install rabbitmq-c. You have to clone the repository and follow the instructions:
-		https://github.com/alanxz/rabbitmq-c
 
 How to build:
 You have to install the knot-protocol-source and the knot-hal-source,

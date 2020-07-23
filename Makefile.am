@@ -27,14 +27,11 @@ src_knotd_SOURCES = src/main.c \
 			src/dbus.c src/dbus.h \
 			src/device.c src/device.h \
 			src/proxy.c src/proxy.h \
-			src/parser.c src/parser.h \
-			src/mq.c src/mq.h \
-			src/cloud.c src/cloud.h \
 			$(modules_sources)
 
-src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @RABBITMQ_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ @KNOTCLOUDSDK_LIBS@ -lm
+src_knotd_LDADD = $(modules_ldadd) @ELL_LIBS@ @KNOTPROTO_LIBS@ @KNOTHAL_LIBS@ @JSON_LIBS@ @KNOTCLOUDSDK_LIBS@ -lm
 src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @RABBITMQ_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@ @JSON_CFLAGS@ @KNOTCLOUDSDK_CFLAGS@
+src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags) @ELL_CFLAGS@ @KNOTPROTO_CFLAGS@ @KNOTHAL_CFLAGS@ @JSON_CFLAGS@ @KNOTCLOUDSDK_CFLAGS@
 
 inetbr_inetbrd_SOURCES = inetbr/main.c \
 			inetbr/settings.c inetbr/settings.h \
