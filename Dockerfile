@@ -5,6 +5,7 @@ ARG JSONC_VERSION=0.13.1-20180305
 ARG LIBELL_VERSION=0.17
 ARG RABBITMQC_VERSION=v0.9.0
 ARG KNOT_PROTOCOL_VERSION=KNOT-v02.01-rc01
+ARG KNOT_CLOUD_SDK_VERSION=559e3e9
 ARG KNOT_HAL_VERSION=KNOT-v02.01-rc01
 
 # Install dependencies
@@ -42,6 +43,11 @@ RUN cd rabbitmq-c && mkdir build && cd build && cmake -DCMAKE_INSTALL_PREFIX=/us
 RUN mkdir -p /usr/local/protocol
 RUN wget -q -O- https://github.com/CESARBR/knot-protocol-source/archive/$KNOT_PROTOCOL_VERSION.tar.gz|tar xz -C /usr/local/protocol --strip-components=1
 RUN cd protocol && ./bootstrap-configure && make install
+
+# Install knot-cloud-sdk-c
+RUN mkdir -p /usr/local/knot-cloud-sdk-c
+RUN git clone https://github.com/CESARBR/knot-cloud-sdk-c.git /usr/local/knot-cloud-sdk-c
+RUN cd knot-cloud-sdk-c && git checkout $KNOT_CLOUD_SDK_VERSION && ./bootstrap-configure && make install
 
 # Install knot-hal
 RUN mkdir -p /usr/local/hal
