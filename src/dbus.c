@@ -79,7 +79,7 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 		return;
 	}
 
-	if (!l_dbus_object_manager_enable(g_dbus))
+	if (!l_dbus_object_manager_enable(g_dbus, "/"))
 		hal_log_error("Unable to register the ObjectManager");
 
 	setup->complete(setup->user_data);
